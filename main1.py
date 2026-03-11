@@ -1,0 +1,151 @@
+from contextlib import asynccontextmanager
+from datetime import datetime
+import os
+from typing import Optional
+
+from fastapi import Cookie, Depends, FastAPI, Response
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
+
+from auth_utils import get_session_username, hash_password
+from database import SessionLocal, engine, init_database
+from models import Player
+from routers.admin_read_routes import build_admin_read_router
+from routers.admin_write_routes import build_admin_write_router
+from routers.frontend_routes import build_frontend_router
+from routers.public_routes import build_public_router
+from services import auth_service, league_service
+from services.operation_audit_service import import_legacy_admin_log_to_operation_audits
+
+LOG_FILE = "admin_operations.log"
+SESSION_COOKIE_NAME = "session_token"
+SESSION_MAX_AGE_SECONDS = 86400
+COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"}
+LOCAL_DEV_HOST = os.environ.get("LOCAL_HOST", "127.0.0.1")
+LOCAL_DEV_PORT = int(os.environ.get("LOCAL_PORT", "8001"))
+
+
+def write_to_log(operation: str, details: str, operator: str):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = f"[{timestamp}] [{operator}] {operation}: {details}\n"
+    with open(LOG_FILE, "a", encoding="utf-8") as log_file:
+        log_file.write(log_entry)
+
+
+def initialize_app_state():
+    init_database()
+    db = SessionLocal()
+    try:
+        admin_accounts = [
+            ("HEIGO01", hash_password("HEIGOLeverkusen85")),
+            ("HEIGO02", hash_password("HEIGOLeicester85")),
+            ("HEIGO03", hash_password("HEIGOBournemouth85")),
+            ("HEIGO04", hash_password("HEIGOSporting85")),
+            ("HEIGO05", hash_password("HEIGOManUtd85")),
+            ("HEIGO06", hash_password("HEIGOBarcelona85")),
+            ("HEIGO07", hash_password("HEIGOTottenham85")),
+        ]
+        auth_service.seed_default_admins(db, admin_accounts)
+    finally:
+        db.close()
+    import_legacy_admin_log_to_operation_audits(engine, LOG_FILE)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    initialize_app_state()
+    yield
+
+
+app = FastAPI(title="Heigo联赛数据库", lifespan=lifespan)
+
+if not os.path.exists("static"):
+    os.makedirs("static")
+
+if os.path.exists("heigo.jpeg") and not os.path.exists("static/heigo.jpeg"):
+    import shutil
+
+    shutil.copy2("heigo.jpeg", "static/heigo.jpeg")
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def verify_admin(session_token: Optional[str] = Cookie(None), db: Session = Depends(get_db)):
+    return get_session_username(db, session_token)
+
+
+def set_session_cookie(response: Response, token: str):
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=COOKIE_SECURE,
+        max_age=SESSION_MAX_AGE_SECONDS,
+        path="/",
+    )
+
+
+def clear_session_cookie(response: Response):
+    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
+
+
+app.include_router(build_public_router(get_db))
+app.include_router(build_admin_read_router(get_db, verify_admin, LOG_FILE))
+app.include_router(
+    build_admin_write_router(
+        get_db=get_db,
+        verify_admin=verify_admin,
+        set_session_cookie=set_session_cookie,
+        clear_session_cookie=clear_session_cookie,
+        write_to_log=write_to_log,
+    )
+)
+app.include_router(build_frontend_router())
+
+
+def calculate_player_wage_payload(initial_ca: int, current_ca: int, pa: int, age: int, position: str, db: Session):
+    return league_service.calculate_player_wage_payload(
+        initial_ca=initial_ca,
+        current_ca=current_ca,
+        pa=pa,
+        age=age,
+        position=position,
+        db=db,
+    )
+
+
+def refresh_player_financials(player: Player, db: Session):
+    return league_service.refresh_player_financials(player, db)
+
+
+def recalculate_team_stats(db: Session, commit: bool = True, affected_team_ids=None, stat_scopes=None, refresh_mode=None):
+    league_service.recalculate_team_stats(
+        db,
+        commit=commit,
+        affected_team_ids=affected_team_ids,
+        stat_scopes=stat_scopes,
+        refresh_mode=refresh_mode,
+    )
+
+
+def calculate_team_final_wage(team, players):
+    return league_service.calculate_team_final_wage(team, players)
+
+
+def run_local_server():
+    import uvicorn
+
+    uvicorn.run("main1:app", host=LOCAL_DEV_HOST, port=LOCAL_DEV_PORT, reload=False)
+
+
+if __name__ == "__main__":
+    run_local_server()
