@@ -57,7 +57,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="Heigo联赛数据库", lifespan=lifespan)
+app = FastAPI(title="HEIGO联机联赛数据库", lifespan=lifespan)
 
 if not os.path.exists("static"):
     os.makedirs("static")
