@@ -149,6 +149,11 @@ class PositionScoreResponse(BaseModel):
     score: int
 
 
+class PlayerRadarMetricResponse(BaseModel):
+    label: str
+    value: float
+
+
 class PlayerAttributeDetailResponse(BaseModel):
     uid: int
     name: str
@@ -163,6 +168,14 @@ class PlayerAttributeDetailResponse(BaseModel):
     weight: int
     left_foot: int
     right_foot: int
+    radar_defense: float
+    radar_physical: float
+    radar_speed: float
+    radar_creativity: float
+    radar_attack: float
+    radar_technical: float
+    radar_aerial: float
+    radar_mental: float
     birth_date: Optional[str] = None
     national_caps: int
     national_goals: int
@@ -242,6 +255,7 @@ class PlayerAttributeDetailResponse(BaseModel):
     pos_amr: int
     pos_st: int
     top_positions: list[PositionScoreResponse]
+    radar_profile: list[PlayerRadarMetricResponse]
 
 
 class WageDetailResponse(BaseModel):

@@ -6,7 +6,11 @@ from sqlalchemy.orm import Session
 
 from database import BOOTSTRAP_LOG_PATH
 from models import Team
-from repositories.attribute_repository import get_player_attribute_by_uid, search_player_attributes_by_name
+from repositories.attribute_repository import (
+    get_player_attribute_by_uid,
+    map_attribute_uid_to_primary_nationality,
+    search_player_attributes_by_name,
+)
 from repositories.league_info_repository import list_league_info
 from repositories.operation_audit_repository import get_latest_operation_audit, list_operation_audits, list_recent_operation_audits
 from repositories.player_repository import get_player_by_uid, list_players_excluding_team, map_player_uid_to_team_name, search_players_by_name
@@ -16,7 +20,9 @@ from schemas_read import (
     AttributeSearchResponse,
     LogsResponse,
     OperationAuditResponse,
+    PlayerResponse,
     PlayerAttributeDetailResponse,
+    PlayerRadarMetricResponse,
     PositionScoreResponse,
     SchemaBootstrapStatusResponse,
     TeamStatRefreshStateResponse,
@@ -125,16 +131,36 @@ def get_teams(db: Session):
     ]
 
 
+def _build_player_responses(db: Session, players) -> list[PlayerResponse]:
+    nationality_map = map_attribute_uid_to_primary_nationality(db, (player.uid for player in players))
+    return [
+        PlayerResponse(
+            uid=player.uid,
+            name=player.name,
+            age=player.age,
+            initial_ca=player.initial_ca,
+            ca=player.ca,
+            pa=player.pa,
+            position=player.position,
+            nationality=nationality_map.get(player.uid, player.nationality or ""),
+            team_name=player.team_name,
+            wage=player.wage,
+            slot_type=player.slot_type or "",
+        )
+        for player in players
+    ]
+
+
 def get_all_players(db: Session):
-    return list_players_excluding_team(db, SEA_TEAM_NAME)
+    return _build_player_responses(db, list_players_excluding_team(db, SEA_TEAM_NAME))
 
 
 def get_players_by_team(db: Session, team_name: str):
-    return get_players_by_team_name(db, team_name)
+    return _build_player_responses(db, get_players_by_team_name(db, team_name))
 
 
 def search_player(db: Session, player_name: str):
-    return search_players_by_name(db, player_name)
+    return _build_player_responses(db, search_players_by_name(db, player_name))
 
 
 def search_player_attributes(db: Session, player_name: str) -> list[AttributeSearchResponse]:
@@ -187,6 +213,28 @@ def get_player_attribute_detail(db: Session, uid: int) -> PlayerAttributeDetailR
             reverse=True,
         )[:6]
     ]
+    if (attr.pos_gk or 0) >= 15:
+        radar_profile = [
+            PlayerRadarMetricResponse(label="拦截射门", value=attr.radar_gk_shot_stopping),
+            PlayerRadarMetricResponse(label="身体", value=attr.radar_gk_physical),
+            PlayerRadarMetricResponse(label="速度", value=attr.radar_gk_speed),
+            PlayerRadarMetricResponse(label="精神", value=attr.radar_gk_mental),
+            PlayerRadarMetricResponse(label="指挥防守", value=attr.radar_gk_command),
+            PlayerRadarMetricResponse(label="意外性", value=attr.radar_gk_eccentricity),
+            PlayerRadarMetricResponse(label="制空", value=attr.radar_gk_aerial),
+            PlayerRadarMetricResponse(label="大脚", value=attr.radar_gk_kicking),
+        ]
+    else:
+        radar_profile = [
+            PlayerRadarMetricResponse(label="防守", value=attr.radar_defense),
+            PlayerRadarMetricResponse(label="身体", value=attr.radar_physical),
+            PlayerRadarMetricResponse(label="速度", value=attr.radar_speed),
+            PlayerRadarMetricResponse(label="创造", value=attr.radar_creativity),
+            PlayerRadarMetricResponse(label="进攻", value=attr.radar_attack),
+            PlayerRadarMetricResponse(label="技术", value=attr.radar_technical),
+            PlayerRadarMetricResponse(label="制空", value=attr.radar_aerial),
+            PlayerRadarMetricResponse(label="精神", value=attr.radar_mental),
+        ]
 
     return PlayerAttributeDetailResponse(
         uid=attr.uid,
@@ -202,6 +250,14 @@ def get_player_attribute_detail(db: Session, uid: int) -> PlayerAttributeDetailR
         weight=attr.weight,
         left_foot=attr.left_foot,
         right_foot=attr.right_foot,
+        radar_defense=attr.radar_defense,
+        radar_physical=attr.radar_physical,
+        radar_speed=attr.radar_speed,
+        radar_creativity=attr.radar_creativity,
+        radar_attack=attr.radar_attack,
+        radar_technical=attr.radar_technical,
+        radar_aerial=attr.radar_aerial,
+        radar_mental=attr.radar_mental,
         birth_date=attr.birth_date,
         national_caps=attr.national_caps,
         national_goals=attr.national_goals,
@@ -281,6 +337,7 @@ def get_player_attribute_detail(db: Session, uid: int) -> PlayerAttributeDetailR
         pos_amr=attr.pos_amr,
         pos_st=attr.pos_st,
         top_positions=top_positions,
+        radar_profile=radar_profile,
     )
 
 

@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配色方案展示</title>
+    <style>
+        /* 全局样式重置 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Microsoft Yahei", Arial, sans-serif;
+        }
+
+        /* 背景渐变容器 */
+        .color-demo {
+            width: 100%;
+            min-height: 100vh;
+            /* 背景渐变：#f5f7fb 到 #eef2f7 */
+            background: linear-gradient(135deg, #f5f7fb 0%, #eef2f7 100%);
+            padding: 40px 20px;
+        }
+
+        /* 展示卡片样式 */
+        .demo-card {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        /* 标题样式 */
+        .demo-title {
+            font-size: 24px;
+            margin-bottom: 30px;
+            color: #18212f; /* 主文字色 */
+            border-bottom: 1px solid #eef2f7;
+            padding-bottom: 15px;
+        }
+
+        /* 配色项样式 */
+        .color-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+
+        .color-item:hover {
+            background: #f5f7fb;
+        }
+
+        /* 颜色块 */
+        .color-block {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            margin-right: 20px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        /* 颜色信息 */
+        .color-info {
+            flex: 1;
+        }
+
+        .color-name {
+            font-size: 16px;
+            color: #18212f; /* 主文字色 */
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+
+        .color-code {
+            font-size: 14px;
+            color: #5f6b7a; /* 次文字色 */
+            font-family: "Consolas", monospace;
+        }
+
+        /* 文字层级展示 */
+        .text-demo {
+            margin-top: 40px;
+            padding: 20px;
+            background: #f5f7fb;
+            border-radius: 8px;
+        }
+
+        .text-primary {
+            font-size: 18px;
+            color: #18212f; /* 主文字 */
+            margin-bottom: 10px;
+        }
+
+        .text-secondary {
+            font-size: 16px;
+            color: #5f6b7a; /* 次文字 */
+            margin-bottom: 20px;
+        }
+
+        /* 功能按钮展示 */
+        .btn-demo {
+            margin-top: 20px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .btn-blue {
+            background: #4f8cff; /* 强调蓝 */
+        }
+
+        .btn-cyan {
+            background: #58c7d8; /* 强调青 */
+        }
+
+        .btn-success {
+            background: #34c759; /* 成功绿 */
+        }
+
+        .btn-warning {
+            background: #ff9f0a; /* 警示橙 */
+        }
+
+        .btn-danger {
+            background: #ff5f57; /* 危险红 */
+        }
+    </style>
+</head>
+<body>
+    <div class="color-demo">
+        <div class="demo-card">
+            <h2 class="demo-title">配色方案展示</h2>
+
+            <!-- 背景色展示 -->
+            <div class="color-item">
+                <div class="color-block" style="background: linear-gradient(135deg, #f5f7fb 0%, #eef2f7 100%);"></div>
+                <div class="color-info">
+                    <div class="color-name">背景渐变</div>
+                    <div class="color-code">#f5f7fb (起始) → #eef2f7 (结束)</div>
+                </div>
+            </div>
+
+            <!-- 主文字色 -->
+            <div class="color-item">
+                <div class="color-block" style="background: #18212f;"></div>
+                <div class="color-info">
+                    <div class="color-name">主文字</div>
+                    <div class="color-code">#18212f</div>
+                </div>
+            </div>
+
+            <!-- 次文字色 -->
+            <div class="color-item">
+                <div class="color-block" style="background: #5f6b7a;"></div>
+                <div class="color-info">
+                    <div class="color-name">次文字</div>
+                    <div class="color-code">#5f6b7a</div>
+                </div>
+            </div>
+
+            <!-- 强调蓝 -->
+            <div class="color-item">
+                <div class="color-block" style="background: #4f8cff;"></div>
+                <div class="color-info">
+                    <div class="color-name">强调蓝</div>
+                    <div class="color-code">#4f8cff</div>
+                </div>
+            </div>
+
+            <!-- 强调青 -->
+            <div class="color-item">
+                <div class="color-block" style="background: #58c7d8;"></div>
+                <div class="color-info">
+                    <div class="color-name">强调青</div>
+                    <div class="color-code">#58c7d8</div>
+                </div>
+            </div>
+
+            <!-- 成功绿 -->
+            <div class="color-item">
+                <div class="color-block" style="background: #34c759;"></div>
+                <div class="color-info">
+                    <div class="color-name">成功绿</div>
+                    <div class="color-code">#34c759</div>
+                </div>
+            </div>
+
+            <!-- 警示橙 -->
+            <div class="color-item">
+                <div class="color-block" style="background: #ff9f0a;"></div>
+                <div class="color-info">
+                    <div class="color-name">警示橙</div>
+                    <div class="color-code">#ff9f0a</div>
+                </div>
+            </div>
+
+            <!-- 危险红 -->
+            <div class="color-item">
+                <div class="color-block" style="background: #ff5f57;"></div>
+                <div class="color-info">
+                    <div class="color-name">危险红</div>
+                    <div class="color-code">#ff5f57</div>
+                </div>
+            </div>
+
+            <!-- 文字层级展示 -->
+            <div class="text-demo">
+                <div class="text-primary">这是主文字颜色示例（#18212f）：用于标题、核心内容等重要文本</div>
+                <div class="text-secondary">这是次文字颜色示例（#5f6b7a）：用于辅助说明、注释等次要文本</div>
+                
+                <!-- 功能按钮展示 -->
+                <div class="btn-demo">
+                    <button class="btn btn-blue">强调蓝按钮</button>
+                    <button class="btn btn-cyan">强调青按钮</button>
+                    <button class="btn btn-success">成功绿按钮</button>
+                    <button class="btn btn-warning">警示橙按钮</button>
+                    <button class="btn btn-danger">危险红按钮</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

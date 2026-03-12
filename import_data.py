@@ -182,6 +182,22 @@ ATTRIBUTE_COLUMN_ALIASES = {
     "weight": ["体重"],
     "left_foot": ["左脚"],
     "right_foot": ["右脚"],
+    "radar_defense": ["防守"],
+    "radar_physical": ["身体"],
+    "radar_speed": ["速度.1", "速度"],
+    "radar_creativity": ["创造"],
+    "radar_attack": ["进攻"],
+    "radar_technical": ["技术.1", "技术"],
+    "radar_aerial": ["制空"],
+    "radar_mental": ["精神"],
+    "radar_gk_shot_stopping": ["拦截射门"],
+    "radar_gk_physical": ["身体.1"],
+    "radar_gk_speed": ["速度.2"],
+    "radar_gk_mental": ["精神.1"],
+    "radar_gk_command": ["指挥防守"],
+    "radar_gk_eccentricity": ["意外性"],
+    "radar_gk_aerial": ["制空.1"],
+    "radar_gk_kicking": ["大脚"],
     "birth_date": ["出生日期"],
     "national_caps": ["国家队出场"],
     "national_goals": ["国家队进球"],
@@ -903,12 +919,32 @@ def import_player_attributes(db: Session, attributes_csv_path: Path, report: Imp
             existing_attributes[uid] = record
 
         field_values: dict[str, Any] = {"uid": uid}
+        float_attribute_fields = {
+            "radar_defense",
+            "radar_physical",
+            "radar_speed",
+            "radar_creativity",
+            "radar_attack",
+            "radar_technical",
+            "radar_aerial",
+            "radar_mental",
+            "radar_gk_shot_stopping",
+            "radar_gk_physical",
+            "radar_gk_speed",
+            "radar_gk_mental",
+            "radar_gk_command",
+            "radar_gk_eccentricity",
+            "radar_gk_aerial",
+            "radar_gk_kicking",
+        }
         for field_name, column_name in resolved_columns.items():
             if field_name == "uid" or column_name is None:
                 continue
             raw_value = row.get(column_name)
             if field_name in {"name", "position", "nationality", "club", "birth_date", "player_habits"}:
                 field_values[field_name] = clean_string(raw_value)
+            elif field_name in float_attribute_fields:
+                field_values[field_name] = parse_optional_float(raw_value, default=0.0)
             else:
                 field_values[field_name] = parse_optional_int(raw_value, default=0)
 

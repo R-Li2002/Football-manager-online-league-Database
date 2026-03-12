@@ -20,7 +20,7 @@ from auth_utils import (
 from database import Base, init_database
 from migration_helpers import backfill_team_link_data
 from league_settings import create_league_info_record, get_growth_age_limit, is_supported_league_info_key
-from models import AdminUser, LeagueInfo, OperationAudit, Player, Team, TransferLog
+from models import AdminUser, LeagueInfo, OperationAudit, Player, PlayerAttribute, Team, TransferLog
 from services.league_service import TEAM_CACHE_REFRESH_MODE_WRITE_INCREMENTAL, TEAM_STAT_SCOPE_WAGE, persist_with_team_stats, recalculate_team_stats
 from services.operation_audit_service import import_legacy_admin_log_to_operation_audits
 from services import read_service, wage_service
@@ -463,6 +463,50 @@ class Phase1Tests(unittest.TestCase):
         latest = sorted(events, key=lambda item: (item.created_at, item.id))[-1]
         self.assertEqual(latest.action, "alembic_upgrade_head")
         self.assertEqual(latest.status, "success")
+
+    def test_goalkeeper_attribute_detail_uses_goalkeeper_radar_axes(self):
+        self.db.add(
+            PlayerAttribute(
+                uid=2001,
+                name="Goal Keeper",
+                position="GK",
+                age=24,
+                ca=140,
+                pa=150,
+                nationality="ENG",
+                club="Alpha FC",
+                pos_gk=18,
+                radar_defense=3.0,
+                radar_physical=4.0,
+                radar_speed=5.0,
+                radar_creativity=6.0,
+                radar_attack=7.0,
+                radar_technical=8.0,
+                radar_aerial=9.0,
+                radar_mental=10.0,
+                radar_gk_shot_stopping=17.0,
+                radar_gk_physical=12.0,
+                radar_gk_speed=9.0,
+                radar_gk_mental=14.0,
+                radar_gk_command=16.0,
+                radar_gk_eccentricity=6.0,
+                radar_gk_aerial=15.0,
+                radar_gk_kicking=11.0,
+            )
+        )
+        self.db.commit()
+
+        detail = read_service.get_player_attribute_detail(self.db, 2001)
+
+        self.assertIsNotNone(detail)
+        self.assertEqual(
+            [metric.label for metric in detail.radar_profile],
+            ["拦截射门", "身体", "速度", "精神", "指挥防守", "意外性", "制空", "大脚"],
+        )
+        self.assertEqual(
+            [metric.value for metric in detail.radar_profile],
+            [17.0, 12.0, 9.0, 14.0, 16.0, 6.0, 15.0, 11.0],
+        )
 
     def test_legacy_admin_log_import_is_idempotent(self):
         log_path = Path(self.temp_dir.name) / "admin_operations.log"
