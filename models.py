@@ -215,6 +215,32 @@ class PlayerAttribute(Base):
     player_habits = Column(String)
 
 
+class PlayerReactionSummary(Base):
+    __tablename__ = "player_reaction_summaries"
+    __table_args__ = (
+        CheckConstraint("flowers >= 0", name="ck_player_reaction_summaries_flowers_non_negative"),
+        CheckConstraint("eggs >= 0", name="ck_player_reaction_summaries_eggs_non_negative"),
+    )
+
+    player_uid = Column(Integer, ForeignKey("player_attributes.uid", ondelete="CASCADE"), primary_key=True, index=True)
+    flowers = Column(Integer, nullable=False, default=0)
+    eggs = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, index=True)
+
+
+class PlayerReactionEvent(Base):
+    __tablename__ = "player_reaction_events"
+    __table_args__ = (
+        CheckConstraint("reaction_type IN ('flower', 'egg')", name="ck_player_reaction_events_type"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    player_uid = Column(Integer, ForeignKey("player_attributes.uid", ondelete="CASCADE"), index=True, nullable=False)
+    visitor_token = Column(String, index=True, nullable=False)
+    reaction_type = Column(String, index=True, nullable=False)
+    created_at = Column(DateTime, index=True, nullable=False)
+
+
 class AdminUser(Base):
     __tablename__ = "admin_users"
 

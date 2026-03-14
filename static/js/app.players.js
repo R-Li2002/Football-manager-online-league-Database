@@ -1,4 +1,4 @@
-function escapeQueryText(value) {
+﻿function escapeQueryText(value) {
     return escapeHtml(value ?? '');
 }
 
@@ -108,17 +108,13 @@ function renderPlayers(players) {
             ${isAdmin ? '<col class="detail-column">' : ''}
         </colgroup>
         <thead><tr><th class="numeric-column">UID</th><th>姓名</th><th class="numeric-column">年龄</th><th class="numeric-column">初始CA</th><th class="numeric-column">当前CA</th><th class="numeric-column">PA</th><th>位置</th><th>国籍</th><th>所属球队</th><th class="numeric-column">工资</th><th class="slot-column">名额</th>${isAdmin ? '<th class="detail-column">详情</th>' : ''}</tr></thead><tbody>${players.map(p => {
-            const growth = p.ca - p.initial_ca;
-            const growthClass = growth > 0 ? 'growth-positive' : (growth < 0 ? 'growth-negative' : '');
-            const growthText = growth !== 0 ? `<span class="growth-indicator ${growthClass}">(${growth > 0 ? '+' : ''}${growth})</span>` : '';
-
             const uidCell = isAdmin
                 ? `<td class="numeric-cell"><input type="number" class="editable-input" value="${p.uid}" onchange="updatePlayerUidConfirm(${p.uid}, this.value, this)" style="background:rgba(0,0,0,0.2);border:2px solid #e74c3c;padding:4px 6px;border-radius:4px;color:#fff;width:50px;font-weight:bold;" title="修改 UID 需要谨慎，请确认无误！"></td>`
                 : `<td class="numeric-cell">${p.uid}</td>`;
 
             const nameCell = isAdmin
-                ? `<td><input type="text" class="editable-input" value="${p.name.replace(/"/g, '&quot;')}" onchange="updatePlayerField(${p.uid}, 'name', this.value)" style="background:rgba(0,0,0,0.2);border:1px solid rgba(0,217,255,0.3);padding:4px 8px;border-radius:4px;color:#fff;width:100px;"></td>`
-                : `<td><span class="player-link" onclick="viewPlayerInDatabase(${p.uid})">${p.name}</span></td>`;
+                ? `<td class="name-cell"><input type="text" class="editable-input" value="${p.name.replace(/"/g, '&quot;')}" onchange="updatePlayerField(${p.uid}, 'name', this.value)" style="background:rgba(0,0,0,0.2);border:1px solid rgba(0,217,255,0.3);padding:4px 8px;border-radius:4px;color:#fff;width:118px;"></td>`
+                : `<td class="name-cell" title="${p.name.replace(/"/g, '&quot;')}"><span class="player-link roster-player-link" onclick="viewPlayerInDatabase(${p.uid})">${p.name}</span></td>`;
 
             const ageCell = isAdmin
                 ? `<td class="numeric-cell"><input type="number" class="editable-input" value="${p.age}" onchange="updatePlayerField(${p.uid}, 'age', this.value)" style="background:rgba(0,0,0,0.2);border:1px solid rgba(0,217,255,0.3);padding:4px 8px;border-radius:4px;color:#fff;width:50px;"></td>`
@@ -137,7 +133,7 @@ function renderPlayers(players) {
                 : '';
 
             const isSelected = Number(currentSelectedRosterUid) === Number(p.uid);
-            const mainRow = `<tr id="player-row-${p.uid}" class="${isSelected ? 'row-selected' : ''}" data-player-uid="${p.uid}" tabindex="0" onclick="selectRosterPlayer(${p.uid})" onkeydown="handleRosterRowKeydown(event, ${p.uid})">${uidCell}${nameCell}${ageCell}<td class="numeric-cell">${p.initial_ca}</td><td class="numeric-cell"><strong>${p.ca}</strong>${growthText}</td><td class="numeric-cell">${p.pa}</td>${positionCell}${nationalityCell}<td class="team-name-cell"><span class="player-link" onclick="viewTeamPlayers('${p.team_name.replace(/'/g, "\\'")}')">${p.team_name}</span></td><td class="numeric-cell">${p.wage.toFixed(3)}M</td><td class="slot-cell">${getSlotBadge(p.slot_type)}</td>${detailCell}</tr>`;
+            const mainRow = `<tr id="player-row-${p.uid}" class="${isSelected ? 'row-selected' : ''}" data-player-uid="${p.uid}" tabindex="0" onclick="selectRosterPlayer(${p.uid})" onkeydown="handleRosterRowKeydown(event, ${p.uid})">${uidCell}${nameCell}${ageCell}<td class="numeric-cell">${p.initial_ca}</td><td class="numeric-cell"><strong>${p.ca}</strong></td><td class="numeric-cell">${p.pa}</td>${positionCell}${nationalityCell}<td class="team-name-cell"><span class="player-link roster-player-link" onclick="viewTeamPlayers('${p.team_name.replace(/'/g, "\\'")}')">${p.team_name}</span></td><td class="numeric-cell">${p.wage.toFixed(3)}M</td><td class="slot-cell">${getSlotBadge(p.slot_type)}</td>${detailCell}</tr>`;
 
             const detailRow = isAdmin
                 ? `<tr id="player-detail-${p.uid}" class="player-detail-row" style="display:none;background:var(--bg-tertiary);"><td colspan="12"><div style="padding:15px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">

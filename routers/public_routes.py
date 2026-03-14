@@ -1,6 +1,8 @@
 from datetime import datetime
+import os
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Cookie, Depends, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -8,16 +10,37 @@ from schemas_read import (
     AttributeSearchResponse,
     HealthResponse,
     LeagueInfoResponse,
+    PlayerReactionActionResponse,
     PlayerAttributeDetailResponse,
     PlayerResponse,
     TeamResponse,
     WageDetailResponse,
 )
-from services import export_service, read_service
+from services import export_service, read_service, reaction_service
+
+REACTION_VISITOR_COOKIE_NAME = "heigo_reaction_visitor"
+REACTION_VISITOR_COOKIE_MAX_AGE_SECONDS = 31536000
+REACTION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"}
 
 
 def build_public_router(get_db):
     router = APIRouter()
+
+    def ensure_reaction_visitor_token(response: Response, visitor_token: str | None) -> str:
+        if visitor_token:
+            return visitor_token
+
+        generated_token = uuid4().hex
+        response.set_cookie(
+            key=REACTION_VISITOR_COOKIE_NAME,
+            value=generated_token,
+            httponly=False,
+            samesite="lax",
+            secure=REACTION_COOKIE_SECURE,
+            max_age=REACTION_VISITOR_COOKIE_MAX_AGE_SECONDS,
+            path="/",
+        )
+        return generated_token
 
     @router.get("/health", response_model=HealthResponse)
     async def health_check():
@@ -48,8 +71,28 @@ def build_public_router(get_db):
         return read_service.search_player_attributes(db, player_name)
 
     @router.get("/api/attributes/{uid}", response_model=PlayerAttributeDetailResponse | None)
-    def get_player_attribute_detail(uid: int, db: Session = Depends(get_db)):
-        return read_service.get_player_attribute_detail(db, uid)
+    def get_player_attribute_detail(
+        uid: int,
+        visitor_token: str | None = Cookie(None, alias=REACTION_VISITOR_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        return read_service.get_player_attribute_detail(db, uid, visitor_token=visitor_token)
+
+    @router.post("/api/attributes/{uid}/reactions/{reaction_type}", response_model=PlayerReactionActionResponse)
+    def react_to_player(
+        uid: int,
+        reaction_type: str,
+        response: Response,
+        visitor_token: str | None = Cookie(None, alias=REACTION_VISITOR_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        stable_visitor_token = ensure_reaction_visitor_token(response, visitor_token)
+        return reaction_service.record_player_reaction(
+            db,
+            player_uid=uid,
+            visitor_token=stable_visitor_token,
+            reaction_type=reaction_type,
+        )
 
     @router.get("/api/export/excel")
     def export_excel(db: Session = Depends(get_db)):

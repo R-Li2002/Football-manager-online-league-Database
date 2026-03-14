@@ -154,6 +154,21 @@ class PlayerRadarMetricResponse(BaseModel):
     value: float
 
 
+class PlayerReactionSummaryResponse(BaseModel):
+    flowers: int = 0
+    eggs: int = 0
+    can_react: bool = True
+    cooldown_seconds: int = 0
+    next_available_at: Optional[datetime] = None
+
+
+class PlayerReactionActionResponse(BaseModel):
+    accepted: bool
+    reaction_type: Literal["flower", "egg"]
+    message: str
+    summary: PlayerReactionSummaryResponse
+
+
 class PlayerAttributeDetailResponse(BaseModel):
     uid: int
     name: str
@@ -256,6 +271,7 @@ class PlayerAttributeDetailResponse(BaseModel):
     pos_st: int
     top_positions: list[PositionScoreResponse]
     radar_profile: list[PlayerRadarMetricResponse]
+    reaction_summary: PlayerReactionSummaryResponse = Field(default_factory=PlayerReactionSummaryResponse)
 
 
 class WageDetailResponse(BaseModel):

@@ -43,6 +43,7 @@ from services.league_service import (
     collect_team_stat_overlays,
 )
 from services.operation_audit_service import export_operation_audits_csv
+from services.reaction_service import build_player_reaction_summary
 
 LEVEL_ORDER = {"超级": 1, "甲级": 2, "乙级": 3}
 VISIBLE_LEVEL = "隐藏"
@@ -182,7 +183,11 @@ def search_player_attributes(db: Session, player_name: str) -> list[AttributeSea
     ]
 
 
-def get_player_attribute_detail(db: Session, uid: int) -> PlayerAttributeDetailResponse | None:
+def get_player_attribute_detail(
+    db: Session,
+    uid: int,
+    visitor_token: str | None = None,
+) -> PlayerAttributeDetailResponse | None:
     attr = get_player_attribute_by_uid(db, uid)
     if not attr:
         return None
@@ -338,6 +343,7 @@ def get_player_attribute_detail(db: Session, uid: int) -> PlayerAttributeDetailR
         pos_st=attr.pos_st,
         top_positions=top_positions,
         radar_profile=radar_profile,
+        reaction_summary=build_player_reaction_summary(db, uid, visitor_token=visitor_token),
     )
 
 

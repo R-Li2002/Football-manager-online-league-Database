@@ -1,10 +1,10 @@
-
-<!DOCTYPE html>
+﻿﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Heigo联赛数据库</title>
+    <title>HEIGO 联赛数据台</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/static/app.css">
 </head>
 <body class="light-mode">
@@ -20,21 +20,21 @@
                     </div>
                 </div>
                 <div class="shell-actions">
-                    <button class="btn btn-success shell-button" onclick="exportData()">📥 导出 Excel</button>
+                    <button class="btn btn-success shell-button" onclick="exportData()">导出 Excel</button>
                     <button class="btn btn-secondary shell-button theme-toggle" onclick="toggleTheme()">
                         <span id="themeIcon">🌙</span>
-                        <span id="themeText">切换夜晚</span>
+                        <span id="themeText">切换夜间</span>
                     </button>
                 </div>
             </div>
         </header>
-        
+
         <div class="nav-tabs glass-card">
             <button class="nav-tab active" data-tab="home" onclick="showTab('home', this)">⌂ 首页</button>
-            <button class="nav-tab" data-tab="overview" onclick="showTab('overview', this)">📊 联赛概览</button>
-            <button class="nav-tab" data-tab="players" onclick="showTab('players', this)">👥 联赛名单</button>
-            <button class="nav-tab" data-tab="database" onclick="showTab('database', this)">🔍 球员库</button>
-            <button class="nav-tab hidden-tab" id="adminTab" data-tab="admin" onclick="showTab('admin', this)">🔐 维护中心</button>
+            <button class="nav-tab" data-tab="overview" onclick="showTab('overview', this)">联赛概览</button>
+            <button class="nav-tab" data-tab="players" onclick="showTab('players', this)">联赛名单</button>
+            <button class="nav-tab" data-tab="database" onclick="showTab('database', this)">球员库</button>
+            <button class="nav-tab hidden-tab" id="adminTab" data-tab="admin" onclick="showTab('admin', this)">维护中心</button>
         </div>
 
         <div id="home" class="tab-content active">
@@ -42,8 +42,8 @@
                 <div class="home-hero glass-card">
                     <div class="home-hero-copy">
                         <span class="hero-kicker">Player Database Search</span>
-                        <h2>直接搜索球员库</h2>
-                        <p>首页只负责全库搜索。精确命中会直接进入球员详情；模糊搜索会先给出一组紧凑结果，帮助你快速继续查看。</p>
+                        <h2>FM球员检索</h2>
+                        <p>精确搜索直接进入球员详情，模糊搜索提供一组相关球员列表，帮助你快速继续查看。</p>
                     </div>
                     <div class="home-search-shell">
                         <label class="home-search-label" for="heroPlayerSearch">搜索姓名或 UID</label>
@@ -52,7 +52,7 @@
                             <button class="btn btn-primary home-search-button" onclick="runHeroSearch()">搜索球员库</button>
                         </div>
                         <div class="home-search-meta">
-                            <span class="hero-badge"><strong id="heroTeamCount">-</strong> 支可见球队</span>
+                            <span class="hero-badge"><strong id="heroTeamCount">-</strong> 支联赛球队</span>
                             <span class="hero-badge"><strong id="heroPlayerCount">-</strong> 名联赛球员</span>
                             <span class="hero-badge" id="heroModeBadge">公开查询模式</span>
                         </div>
@@ -79,38 +79,39 @@
                 </div>
             </section>
         </div>
-        
+
         <div id="overview" class="tab-content">
             <div class="overview-section">
-                <h2>📋 基本信息</h2>
+                <h2>基本信息</h2>
                 <div class="info-grid" id="basicInfo"><div class="loading">加载中...</div></div>
             </div>
             <div class="overview-section">
-                <h2>📈 统计数据</h2>
+                <h2>统计数据</h2>
                 <div class="info-grid" id="statsInfo"><div class="loading">加载中...</div></div>
             </div>
             <div class="overview-section">
-                <h2>💰 工资系数</h2>
+                <h2>工资系数</h2>
                 <div class="info-grid" id="wageInfo"><div class="loading">加载中...</div></div>
             </div>
             <div class="overview-section">
-                <h2>🛰️ 数据更新状态</h2>
+                <h2>数据更新状态</h2>
                 <div class="info-grid" id="overviewUpdateStatus"><div class="loading">加载中...</div></div>
             </div>
             <div class="overview-section">
-                <h2>🧾 最近维护摘要</h2>
+                <h2>最近维护摘要</h2>
                 <div class="info-grid" id="overviewOpsSummary"><div class="loading">加载中...</div></div>
             </div>
+
             <div class="teams-table">
                 <div class="table-header-row">
-                    <h2 class="table-title">🏆 球队列表</h2>
+                    <h2 class="table-title">球队列表</h2>
                     <div class="sort-controls">
                         <select class="sort-select" id="teamSortField" onchange="sortTeams()">
                             <option value="">排序方式</option>
                             <option value="final_wage">按工资</option>
                             <option value="total_value">按身价</option>
-                            <option value="avg_ca">按平均CA</option>
-                            <option value="avg_pa">按平均PA</option>
+                            <option value="avg_ca">按平均 CA</option>
+                            <option value="avg_pa">按平均 PA</option>
                             <option value="team_size">按人数</option>
                         </select>
                         <select class="sort-select" id="teamSortOrder" onchange="sortTeams()">
@@ -121,11 +122,12 @@
                 </div>
                 <div id="teamsTable"><div class="loading">加载中...</div></div>
             </div>
+
             <div class="team-debug-panel" id="teamStatDebugPanel">
                 <div class="team-debug-header">
                     <div class="team-debug-title">
-                        <h3>🛠️ 统计来源调试视图</h3>
-                        <p>仅管理员可见。这里会把球队统计字段区分为持久缓存和实时聚合，并展示当前选中球队的字段来源与示例值，方便前后端和运维排查。</p>
+                        <h3>统计来源调试视图</h3>
+                        <p>仅管理员可见。这里会展示球队统计字段的缓存来源与实时来源，方便排查数据状态。</p>
                     </div>
                     <div class="form-group team-debug-select">
                         <label for="teamStatDebugSelect">示例球队</label>
@@ -135,15 +137,16 @@
                 <div id="teamStatDebugContent"><div class="loading">等待管理员登录...</div></div>
             </div>
         </div>
-        
+
         <div id="players" class="tab-content">
             <div class="players-workspace">
                 <aside class="player-filter-panel surface-card">
                     <div class="panel-caption">
                         <span class="panel-kicker">League Roster</span>
                         <h2>按球队和姓名筛选联赛名单</h2>
-                        <p>这里专门处理联赛内名单浏览。全库搜索放在首页中心入口，避免和联赛筛选混在一起。</p>
+                        <p>这里专门处理联赛内球员浏览，避免和全库搜索混在一起。</p>
                     </div>
+
                     <div class="form-group">
                         <label for="teamSelect">选择球队</label>
                         <select id="teamSelect"><option value="">-- 全部球队 --</option></select>
@@ -156,23 +159,26 @@
                         <button class="btn btn-primary" onclick="searchPlayers()">查询</button>
                         <button class="btn btn-secondary" onclick="resetPlayers()">重置</button>
                     </div>
-                    <div class="compact-hint">如果你想查全量属性档案，直接回首页用中心搜索，或者切到“球员库”继续搜。</div>
+                    <div class="compact-hint">如需全库属性档案，请回到首页中心搜索，或切到“球员库”继续查找。</div>
                 </aside>
+
                 <section class="player-results-panel">
                     <div class="metric-strip">
                         <div class="stat-card"><div class="number" id="teamCount">-</div><div class="label">球队数量</div></div>
                         <div class="stat-card"><div class="number" id="playerCount">-</div><div class="label">球员总数</div></div>
                         <div class="stat-card"><div class="number" id="displayCount">-</div><div class="label">当前显示</div></div>
                     </div>
+
                     <div class="query-status-bar surface-card">
                         <div class="query-status-copy">
                             <h3 id="playerQueryTitle">当前正在查看全部联赛名单</h3>
-                            <p id="playerQueryMeta">可以按球队、姓名和排序方式快速缩小范围。</p>
+                            <p id="playerQueryMeta">可按球队、姓名和排序方式快速缩小范围。</p>
                         </div>
                         <div class="query-chip-row" id="playerQueryChips">
                             <span class="query-chip is-muted">未应用筛选</span>
                         </div>
                     </div>
+
                     <div class="table-container surface-card">
                         <div class="table-header-row">
                             <h2 id="tableTitle" class="table-title">全部联赛名单</h2>
@@ -180,9 +186,9 @@
                                 <select class="sort-select" id="playerSortField" onchange="sortPlayers()">
                                     <option value="">排序方式</option>
                                     <option value="age">按年龄</option>
-                                    <option value="initial_ca">按初始CA</option>
-                                    <option value="ca">按当前CA</option>
-                                    <option value="pa">按PA</option>
+                                    <option value="initial_ca">按初始 CA</option>
+                                    <option value="ca">按当前 CA</option>
+                                    <option value="pa">按 PA</option>
                                     <option value="wage">按工资</option>
                                 </select>
                                 <select class="sort-select" id="playerSortOrder" onchange="sortPlayers()">
@@ -196,11 +202,12 @@
                 </section>
             </div>
         </div>
-        
+
         <div id="database" class="tab-content">
             <div class="warning-banner">
-                ⚠️ <strong>提示：</strong>2600版本数据已过时，仅供参考！当前数据可能不是最新版本。
+                ⚠️ <strong>提示：</strong>2600 版本数据已过时，仅供参考。当前数据可能不是最新版本。
             </div>
+
             <div class="list-view active" id="dbListView">
                 <div class="search-section">
                     <div class="search-controls">
@@ -211,6 +218,7 @@
                         <button class="btn btn-primary" onclick="searchDatabase()">搜索</button>
                     </div>
                 </div>
+
                 <div class="table-container">
                     <div class="table-header-row">
                         <h2 id="dbTableTitle" class="table-title">球员库搜索结果</h2>
@@ -218,8 +226,8 @@
                             <select class="sort-select" id="dbSortField" onchange="sortDbPlayers()">
                                 <option value="">排序方式</option>
                                 <option value="age">按年龄</option>
-                                <option value="ca">按CA</option>
-                                <option value="pa">按PA</option>
+                                <option value="ca">按 CA</option>
+                                <option value="pa">按 PA</option>
                             </select>
                             <select class="sort-select" id="dbSortOrder" onchange="sortDbPlayers()">
                                 <option value="desc">降序</option>
@@ -230,6 +238,7 @@
                     <div id="dbPlayersTable"><div class="no-data">请输入球员姓名或 UID 进行搜索</div></div>
                 </div>
             </div>
+
             <div class="detail-view" id="dbDetailView">
                 <div class="detail-toolbar">
                     <button class="btn btn-back" onclick="backToList()">← 返回列表</button>
@@ -238,10 +247,10 @@
                 <div id="playerDetailContent"></div>
             </div>
         </div>
-        
+
         <div id="admin" class="tab-content">
             <div id="adminLogin" class="admin-section">
-                <h3>🔐 管理员验证</h3>
+                <h3>管理员验证</h3>
                 <div class="login-form">
                     <div class="form-group">
                         <label>用户名</label>
@@ -254,32 +263,32 @@
                     <button class="btn btn-primary" onclick="adminLogin()">验证</button>
                 </div>
             </div>
-            
+
             <div id="adminPanel" style="display:none;">
                 <div class="admin-shell">
                     <div class="admin-hero glass-card">
                         <div>
                             <span class="panel-kicker">League Operations</span>
-                            <h3>联赛维护中心</h3>
-                            <p>这里集中保留交易、批量处理、正式导入、缓存重算和运维审计。玩家主查询流程留在前台，管理员高影响动作统一收口在这里。</p>
+                            <h3>维护中心</h3>
+                            <p>正式导入、批量维护、运维审计和系统状态都集中在这里处理，避免干扰前台查询流程。</p>
                         </div>
                         <div class="admin-hero-actions">
-                            <button class="btn btn-secondary" onclick="showTab('players')">返回查询</button>
+                            <button class="btn btn-secondary" onclick="showTab('players')">返回名单页</button>
                             <button class="btn btn-secondary" onclick="adminLogout()">退出登录</button>
                         </div>
                     </div>
 
                     <div class="admin-cluster admin-section">
                         <div class="admin-cluster-head">
-                            <h3>单项交易与变更</h3>
-                            <p>面向日常运营的即时动作，适合处理个别球员的转会、解约和消费。</p>
+                            <h3>单人操作</h3>
+                            <p>处理球员交易、解约和 CA/PA 消费，适合日常小批量维护。</p>
                         </div>
                         <div class="admin-cluster-grid">
                             <div class="admin-action-card">
-                                <h4>单个交易</h4>
+                                <h4>球员交易</h4>
                                 <div class="form-group">
-                                    <label>球员UID</label>
-                                    <input type="number" id="transferUid" placeholder="输入UID">
+                                    <label>球员 UID</label>
+                                    <input type="number" id="transferUid" placeholder="输入球员 UID">
                                 </div>
                                 <div class="form-group">
                                     <label>目标球队</label>
@@ -287,39 +296,39 @@
                                 </div>
                                 <div class="form-group">
                                     <label>备注</label>
-                                    <input type="text" id="transferNotes" placeholder="交易备注">
+                                    <input type="text" id="transferNotes" placeholder="可选备注">
                                 </div>
                                 <button class="btn btn-primary" onclick="transferPlayer()">执行交易</button>
                             </div>
 
                             <div class="admin-action-card">
-                                <h4>单个解约</h4>
+                                <h4>球员解约</h4>
                                 <div class="form-group">
-                                    <label>球员UID</label>
-                                    <input type="number" id="releaseUid" placeholder="输入UID">
+                                    <label>球员 UID</label>
+                                    <input type="number" id="releaseUid" placeholder="输入球员 UID">
                                 </div>
                                 <div class="form-group">
                                     <label>备注</label>
-                                    <input type="text" id="releaseNotes" placeholder="解约原因">
+                                    <input type="text" id="releaseNotes" placeholder="填写解约原因">
                                 </div>
-                                <button class="btn btn-danger" onclick="releasePlayer()">解约球员</button>
+                                <button class="btn btn-danger" onclick="releasePlayer()">解约到大海</button>
                             </div>
 
                             <div class="admin-action-card">
-                                <h4>单个消费</h4>
+                                <h4>球员消费</h4>
                                 <div class="form-group">
-                                    <label>球员UID</label>
-                                    <input type="number" id="consumeUid" placeholder="输入UID">
+                                    <label>球员 UID</label>
+                                    <input type="number" id="consumeUid" placeholder="输入球员 UID">
                                 </div>
                                 <div class="form-group">
-                                    <label>CA变化</label>
-                                    <input type="number" id="consumeCa" placeholder="正数增加，负数减少">
+                                    <label>CA 变化</label>
+                                    <input type="number" id="consumeCa" placeholder="例如 -3 或 5">
                                 </div>
                                 <div class="form-group">
-                                    <label>PA变化</label>
-                                    <input type="number" id="consumePa" placeholder="正数增加，负数减少">
+                                    <label>PA 变化</label>
+                                    <input type="number" id="consumePa" placeholder="例如 0 或 2">
                                 </div>
-                                <button class="btn btn-warning" onclick="consumePlayer()">确认消费</button>
+                                <button class="btn btn-warning" onclick="consumePlayer()">确认调整</button>
                             </div>
                         </div>
                     </div>
@@ -327,36 +336,36 @@
                     <div class="admin-cluster admin-section">
                         <div class="admin-cluster-head">
                             <h3>批量操作</h3>
-                            <p>适合赛季切换或集中维护时使用，建议在执行前先检查输入格式和目标球队。</p>
+                            <p>按行粘贴批量数据执行维护，适合赛季切换前后的集中处理。</p>
                         </div>
                         <div class="admin-cluster-grid">
                             <div class="admin-action-card">
                                 <h4>批量交易</h4>
                                 <div class="form-group">
-                                    <label>数据格式：UID,目标球队,备注(可选)</label>
-                                    <textarea id="batchTransferData" placeholder="每行一条记录，例如：&#10;12345,超级球队A,转会&#10;12346,甲级球队B"></textarea>
+                                    <label>格式：UID,目标球队,备注（可选）</label>
+                                    <textarea id="batchTransferData" placeholder="每行一条，例如：&#10;12345,球队A,转会补录&#10;12346,球队B"></textarea>
                                 </div>
-                                <button class="btn btn-primary" onclick="batchTransfer()">批量执行</button>
+                                <button class="btn btn-primary" onclick="batchTransfer()">执行批量交易</button>
                                 <div id="batchTransferResult"></div>
                             </div>
 
                             <div class="admin-action-card">
                                 <h4>批量解约</h4>
                                 <div class="form-group">
-                                    <label>数据格式：UID,备注(可选)</label>
-                                    <textarea id="batchReleaseData" placeholder="每行一条记录，例如：&#10;12345,表现不佳&#10;12346,"></textarea>
+                                    <label>格式：UID,备注（可选）</label>
+                                    <textarea id="batchReleaseData" placeholder="每行一条，例如：&#10;12345,工资释放&#10;12346"></textarea>
                                 </div>
-                                <button class="btn btn-danger" onclick="batchRelease()">批量解约</button>
+                                <button class="btn btn-danger" onclick="batchRelease()">执行批量解约</button>
                                 <div id="batchReleaseResult"></div>
                             </div>
 
                             <div class="admin-action-card">
                                 <h4>批量消费</h4>
                                 <div class="form-group">
-                                    <label>数据格式：UID,CA变化,PA变化,备注(可选)</label>
-                                    <textarea id="batchConsumeData" placeholder="每行一条记录，例如：&#10;12345,5,0,成长&#10;12346,-3,0,伤病"></textarea>
+                                    <label>格式：UID,CA变化,PA变化,备注（可选）</label>
+                                    <textarea id="batchConsumeData" placeholder="每行一条，例如：&#10;12345,5,0,技能培训&#10;12346,-3,0,伤病惩罚"></textarea>
                                 </div>
-                                <button class="btn btn-warning" onclick="batchConsume()">批量消费</button>
+                                <button class="btn btn-warning" onclick="batchConsume()">执行批量消费</button>
                                 <div id="batchConsumeResult"></div>
                             </div>
                         </div>
@@ -366,19 +375,19 @@
                         <div class="admin-side-stack">
                             <div class="admin-section">
                                 <div class="maintenance-header">
-                                    <h3>系统维护</h3>
-                                    <p>这里放全联赛级别的动作。高影响操作使用前建议先确认影响范围，再执行。</p>
+                                    <h3>正式导入</h3>
+                                    <p>高影响操作。执行前确认数据来源、影响范围和当前联赛窗口。</p>
                                 </div>
                                 <div class="maintenance-grid">
                                     <div class="admin-action-card maintenance-card warning">
                                         <div class="maintenance-badge warning">高影响</div>
                                         <h4>正式导入最新联赛数据</h4>
-                                        <div class="maintenance-copy">按严格模式读取当前目录下最新的 HEIGO Excel 和球员属性 CSV，先自动备份数据库，再正式写入联赛规则、球队、球员和属性库。</div>
+                                        <div class="maintenance-copy">按严格模式读取最新 HEIGO Excel 和球员属性 CSV，自动备份当前数据库后再写入联赛规则、球队、球员和属性库。</div>
                                         <div class="maintenance-impact">
-                                            <strong>会影响：</strong>联赛规则、球队名单、球员归属、属性库，以及导入后的球队缓存。若发现历史残留且已无引用的旧球队，也会一并安全清理。
+                                            <strong>影响范围：</strong>联赛规则、球队名单、球员属性、缓存摘要和部分维护日志都会同步更新。
                                         </div>
                                         <button class="btn btn-danger" onclick="runFormalImport()">执行正式导入</button>
-                                        <div class="maintenance-note">执行后会刷新概览、球员列表、球队列表、调试视图和日志，并返回本次备份路径与导入摘要。</div>
+                                        <div class="maintenance-note">执行后会刷新概览、名单页和审计摘要。</div>
                                     </div>
                                 </div>
                             </div>
@@ -386,45 +395,45 @@
                             <div class="admin-section">
                                 <h3>正式导入摘要</h3>
                                 <div id="formalImportSummaryCard" class="import-summary-card">
-                                    <div class="import-summary-placeholder">本次会话还没有执行正式导入。执行一次“正式导入最新联赛数据”后，这里会直接显示新增、更新、未变和清理结果。</div>
+                                    <div class="import-summary-placeholder">本次会话还没有执行正式导入。执行后，这里会显示新增、更新、未变和清理摘要。</div>
                                 </div>
                             </div>
                         </div>
 
                         <div class="admin-side-stack">
                             <div class="admin-section">
-                                <h3>Schema 启动状态</h3>
+                                <h3>Schema 状态</h3>
                                 <div id="schemaBootstrapStatusCard" class="import-summary-card bootstrap-status-card">
-                                    <div class="import-summary-placeholder">管理员面板加载后，这里会显示最近一次数据库 schema 启动状态和最近几条 bootstrap 日志。</div>
+                                    <div class="import-summary-placeholder">这里会显示最近一次数据库 schema 启动状态和 bootstrap 日志。</div>
                                 </div>
                             </div>
 
                             <div class="admin-section">
                                 <div class="maintenance-header">
-                                    <h3>系统重算</h3>
-                                    <p>这两个动作都会影响全联赛数据，但影响范围不同。我们把它们单独放出来，方便在执行前先看清楚作用，再确认触发。</p>
+                                    <h3>系统维护</h3>
+                                    <p>这些操作会影响缓存或薪资结果，执行前先确认是否需要全量刷新。</p>
                                 </div>
                                 <div class="maintenance-grid">
                                     <div class="admin-action-card maintenance-card warning">
                                         <div class="maintenance-badge warning">高影响</div>
                                         <h4>全量工资重算</h4>
-                                        <div class="maintenance-copy">重新计算所有球员的工资和名额，再同步刷新全部可见球队的工资/阵容缓存。适合联赛规则、成长年龄上限、工资算法变化后使用。</div>
+                                        <div class="maintenance-copy">按当前工资规则重算所有可见球员的工资、名额和球队工资缓存，适合规则变更后统一刷新。</div>
                                         <div class="maintenance-impact">
-                                            <strong>会影响：</strong>球员 <code>wage</code>、<code>slot_type</code>，以及球队的 <code>wage</code>、<code>final_wage</code>、阵容缓存。
+                                            <strong>影响范围：</strong>球员 <code>wage</code>、<code>slot_type</code> 与球队侧的 <code>wage</code>、<code>final_wage</code> 会同步重建。
                                         </div>
                                         <button class="btn btn-warning" onclick="recalculateWages()">执行工资重算</button>
-                                        <div class="maintenance-note">执行后会刷新球员列表、球队列表、调试视图和操作日志。</div>
+                                        <div class="maintenance-note">执行后会刷新名单页、球队页和运维日志。</div>
                                     </div>
 
                                     <div class="admin-action-card maintenance-card safe">
                                         <div class="maintenance-badge safe">低风险</div>
-                                        <h4>安全全量重算球队缓存</h4>
-                                        <div class="maintenance-copy">只重算所有可见球队的阵容/工资缓存，并回填“最近一次刷新方式、时间、范围”。适合给老数据补齐缓存元数据，或做一次全库对账。</div>
+                                        <h4>全量球队缓存重算</h4>
+                                        <div class="maintenance-copy">只重建可见球队的缓存统计，适合修复总览页、球队页和名额摘要的展示数据。</div>
                                         <div class="maintenance-impact">
-                                            <strong>不会影响：</strong>球员 CA/PA，也不会重新跑全员工资公式；主要更新球队缓存和刷新元数据。
+                                            <strong>影响范围：</strong>球队 CA/PA、人数、名额和展示摘要会更新，不改动球员基础数据。
                                         </div>
                                         <button class="btn btn-secondary" onclick="rebuildTeamStatCaches()">执行缓存重算</button>
-                                        <div class="maintenance-note">执行后调试视图里的 <code>unknown</code> 会被回填成 <code>full_recalc</code>。</div>
+                                        <div class="maintenance-note">执行结果会记录到审计列表，类别为 <code>full_recalc</code>。</div>
                                     </div>
                                 </div>
                             </div>
@@ -434,29 +443,29 @@
                     <div class="admin-cluster admin-section">
                         <div class="maintenance-header">
                             <h3>运维审计</h3>
-                            <p>这里展示已经沉淀到后端数据库的管理员动作、正式导入和 schema 启动记录。可以按类别筛选、导出 CSV，也可以随时查看最近一次正式导入的完整明细。</p>
+                            <p>查看已落库的维护记录、正式导入结果和 schema 事件，支持筛选与导出。</p>
                         </div>
                         <div class="operations-audit-toolbar">
                             <div class="form-group">
-                                <label for="operationsAuditCategoryFilter">审计类别</label>
+                                <label for="operationsAuditCategoryFilter">分类筛选</label>
                                 <select id="operationsAuditCategoryFilter" onchange="handleOperationAuditFilterChange()">
-                                    <option value="">全部类别</option>
+                                    <option value="">全部分类</option>
                                     <option value="auth">认证</option>
-                                    <option value="transfer">转会/解约</option>
-                                    <option value="roster">消费/资料修改</option>
+                                    <option value="transfer">交易 / 解约</option>
+                                    <option value="roster">名单 / 资料修改</option>
                                     <option value="maintenance">系统维护</option>
                                     <option value="import">正式导入</option>
                                     <option value="schema_bootstrap">Schema 启动</option>
                                 </select>
                             </div>
                             <div class="operations-audit-actions">
-                                <button class="btn btn-secondary" onclick="loadOperationsAudit()">刷新审计</button>
-                                <button class="btn btn-secondary" onclick="exportOperationAudits()">导出审计 CSV</button>
-                                <button class="btn btn-secondary" onclick="showLatestFormalImportDetails()">查看最近一次正式导入明细</button>
+                                <button class="btn btn-secondary" onclick="loadOperationsAudit()">刷新列表</button>
+                                <button class="btn btn-secondary" onclick="exportOperationAudits()">导出 CSV</button>
+                                <button class="btn btn-secondary" onclick="showLatestFormalImportDetails()">查看最近导入明细</button>
                             </div>
                         </div>
                         <div id="operationsAuditCard" class="import-summary-card">
-                            <div class="import-summary-placeholder">管理员面板加载后，这里会显示最近的 schema 启动、正式导入和维护动作结果。</div>
+                            <div class="import-summary-placeholder">这里会显示最近的正式导入、维护动作和 schema 事件。</div>
                         </div>
                     </div>
 
@@ -467,37 +476,54 @@
                         </div>
 
                         <div class="admin-section">
-                            <h3>操作日志文件</h3>
+                            <h3>日志文件</h3>
                             <div id="logFileContent" class="log-file-content">加载中...</div>
                         </div>
 
                         <div class="admin-section">
-                            <h3>数据库操作记录</h3>
+                            <h3>操作日志</h3>
                             <div class="log-table" id="logsTable"><div class="loading">加载中...</div></div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-        
+
         <footer>
-            Created by 大直塞
+            Created by ❤大直塞❤
         </footer>
     </div>
     
     <div class="modal" id="resultModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="modalTitle">操作结果</h3>
+                <h3 id="modalTitle"></h3>
                 <button class="modal-close" onclick="closeModal()">&times;</button>
             </div>
             <div class="modal-body" id="modalBody"></div>
         </div>
     </div>
+
+    <aside id="compareDock" class="compare-dock" aria-label="球员对比夹"></aside>
+
+    <div class="comparison-overlay" id="comparisonOverlay" aria-hidden="true">
+        <div class="comparison-shell" role="dialog" aria-modal="true" aria-labelledby="comparisonTitle">
+            <div class="comparison-header">
+                <div>
+                    <span class="panel-kicker">Player Compare</span>
+                    <h3 id="comparisonTitle">球员属性对比</h3>
+                </div>
+                <button class="btn btn-secondary comparison-close" type="button" onclick="closeComparisonWorkspace()">关闭</button>
+            </div>
+            <div id="comparisonContent" class="comparison-content"></div>
+        </div>
+    </div>
     
+    <script src="/static/js/app.core.js"></script>
     <script src="/static/js/app.home.js"></script>
     <script src="/static/js/app.overview.js"></script>
     <script src="/static/js/app.players.js"></script>
+    <script src="/static/vendor/html-to-image.js"></script>
     <script src="/static/js/app.database.js"></script>
     <script src="/static/js/app.admin.js"></script>
     <script src="/static/app.js"></script>

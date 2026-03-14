@@ -1,4 +1,4 @@
-let pendingUndoLogId = null;
+﻿let pendingUndoLogId = null;
 
 function showAdminTab() {
     document.getElementById('adminTab').classList.remove('hidden-tab');

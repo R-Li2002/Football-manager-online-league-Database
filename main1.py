@@ -144,6 +144,7 @@ def calculate_team_final_wage(team, players):
 def run_local_server():
     import uvicorn
 
+    os.environ.setdefault("ALLOW_MANUAL_RUNTIME_FALLBACK", "1")
     uvicorn.run("main1:app", host=LOCAL_DEV_HOST, port=LOCAL_DEV_PORT, reload=False)
 
 

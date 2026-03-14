@@ -61,6 +61,10 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+def manual_runtime_fallback_enabled() -> bool:
+    return os.environ.get("ALLOW_MANUAL_RUNTIME_FALLBACK", "false").lower() in {"1", "true", "yes", "on"}
+
+
 def _describe_engine(active_engine) -> str:
     url = active_engine.url
     if url.drivername.startswith("sqlite"):
@@ -130,6 +134,15 @@ def init_database(target_engine=None) -> None:
 
     if migrated:
         record_schema_bootstrap_event("alembic_upgrade_head", active_engine, "startup")
+        return
+
+    if manual_runtime_fallback_enabled():
+        record_schema_bootstrap_event(
+            "manual_runtime_fallback_enabled",
+            active_engine,
+            "startup allowed by ALLOW_MANUAL_RUNTIME_FALLBACK",
+        )
+        run_manual_runtime_fallback(active_engine)
         return
 
     record_schema_bootstrap_event(

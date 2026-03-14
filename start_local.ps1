@@ -8,8 +8,10 @@ param(
 $OutputEncoding = [Console]::OutputEncoding
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
+$env:ALLOW_MANUAL_RUNTIME_FALLBACK = "1"
 
 $env:LOCAL_HOST = $Host
 $env:LOCAL_PORT = [string]$Port
 
-python D:\HEIGOOA\main1.py
+$pythonPath = if (Test-Path 'D:\HEIGOOA\.venv\Scripts\python.exe') { 'D:\HEIGOOA\.venv\Scripts\python.exe' } else { 'python' }
+& $pythonPath D:\HEIGOOA\main1.py

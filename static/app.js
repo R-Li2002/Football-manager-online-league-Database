@@ -1,56 +1,10 @@
-let teams = [];
-let allPlayers = [];
-let leagueInfo = [];
-let currentPlayers = [];
-let currentDbPlayers = [];
-let lastFormalImportSummary = null;
-let lastSchemaBootstrapStatus = null;
-let recentOperationAudits = [];
-let currentOperationAuditCategory = '';
-let isAdmin = false;
-let isDarkMode = false;
-let currentDetailPlayer = null;
-let currentGrowthPreviewStep = 0;
-let currentSelectedRosterUid = null;
-let currentRosterSort = {field: '', order: 'desc'};
-let dbDetailReturnState = {tab: 'database'};
-const AppModules = {
+﻿const AppModules = {
     home: {onEnter: () => { if (typeof updateHeroBadgeState === 'function') updateHeroBadgeState(); }},
     overview: {onEnter: () => { if (typeof renderOverview === 'function') renderOverview(); }},
     players: {onEnter: () => { if (typeof renderPlayerQueryState === 'function') renderPlayerQueryState(); }},
-    database: {onEnter: () => {}},
+    database: {onEnter: () => { if (typeof renderCompareDock === 'function') renderCompareDock(); }},
     admin: {onEnter: () => { if (isAdmin && typeof renderOperationsAuditCard === 'function') renderOperationsAuditCard(); }},
 };
-
-function syncThemeToggleState() {
-    const themeIcon = document.getElementById('themeIcon');
-    const themeText = document.getElementById('themeText');
-    if (!themeIcon || !themeText) return;
-    if (isDarkMode) {
-        themeIcon.textContent = '☀️';
-        themeText.textContent = '切换白天';
-    } else {
-        themeIcon.textContent = '🌙';
-        themeText.textContent = '切换夜晚';
-    }
-}
-
-async function fetchDatabaseSearchResults(name) {
-    const res = await fetch(`/api/attributes/search/${encodeURIComponent(name)}`);
-    return await res.json();
-}
-
-function toggleTheme() {
-    isDarkMode = !isDarkMode;
-    document.body.classList.toggle('light-mode', !isDarkMode);
-    localStorage.setItem('themeMode', isDarkMode ? 'dark' : 'light');
-    updateThemeStyles();
-}
-
-function updateThemeStyles() {
-    document.body.classList.toggle('light-mode', !isDarkMode);
-    syncThemeToggleState();
-}
 
 async function init() {
     const savedTheme = localStorage.getItem('themeMode');
@@ -77,6 +31,9 @@ async function init() {
         populateTeamSelect();
         updateStats();
         renderPlayers(currentPlayers);
+        if (typeof renderCompareDock === 'function') {
+            renderCompareDock();
+        }
 
         if (isAdmin) {
             showAdminTab();
@@ -111,15 +68,6 @@ async function refreshLeagueInfoDataset() {
     renderOverview();
 }
 
-function escapeHtml(value) {
-    return String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
-
 function showTab(tabName, triggerElement = null) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
@@ -133,6 +81,9 @@ function showTab(tabName, triggerElement = null) {
     if (module && typeof module.onEnter === 'function') {
         module.onEnter();
     }
+    if (typeof renderCompareDock === 'function') {
+        renderCompareDock();
+    }
 }
 
 function updateStats() {
@@ -143,16 +94,6 @@ function updateStats() {
     if (typeof updateHeroBadgeState === 'function') {
         updateHeroBadgeState();
     }
-}
-
-function showModal(title, body) {
-    document.getElementById('modalTitle').textContent = title;
-    document.getElementById('modalBody').innerHTML = body;
-    document.getElementById('resultModal').classList.add('active');
-}
-
-function closeModal() {
-    document.getElementById('resultModal').classList.remove('active');
 }
 
 async function exportData() {
@@ -174,9 +115,9 @@ async function exportData() {
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
-    } catch (e) {
-        console.error('导出错误:', e);
-        showModal('错误', `导出失败: ${e.message}`);
+    } catch (error) {
+        console.error('导出错误:', error);
+        showModal('错误', `导出失败：${error.message}`);
     }
 }
 
