@@ -3,8 +3,9 @@ from datetime import datetime
 import os
 from typing import Optional
 
-from fastapi import Cookie, Depends, FastAPI, Response
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from auth_utils import get_session_username, hash_password
@@ -68,6 +69,20 @@ if os.path.exists("heigo.jpeg") and not os.path.exists("static/heigo.jpeg"):
     shutil.copy2("heigo.jpeg", "static/heigo.jpeg")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/health")
+def health_check():
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"status": "error", "database": "unreachable", "error": type(exc).__name__},
+        ) from exc
+
+    return {"status": "ok", "database": "ok"}
 
 
 def get_db():

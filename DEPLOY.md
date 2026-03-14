@@ -1,268 +1,311 @@
-# HEIGO 联机联赛数据库部署与恢复手册
+# HEIGO Docker 部署手册
 
-这份手册按“能直接执行”的原则整理，覆盖本地启动、新机器部署、正式导入、数据库备份恢复、Alembic 升级和紧急修表。
+这份手册按 Ubuntu + Docker CE 的线上部署方式整理，默认目标是：
 
-## 1. 环境要求
+- 代码来自 GitHub
+- 容器负责运行应用
+- SQLite 数据库存放在宿主机挂载目录
+- 导入用的 Excel / CSV 不进入镜像，只放在宿主机挂载目录
 
-- Windows PowerShell 或任意可运行 Python 3.12+ 的终端
-- Python 依赖已安装：
+## 1. 部署目录
 
-```powershell
-cd D:\HEIGOOA
-python -m pip install -r requirements.txt
+建议在服务器上使用固定目录，例如：
+
+```bash
+/srv/heigo
 ```
 
-## 2. 本地启动
+目录结构建议如下：
 
-推荐直接使用内置启动脚本：
-
-```powershell
-cd D:\HEIGOOA
-.\start_local.ps1
+```text
+/srv/heigo
+├─ docker-compose.yml
+├─ Dockerfile
+├─ data/        # 生产数据库和自动备份
+└─ imports/     # 联赛 Excel 和球员属性 CSV
 ```
 
-或者手动启动：
+## 2. 服务器准备
 
-```powershell
-cd D:\HEIGOOA
-python main1.py
+安装基础工具：
+
+```bash
+sudo apt update
+sudo apt install -y git
+docker --version
+docker compose version
 ```
 
-默认访问地址：
+如果 `docker compose` 不可用，先把 Docker Compose 插件装好，再继续。
 
-- [http://127.0.0.1:8001](http://127.0.0.1:8001)
+## 3. 首次部署
 
-启动后建议先检查：
+### 3.1 拉代码
 
-```powershell
-python audit_schema.py
+```bash
+sudo mkdir -p /srv
+cd /srv
+sudo git clone https://github.com/R-Li2002/Football-manager-online-league-Database.git heigo
+cd /srv/heigo
 ```
 
-你应该能看到：
+### 3.2 创建持久化目录
 
-- `alembic_version`
-- `teams / players / player_attributes / operation_audits`
-- 最近一次 `schema_bootstrap` 事件
-
-## 3. 新机器部署
-
-### 3.1 拉取代码并安装依赖
-
-```powershell
-git clone <你的仓库地址> D:\HEIGOOA
-cd D:\HEIGOOA
-python -m pip install -r requirements.txt
+```bash
+mkdir -p data data/backups imports
 ```
 
-### 3.2 准备数据库
+### 3.3 准备数据库
 
-如果是全新环境，不需要手动建表，应用启动时会自动执行：
+二选一：
 
-- `alembic upgrade head`
+1. 如果你已经有本地生产库，把它复制到：
 
-如果已有旧库，把数据库文件放到目标位置，然后设置环境变量：
-
-```powershell
-$env:DATABASE_PATH = 'D:\HEIGOOA\fm_league.db'
+```bash
+/srv/heigo/data/fm_league.db
 ```
 
-也可以直接用默认路径：
+2. 如果你没有现成数据库，可以先启动空库，再通过后台“正式导入”或命令行导入数据。
 
-- `D:\HEIGOOA\fm_league.db`
+## 4. 启动容器
 
-### 3.3 启动应用
-
-```powershell
-cd D:\HEIGOOA
-python main1.py
+```bash
+cd /srv/heigo
+docker compose up -d --build
 ```
 
-### 3.4 验证部署
+检查容器状态：
 
-```powershell
-python test_alembic_migrations.py
-python test_phase1.py
-python test_simulation.py
-python audit_schema.py
+```bash
+docker compose ps
+docker compose logs -f heigo
 ```
 
-至少应满足：
+健康检查：
 
-- 测试全部通过
-- `alembic_version` 为最新 revision
-- `operation_audits` 表存在
-- 管理员页可以正常登录
-
-## 4. Alembic 升级
-
-正常情况下，应用启动会自动执行：
-
-```powershell
-python -m alembic upgrade head
+```bash
+curl http://127.0.0.1:8080/health
 ```
 
-如果你要手动升级：
+返回 `{"status":"ok","database":"ok"}` 说明应用和数据库都已连通。
 
-```powershell
-cd D:\HEIGOOA
-python -m alembic upgrade head
+## 5. 当前 Docker 约定
+
+当前部署文件默认使用这些路径：
+
+- 应用端口：`8080`
+- SQLite 数据库：`/app/data/fm_league.db`
+- 导入目录：`/app/imports`
+- 自动备份目录：`/app/data/backups`
+
+这几个路径都已经写进 Dockerfile 和 docker-compose.yml，不需要额外再手动设置。
+
+## 6. 代码更新流程
+
+这套部署默认是“GitHub 管代码，服务器目录管数据”。
+
+更新代码时执行：
+
+```bash
+cd /srv/heigo
+git pull origin main
+docker compose up -d --build
 ```
 
-查看当前 revision：
+这一步只更新代码和镜像，不会覆盖：
 
-```powershell
-python -c "import sqlite3; conn=sqlite3.connect(r'D:\HEIGOOA\fm_league.db'); print(conn.execute('select version_num from alembic_version').fetchone()); conn.close()"
+- `data/fm_league.db`
+- `data/backups/*`
+- `imports/*`
+
+前提是你不要把生产数据库提交到 GitHub。
+
+## 7. 导入联赛数据
+
+把导入文件放到：
+
+```text
+/srv/heigo/imports
 ```
 
-## 5. 正式导入联赛数据
+系统会从这里读取最新的：
 
-推荐通过管理员页面执行：
+- `*HEIGO*.xlsx`
+- `*球员属性*.csv`
 
-1. 打开管理员页
-2. 登录管理员账号
-3. 在“系统维护”中点击“执行正式导入”
+然后你可以用两种方式导入：
 
-正式导入会自动做这些事：
+### 7.1 后台正式导入
 
-- 按严格模式读取 `信息总览 + 联赛名单 + 球员属性.csv`
-- 先备份当前 SQLite 数据库
-- 正式写入联赛规则、球队、球员和属性库
-- 重建球队缓存
-- 把导入结果写入 `operation_audits`
+1. 打开站点
+2. 登录维护中心
+3. 执行“正式导入最新联赛数据”
 
-如果要在命令行先做检查：
+### 7.2 容器内命令行导入
 
-```powershell
-python import_data.py --dry-run --report-json strict_import_report.json
+```bash
+cd /srv/heigo
+docker compose exec heigo python import_data.py --dry-run --report-json /app/data/strict_import_report.json
 ```
 
-## 6. 数据库备份
+正式写入：
 
-### 6.1 导入前自动备份
-
-管理员页面执行“正式导入”时，会自动生成：
-
-- `fm_league_backup_YYYYMMDD_HHMMSS.db`
-
-### 6.2 手动备份
-
-```powershell
-Copy-Item D:\HEIGOOA\fm_league.db D:\HEIGOOA\fm_league_manual_backup_$(Get-Date -Format yyyyMMdd_HHmmss).db
+```bash
+cd /srv/heigo
+docker compose exec heigo python import_data.py
 ```
 
-## 7. 数据库恢复
+如果要显式指定文件：
 
-恢复前先停服务，然后把备份库覆盖回正式库：
-
-```powershell
-Copy-Item D:\HEIGOOA\fm_league_backup_20260311_041118.db D:\HEIGOOA\fm_league.db -Force
+```bash
+cd /srv/heigo
+docker compose exec heigo python import_data.py \
+  --workbook /app/imports/你的联赛文件.xlsx \
+  --attributes-csv /app/imports/你的球员属性.csv
 ```
 
-恢复后执行：
+## 8. 数据库备份与回滚
 
-```powershell
-python -m alembic upgrade head
-python audit_schema.py
-python main1.py
+正式导入前，系统会自动把 SQLite 备份到：
+
+```text
+/srv/heigo/data/backups
 ```
 
-## 8. 后端审计与日志
+你也可以手动备份：
 
-当前运维信息分为两层：
-
-- 文件日志：
-  - `admin_operations.log`
-  - `schema_bootstrap.log`
-- 数据库审计：
-  - `operation_audits`
-
-现在管理员写操作、正式导入、工资重算、球队缓存重算、schema 启动事件都会进入 `operation_audits`。
-
-历史 `admin_operations.log` 会在应用启动时幂等回填到 `operation_audits`，不会重复导入。
-
-## 9. 紧急修表
-
-正常启动已经不再允许自动 runtime fallback。
-
-如果 Alembic 不可用，而你又必须临时把旧库修到可启动状态，可以手动执行：
-
-```powershell
-cd D:\HEIGOOA
-python runtime_schema_repair.py
+```bash
+cp /srv/heigo/data/fm_league.db /srv/heigo/data/backups/fm_league_manual_$(date +%Y%m%d_%H%M%S).db
 ```
 
-执行后请立即检查：
+回滚方法：
 
-```powershell
-python audit_schema.py
+```bash
+cp /srv/heigo/data/backups/某个备份文件.db /srv/heigo/data/fm_league.db
+docker compose restart heigo
 ```
 
-并确认：
+## 9. 反向代理
 
-- `schema_bootstrap.log` 里有 `manual_runtime_fallback_started/completed`
-- 管理员页的 “Schema 启动状态” 卡片可见这次修表事件
+当前 compose 把应用绑定到：
 
-这条路径只适合紧急抢修，不应作为日常升级方式。
-
-## 10. Fly.io 部署要点
-
-如果继续使用 Fly.io：
-
-### 10.1 安装并登录 CLI
-
-```powershell
-iwr https://fly.io/install.ps1 -useb | iex
-fly auth login
+```text
+127.0.0.1:8080
 ```
 
-### 10.2 创建应用和 Volume
+这意味着：
 
-```powershell
-cd D:\HEIGOOA
-fly apps create heigo-league-db
-fly volumes create heigo_data --size 1 --region hkg
+- 容器不会直接暴露到公网
+- 你应该再加一层 Nginx 或 Caddy 做域名和 HTTPS
+
+Nginx 生产配置模板：
+
+```text
+deploy/nginx/heigo.example.conf
 ```
 
-### 10.3 设置数据库路径
+上线时把里面的：
 
-```powershell
-fly secrets set DATABASE_PATH=/app/data/fm_league.db
+- `example.com`
+- `www.example.com`
+
+替换成你的真实域名，然后执行：
+
+```bash
+sudo apt update
+sudo apt install -y nginx certbot
+sudo systemctl stop nginx
+sudo certbot certonly --standalone -d example.com -d www.example.com
+sudo cp deploy/nginx/heigo.example.conf /etc/nginx/sites-available/heigo.conf
+sudo ln -s /etc/nginx/sites-available/heigo.conf /etc/nginx/sites-enabled/heigo.conf
+sudo nginx -t
+sudo systemctl start nginx
+sudo systemctl reload nginx
 ```
 
-### 10.4 部署
+如果你已经配了 HTTPS，保留 `SESSION_COOKIE_SECURE=true`。
 
-```powershell
-fly deploy
-fly status
-fly logs
+## 10. GitHub Actions 自动部署
+
+仓库已经提供自动部署 workflow：
+
+```text
+.github/workflows/deploy.yml
 ```
 
-## 11. 常用排查命令
+触发方式：
 
-查看最近 schema 启动事件：
+- push 到 `main`
+- GitHub Actions 页面手动点 `Run workflow`
 
-```powershell
-Get-Content D:\HEIGOOA\schema_bootstrap.log -Tail 20
+这个 workflow 会在服务器上执行：
+
+```bash
+cd /srv/heigo
+git fetch origin main
+git checkout main
+git pull --ff-only origin main
+docker compose up -d --build --remove-orphans
 ```
 
-查看最近管理员文件日志：
+然后它会用容器内的 `/health` 接口做部署后验证。
 
-```powershell
-Get-Content D:\HEIGOOA\admin_operations.log -Tail 20
+你需要在 GitHub 仓库里配置这 3 个 Secrets：
+
+- `DEPLOY_HOST`：云服务器公网 IP 或域名
+- `DEPLOY_USER`：服务器登录用户
+- `DEPLOY_SSH_KEY`：这个用户对应的私钥
+
+首次上线时，直接按这份清单走：
+
+```text
+DEPLOY_FIRST_RUN_CHECKLIST.md
 ```
 
-查看数据库版本与审计条数：
+默认部署目录写死为：
 
-```powershell
-python -c "import sqlite3; conn=sqlite3.connect(r'D:\HEIGOOA\fm_league.db'); cur=conn.cursor(); print('revision=', cur.execute('select version_num from alembic_version').fetchone()[0]); print('operation_audits=', cur.execute('select count(*) from operation_audits').fetchone()[0]); conn.close()"
+```text
+/srv/heigo
 ```
 
-## 12. 推荐操作顺序
+如果你服务器不是这个路径，改 `.github/workflows/deploy.yml` 里的 `DEPLOY_PATH`。
 
-日常维护建议始终按下面顺序走：
+## 11. 关键原则
 
-1. 先备份数据库
-2. 再执行正式导入或大范围维护
-3. 执行 `python audit_schema.py`
-4. 登录管理员页核对审计记录和最新导入摘要
-5. 如发现异常，优先回滚数据库备份，再排查问题
+1. GitHub 只存代码，不存生产数据库
+2. `data/` 和 `imports/` 由宿主机持久化
+3. 更新代码只做 `git pull + docker compose up -d --build`
+4. 更新联赛数据走后台正式导入或容器内导入命令
+5. 生产故障优先回滚数据库，再排查代码
+
+## 12. 常用命令
+
+查看容器：
+
+```bash
+docker compose ps
+```
+
+查看日志：
+
+```bash
+docker compose logs -f heigo
+```
+
+重启服务：
+
+```bash
+docker compose restart heigo
+```
+
+停止服务：
+
+```bash
+docker compose down
+```
+
+重新构建并启动：
+
+```bash
+docker compose up -d --build
+```

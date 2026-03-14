@@ -21,3 +21,10 @@ htmlcov
 .tox
 *.log
 .DS_Store
+*.db
+fm_league_backup_*.db
+data/
+imports/
+tmp_*.png
+*.xlsx
+*.csv

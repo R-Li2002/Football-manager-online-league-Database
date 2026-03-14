@@ -1007,7 +1007,14 @@ def run_import(
     active_engine = target_engine or engine
     init_database(target_engine=active_engine)
 
-    workspace_root = Path(root_dir) if root_dir else Path(__file__).resolve().parent
+    configured_root = os.environ.get("HEIGO_IMPORT_ROOT")
+    workspace_root = (
+        Path(root_dir)
+        if root_dir
+        else Path(configured_root).expanduser().resolve()
+        if configured_root
+        else Path(__file__).resolve().parent
+    )
     resolved_workbook, resolved_attributes_csv, warnings = resolve_input_files(workbook_path, attributes_csv_path, workspace_root)
     report = ImportReport(
         workbook_path=str(resolved_workbook),

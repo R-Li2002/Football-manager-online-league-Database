@@ -11,6 +11,7 @@ from schemas_write import AdminImportResponse, ImportDatasetSummaryResponse
 from services.admin_common import LogWriter, require_admin
 
 IMPORT_ROOT_ENV = "HEIGO_IMPORT_ROOT"
+BACKUP_ROOT_ENV = "HEIGO_BACKUP_ROOT"
 
 
 def resolve_import_root() -> Path:
@@ -20,7 +21,23 @@ def resolve_import_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def backup_sqlite_database(engine: Engine, root_dir: Path) -> str | None:
+def resolve_backup_root(engine: Engine, import_root: Path) -> Path:
+    configured_root = os.environ.get(BACKUP_ROOT_ENV)
+    if configured_root:
+        return Path(configured_root).expanduser().resolve()
+
+    if engine.dialect.name == "sqlite":
+        database_path = engine.url.database
+        if database_path and database_path != ":memory:":
+            source_path = Path(database_path)
+            if not source_path.is_absolute():
+                source_path = (Path(__file__).resolve().parents[1] / source_path).resolve()
+            return source_path.parent / "backups"
+
+    return import_root
+
+
+def backup_sqlite_database(engine: Engine, backup_root: Path) -> str | None:
     if engine.dialect.name != "sqlite":
         return None
 
@@ -30,12 +47,13 @@ def backup_sqlite_database(engine: Engine, root_dir: Path) -> str | None:
 
     source_path = Path(database_path)
     if not source_path.is_absolute():
-        source_path = (root_dir / source_path).resolve()
+        source_path = (Path(__file__).resolve().parents[1] / source_path).resolve()
     if not source_path.exists():
         return None
 
+    backup_root.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = root_dir / f"fm_league_backup_{timestamp}.db"
+    backup_path = backup_root / f"fm_league_backup_{timestamp}.db"
 
     with sqlite3.connect(str(source_path)) as source_conn, sqlite3.connect(str(backup_path)) as backup_conn:
         source_conn.backup(backup_conn)
@@ -47,12 +65,13 @@ def import_current_league_data(db: Session, admin: str | None, write_to_log: Log
     admin = require_admin(admin)
     root_dir = resolve_import_root()
     bind = db.get_bind()
+    backup_root = resolve_backup_root(bind, root_dir)
 
     db.rollback()
     db.close()
 
     try:
-        backup_path = backup_sqlite_database(bind, root_dir)
+        backup_path = backup_sqlite_database(bind, backup_root)
         report = run_import(
             dry_run=False,
             strict_mode=True,

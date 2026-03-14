@@ -11,7 +11,9 @@ ENV/
 .DS_Store
 ~$*.xlsx
 .vscode/
-.github/
+.github/*
+!.github/workflows/
+!.github/workflows/deploy.yml
 .continue/
 .fm_league.db
 local_server_*.log
@@ -23,3 +25,6 @@ value_calculation_analysis.xlsx
 strict_import_issue_list*.csv
 strict_import_issue_list*.xlsx
 test_export_*.xlsx
+data/
+imports/
+tmp_*.png
