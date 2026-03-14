@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from models import Player, Team
+from models import Player, Team, TransferLog
 from repositories.player_repository import get_player_by_uid
 from repositories.team_repository import get_other_team_by_name, get_team_by_name
 from repositories.transfer_log_repository import update_player_uid_references
