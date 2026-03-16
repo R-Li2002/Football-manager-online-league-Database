@@ -1,29 +1,69 @@
-# HEIGO Football Manager Online League Database
+﻿# HEIGO Football Manager Online League Database
 
 ![HEIGO Admin Dashboard](docs/admin-dashboard.png)
 
-HEIGO 联机联赛数据库后台，面向 Football Manager 联机联赛的球队、球员、属性库、联赛规则、管理员操作与维护审计管理。
+HEIGO 是一套面向 Football Manager 联机联赛的单体式数据平台。它同时承担联赛名单管理、球员属性查询、管理员维护、正式导入、操作审计和线上部署。
 
-当前仓库已经从早期单文件原型，演进为一套可本地运行、可正式导入、可审计、可迁移的单实例后台系统。
+当前仓库已经从早期单文件原型，演进为一套可本地开发、可正式导入、可 Docker 部署、可通过 GitHub Actions 自动更新的完整系统。
 
-## 项目亮点
+## 快速入口
 
-- `FastAPI + SQLAlchemy + SQLite + Alembic` 的单体后台架构
-- 严格模式数据导入，默认只接受 `信息总览 + 联赛名单 + 2600球员属性.csv`
-- 真实外键与强类型联赛配置，不再只靠字符串关联和弱类型规则表
-- 管理员写操作、正式导入、Schema 启动事件统一进入后端持久化审计
-- 管理员页面内置球队统计来源调试、缓存重算、工资重算、正式导入与运维审计视图
-- 具备自动化测试、数据库迁移、备份恢复和紧急修表流程
+- 项目总手册：[docs/PROJECT_MANUAL.md](docs/PROJECT_MANUAL.md)
+- 导入模板说明：[docs/IMPORT_TEMPLATE_GUIDE.md](docs/IMPORT_TEMPLATE_GUIDE.md)
+- 部署手册：[DEPLOY.md](DEPLOY.md)
+- 首次上线清单：[DEPLOY_FIRST_RUN_CHECKLIST.md](DEPLOY_FIRST_RUN_CHECKLIST.md)
+- 历史审计与改造说明：[docs/HEIGO_AUDIT.md](docs/HEIGO_AUDIT.md)
 
-## 当前能力
+## 当前产品定位
 
-- 联赛规则管理：`league_info`
-- 球队管理：`teams`
-- 球员管理：`players`
-- 属性库管理：`player_attributes`
-- 管理员认证与会话：`admin_users`、`admin_sessions`
-- 操作审计：`operation_audits`
-- 正式导入、严格校验、幂等 upsert、备份恢复
+HEIGO 当前更适合被理解为：
+
+- 一个面向玩家的联赛数据工作台
+- 一个面向管理员的维护与导入后台
+- 一个基于 SQLite 的单实例联赛运营系统
+
+它不是通用型 SaaS，也不是多租户平台。当前设计重点是可维护性、导入可靠性和联赛内数据查询体验。
+
+## 核心能力
+
+### 玩家侧
+
+- 首页 Hero 搜索，支持姓名或 UID 快速检索
+- 联赛概览页，查看规则、统计和数据状态
+- 联赛名单页，按球队、姓名、排序浏览联赛内球员
+- 球员库页，搜索完整属性库并进入详情页
+- 球员详情页，支持：
+  - 基础资料
+  - 位置熟练度图
+  - 能力雷达图
+  - 成长预览
+  - 分享图导出
+  - 双球员对比
+  - 送花 / 踩鸡蛋互动
+
+### 管理侧
+
+- 管理员账号登录 / 登出
+- 球员转会、海捞、解约、消费、返老
+- 批量转会、批量消费、批量解约
+- 撤销操作
+- 球队信息修改、球员信息修改、UID 修改
+- 正式导入联赛数据
+- 工资重算
+- 球队统计缓存重建
+- 运维审计查看与导出
+- 最近一次正式导入结果查看
+
+## 技术栈
+
+- 后端：FastAPI
+- ORM：SQLAlchemy 2.x
+- 迁移：Alembic
+- 数据库：SQLite（当前主方案）
+- 数据处理：pandas / openpyxl
+- 前端：原生 HTML / CSS / JavaScript
+- 部署：Docker CE + Docker Compose + Nginx
+- 自动部署：GitHub Actions + SSH
 
 ## 本地启动
 
@@ -36,14 +76,14 @@ python -m pip install -r requirements.txt
 
 ### 2. 启动服务
 
-推荐直接使用内置脚本：
+推荐使用项目自带脚本：
 
 ```powershell
 cd D:\HEIGOOA
 .\start_local.ps1
 ```
 
-或者：
+或直接运行：
 
 ```powershell
 cd D:\HEIGOOA
@@ -54,111 +94,59 @@ python main1.py
 
 - [http://127.0.0.1:8001](http://127.0.0.1:8001)
 
-### 3. 启动后检查
+### 3. 健康检查
 
 ```powershell
-python audit_schema.py
+curl http://127.0.0.1:8001/health
 ```
 
-你应该能看到：
+预期返回：
 
-- 当前 `alembic_version`
-- `teams / players / player_attributes / operation_audits` 记录规模
-- 最近一次 `schema_bootstrap` 事件
-
-## 常用命令
-
-### 跑回归测试
-
-```powershell
-python test_alembic_migrations.py
-python test_phase1.py
-python test_simulation.py
-python test_import_data.py
-```
-
-### 做一次严格模式导入检查
-
-```powershell
-python import_data.py --dry-run --report-json strict_import_report.json
-```
-
-### 查看数据库结构审计
-
-```powershell
-python audit_schema.py
+```json
+{"status":"ok","database":"ok"}
 ```
 
 ## 目录结构
 
 ```text
 HEIGOOA/
-├─ alembic/              # 数据库迁移
-├─ docs/                 # 审计说明、截图
-├─ repositories/         # 数据访问层
-├─ routers/              # FastAPI 路由
-├─ services/             # 业务服务层
-├─ static/               # 前端页面与静态资源
-├─ main1.py              # 应用装配入口
-├─ import_data.py        # 严格导入 / dry-run / 正式导入核心
-├─ database.py           # 数据库初始化与 Alembic 升级入口
-└─ DEPLOY.md             # 部署、恢复、紧急修表手册
+├─ alembic/                    # 数据库迁移
+├─ deploy/                     # Nginx 模板等部署资源
+├─ docs/                       # 项目文档与截图
+├─ repositories/               # Repository 层
+├─ routers/                    # FastAPI 路由层
+├─ services/                   # 业务服务层
+├─ static/                     # 前端静态资源
+│  ├─ app.html
+│  ├─ app.css
+│  └─ js/
+├─ main1.py                    # 应用装配入口
+├─ database.py                 # 数据库初始化 / Alembic 启动入口
+├─ import_data.py              # 严格导入核心
+├─ docker-compose.yml          # Docker 编排
+├─ Dockerfile                  # 应用镜像
+├─ DEPLOY.md                   # 部署手册
+└─ DEPLOY_FIRST_RUN_CHECKLIST.md
 ```
 
-## 架构概览
+## 开发建议
 
-```mermaid
-flowchart LR
-    A["Excel / CSV"] --> B["import_data.py"]
-    B --> C["SQLite / SQLAlchemy"]
-    C --> D["FastAPI Routers"]
-    D --> E["Services / Repositories"]
-    D --> F["Admin UI"]
-    C --> G["Alembic"]
-    D --> H["operation_audits"]
-```
+开始继续开发前，先看这几份文档：
 
-## 数据与迁移策略
+1. [docs/PROJECT_MANUAL.md](docs/PROJECT_MANUAL.md)
+2. [docs/HEIGO_AUDIT.md](docs/HEIGO_AUDIT.md)
+3. [DEPLOY.md](DEPLOY.md)
 
-- `players.team_id`、`transfer_logs.from_team_id`、`transfer_logs.to_team_id` 已使用真实外键
-- `transfer_logs.operation` 已受数据库约束保护
-- `league_info` 已升级为强类型结构
-- 启动时优先执行 `alembic upgrade head`
-- 正常启动不再依赖自动 runtime fallback，紧急修表请显式运行 `runtime_schema_repair.py`
+它们分别覆盖：
 
-## 运维与审计
+- 架构和模块分层
+- 已做过的关键改造
+- 部署和数据更新方式
 
-管理员维护页目前支持：
+## 重要约定
 
-- 工资全量重算
-- 球队缓存安全全量重算
-- 正式导入联赛数据
-- 按类别筛选运维审计
-- 导出审计 CSV
-- 查看最近一次正式导入完整明细
-- 查看最近一次 Schema 启动状态
-
-后端审计已经沉淀到 `operation_audits`，并包含：
-
-- Schema 启动事件
-- 正式导入结果
-- 工资重算与球队缓存重算
-- 登录/登出
-- 转会、海捞、解约、消费、返老
-- 批量操作、撤销、球队修改、球员修改、UID 修改
-- 历史 `admin_operations.log` 导入记录
-
-## 文档
-
-- [部署与恢复手册](DEPLOY.md)
-- [技术审计与改造说明](docs/HEIGO_AUDIT.md)
-
-## 当前状态
-
-这套系统目前适合：
-
-- 单实例
-- 中小规模联机联赛后台
-- 强调数据一致性、可维护性和运维可追踪
-
-如果后续要继续走多实例或更高并发，建议在当前 Alembic 和分层基础上，继续推进 PostgreSQL 演进。
+- 文档统一使用 UTF-8 保存
+- 生产数据库不要提交到 GitHub
+- `data/` 和 `imports/` 由服务器本地持久化
+- 更新联赛数据优先走“正式导入”流程
+- 如果修改导入、迁移、部署链路，必须同步更新文档

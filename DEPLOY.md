@@ -1,110 +1,159 @@
-# HEIGO Docker 部署手册
+﻿# HEIGO 部署手册
 
-这份手册按 Ubuntu + Docker CE 的线上部署方式整理，默认目标是：
+本文档描述 HEIGO 在 Ubuntu + Docker CE 环境下的推荐部署方式。
 
-- 代码来自 GitHub
-- 容器负责运行应用
-- SQLite 数据库存放在宿主机挂载目录
-- 导入用的 Excel / CSV 不进入镜像，只放在宿主机挂载目录
+目标是：
 
-## 1. 部署目录
+- GitHub 负责保存代码
+- 云服务器负责保存运行时数据
+- Docker 负责运行应用
+- Nginx 负责域名与 HTTPS
+- GitHub Actions 负责自动部署
 
-建议在服务器上使用固定目录，例如：
+## 1. 推荐部署方式
+
+当前推荐的生产部署结构是：
+
+```text
+GitHub -> 云服务器 /srv/heigo -> Docker Compose -> Nginx -> 域名 / HTTPS
+```
+
+其中：
+
+- 代码通过 `git pull` 或 GitHub Actions 更新
+- 数据库保存在服务器本地挂载目录
+- 导入文件保存在服务器本地挂载目录
+- 容器镜像不内置生产数据库
+
+## 2. 服务器前置条件
+
+服务器建议满足：
+
+- Ubuntu 22.04 或 24.04
+- Docker CE
+- Docker Compose 插件
+- git
+- 一个可用于部署的普通用户，例如 `deploy`
+
+检查命令：
 
 ```bash
+docker --version
+docker compose version
+git --version
+```
+
+## 3. 部署目录结构
+
+推荐使用固定目录：
+
+```text
 /srv/heigo
 ```
 
-目录结构建议如下：
+最终目录结构建议如下：
 
 ```text
 /srv/heigo
 ├─ docker-compose.yml
 ├─ Dockerfile
-├─ data/        # 生产数据库和自动备份
-└─ imports/     # 联赛 Excel 和球员属性 CSV
+├─ data/
+│  ├─ fm_league.db
+│  └─ backups/
+└─ imports/
 ```
 
-## 2. 服务器准备
+说明：
 
-安装基础工具：
+- `data/` 保存生产数据库和备份
+- `imports/` 保存联赛 Excel 与属性 CSV
+- 这两个目录都不应该由 GitHub 管理
 
-```bash
-sudo apt update
-sudo apt install -y git
-docker --version
-docker compose version
-```
+## 4. 首次部署
 
-如果 `docker compose` 不可用，先把 Docker Compose 插件装好，再继续。
-
-## 3. 首次部署
-
-### 3.1 拉代码
+### 4.1 拉取代码
 
 ```bash
-sudo mkdir -p /srv
-cd /srv
-sudo git clone https://github.com/R-Li2002/Football-manager-online-league-Database.git heigo
+sudo mkdir -p /srv/heigo
+sudo chown -R $USER:$USER /srv/heigo
 cd /srv/heigo
+git clone https://github.com/R-Li2002/Football-manager-online-league-Database.git .
 ```
 
-### 3.2 创建持久化目录
+### 4.2 创建运行时目录
 
 ```bash
 mkdir -p data data/backups imports
 ```
 
-### 3.3 准备数据库
+### 4.3 准备数据库
 
 二选一：
 
-1. 如果你已经有本地生产库，把它复制到：
+#### 方案 A：上传现成数据库
 
-```bash
+把本地可用的 `fm_league.db` 复制到：
+
+```text
 /srv/heigo/data/fm_league.db
 ```
 
-2. 如果你没有现成数据库，可以先启动空库，再通过后台“正式导入”或命令行导入数据。
+#### 方案 B：先启动空库，再导入
 
-## 4. 启动容器
+如果还没有正式数据库，也可以先直接启动，再通过后台“正式导入”写入初始数据。
+
+## 5. Docker 启动
+
+### 5.1 启动容器
 
 ```bash
 cd /srv/heigo
 docker compose up -d --build
 ```
 
-检查容器状态：
+### 5.2 检查状态
 
 ```bash
 docker compose ps
 docker compose logs -f heigo
 ```
 
-健康检查：
+### 5.3 健康检查
 
 ```bash
 curl http://127.0.0.1:8080/health
 ```
 
-返回 `{"status":"ok","database":"ok"}` 说明应用和数据库都已连通。
+预期返回：
 
-## 5. 当前 Docker 约定
+```json
+{"status":"ok","database":"ok"}
+```
 
-当前部署文件默认使用这些路径：
+## 6. 当前 Docker 约定
 
-- 应用端口：`8080`
-- SQLite 数据库：`/app/data/fm_league.db`
-- 导入目录：`/app/imports`
-- 自动备份目录：`/app/data/backups`
+当前 `docker-compose.yml` 中的关键环境变量是：
 
-这几个路径都已经写进 Dockerfile 和 docker-compose.yml，不需要额外再手动设置。
+- `PORT=8080`
+- `DATABASE_PATH=/app/data/fm_league.db`
+- `HEIGO_IMPORT_ROOT=/app/imports`
+- `HEIGO_BACKUP_ROOT=/app/data/backups`
+- `SESSION_COOKIE_SECURE=true`
 
-## 6. 代码更新流程
+当前 volume 映射是：
 
-这套部署默认是“GitHub 管代码，服务器目录管数据”。
+- `./data:/app/data`
+- `./imports:/app/imports`
 
-更新代码时执行：
+这意味着：
+
+- 生产数据库持久化在宿主机 `data/`
+- 导入文件持久化在宿主机 `imports/`
+- 更新镜像不会覆盖这两类数据
+
+## 7. 更新代码
+
+常规更新流程：
 
 ```bash
 cd /srv/heigo
@@ -112,43 +161,50 @@ git pull origin main
 docker compose up -d --build
 ```
 
-这一步只更新代码和镜像，不会覆盖：
+这一步会更新：
+
+- 后端代码
+- 前端静态资源
+- Docker 镜像
+
+不会覆盖：
 
 - `data/fm_league.db`
 - `data/backups/*`
 - `imports/*`
 
-前提是你不要把生产数据库提交到 GitHub。
+前提是不要把这些运行时文件提交到 GitHub。
 
-## 7. 导入联赛数据
+## 8. 导入联赛数据
 
-把导入文件放到：
+把新数据放到：
 
 ```text
 /srv/heigo/imports
 ```
 
-系统会从这里读取最新的：
+系统默认会识别：
 
 - `*HEIGO*.xlsx`
 - `*球员属性*.csv`
 
-然后你可以用两种方式导入：
-
-### 7.1 后台正式导入
+### 8.1 通过后台导入
 
 1. 打开站点
 2. 登录维护中心
-3. 执行“正式导入最新联赛数据”
+3. 点击“正式导入最新联赛数据”
+4. 查看导入结果和运维审计
 
-### 7.2 容器内命令行导入
+### 8.2 通过容器内命令导入
+
+先 dry-run：
 
 ```bash
 cd /srv/heigo
 docker compose exec heigo python import_data.py --dry-run --report-json /app/data/strict_import_report.json
 ```
 
-正式写入：
+正式导入：
 
 ```bash
 cd /srv/heigo
@@ -164,70 +220,83 @@ docker compose exec heigo python import_data.py \
   --attributes-csv /app/imports/你的球员属性.csv
 ```
 
-## 8. 数据库备份与回滚
+## 9. 备份与回滚
 
-正式导入前，系统会自动把 SQLite 备份到：
+### 9.1 自动备份
+
+正式导入前，系统会自动备份 SQLite 到：
 
 ```text
 /srv/heigo/data/backups
 ```
 
-你也可以手动备份：
+### 9.2 手动备份
 
 ```bash
 cp /srv/heigo/data/fm_league.db /srv/heigo/data/backups/fm_league_manual_$(date +%Y%m%d_%H%M%S).db
 ```
 
-回滚方法：
+### 9.3 回滚
 
 ```bash
 cp /srv/heigo/data/backups/某个备份文件.db /srv/heigo/data/fm_league.db
 docker compose restart heigo
 ```
 
-## 9. 反向代理
+## 10. Nginx 与 HTTPS
 
-当前 compose 把应用绑定到：
+当前 Compose 默认把应用绑定到：
 
 ```text
 127.0.0.1:8080
 ```
 
-这意味着：
+推荐做法：
 
-- 容器不会直接暴露到公网
-- 你应该再加一层 Nginx 或 Caddy 做域名和 HTTPS
+- Docker 仅监听本机回环地址
+- Nginx 对外提供 80/443
+- 域名经 Nginx 反代到 `127.0.0.1:8080`
 
-Nginx 生产配置模板：
+Nginx 模板文件：
 
-```text
-deploy/nginx/heigo.example.conf
-```
+- `deploy/nginx/heigo.example.conf`
 
-上线时把里面的：
-
-- `example.com`
-- `www.example.com`
-
-替换成你的真实域名，然后执行：
+### 10.1 安装 Nginx 与 Certbot
 
 ```bash
 sudo apt update
 sudo apt install -y nginx certbot
+```
+
+### 10.2 配证书
+
+如果要为 `fm.example.com` 签证书：
+
+```bash
 sudo systemctl stop nginx
-sudo certbot certonly --standalone -d example.com -d www.example.com
+sudo certbot certonly --standalone -d fm.example.com
+```
+
+### 10.3 启用 Nginx 配置
+
+```bash
+cd /srv/heigo
 sudo cp deploy/nginx/heigo.example.conf /etc/nginx/sites-available/heigo.conf
+sudo nano /etc/nginx/sites-available/heigo.conf
+```
+
+将其中域名替换成你的真实域名后，执行：
+
+```bash
 sudo ln -s /etc/nginx/sites-available/heigo.conf /etc/nginx/sites-enabled/heigo.conf
 sudo nginx -t
 sudo systemctl start nginx
 sudo systemctl reload nginx
 ```
 
-如果你已经配了 HTTPS，保留 `SESSION_COOKIE_SECURE=true`。
+## 11. GitHub Actions 自动部署
 
-## 10. GitHub Actions 自动部署
-
-仓库已经提供自动部署 workflow：
+自动部署 workflow 位于：
 
 ```text
 .github/workflows/deploy.yml
@@ -236,9 +305,11 @@ sudo systemctl reload nginx
 触发方式：
 
 - push 到 `main`
-- GitHub Actions 页面手动点 `Run workflow`
+- 在 GitHub Actions 页面手动点击 `Run workflow`
 
-这个 workflow 会在服务器上执行：
+### 11.1 服务器上执行内容
+
+Workflow 会在服务器上执行：
 
 ```bash
 cd /srv/heigo
@@ -248,39 +319,27 @@ git pull --ff-only origin main
 docker compose up -d --build --remove-orphans
 ```
 
-然后它会用容器内的 `/health` 接口做部署后验证。
+之后还会对容器内 `/health` 做部署后校验。
 
-你需要在 GitHub 仓库里配置这 3 个 Secrets：
+### 11.2 必要 Secrets
 
-- `DEPLOY_HOST`：云服务器公网 IP 或域名
-- `DEPLOY_USER`：服务器登录用户
-- `DEPLOY_SSH_KEY`：这个用户对应的私钥
+在 GitHub 仓库中配置：
 
-首次上线时，直接按这份清单走：
+- `DEPLOY_HOST`
+- `DEPLOY_USER`
+- `DEPLOY_SSH_KEY`
 
-```text
-DEPLOY_FIRST_RUN_CHECKLIST.md
-```
-
-默认部署目录写死为：
+默认部署路径是：
 
 ```text
 /srv/heigo
 ```
 
-如果你服务器不是这个路径，改 `.github/workflows/deploy.yml` 里的 `DEPLOY_PATH`。
-
-## 11. 关键原则
-
-1. GitHub 只存代码，不存生产数据库
-2. `data/` 和 `imports/` 由宿主机持久化
-3. 更新代码只做 `git pull + docker compose up -d --build`
-4. 更新联赛数据走后台正式导入或容器内导入命令
-5. 生产故障优先回滚数据库，再排查代码
+如果服务器实际路径不同，请同步修改 `.github/workflows/deploy.yml` 中的 `DEPLOY_PATH`。
 
 ## 12. 常用命令
 
-查看容器：
+查看容器状态：
 
 ```bash
 docker compose ps
@@ -304,8 +363,16 @@ docker compose restart heigo
 docker compose down
 ```
 
-重新构建并启动：
+检查健康：
 
 ```bash
-docker compose up -d --build
+curl http://127.0.0.1:8080/health
 ```
+
+## 13. 关键原则
+
+1. GitHub 只管理代码，不管理生产数据库
+2. `data/` 和 `imports/` 是运行时目录，必须持久化
+3. 更新联赛数据优先走正式导入，而不是直接改库
+4. 线上故障优先看容器日志、健康检查和审计记录
+5. 紧急修库优先回滚数据库，`runtime_schema_repair.py` 仅作最后手段
