@@ -16,6 +16,7 @@ var currentRosterSort = {field: '', order: 'desc'};
 var dbDetailReturnState = {tab: 'database'};
 var playerCompareSlots = [null, null];
 var comparisonModalOpen = false;
+var currentDetailMobileSection = 'overview';
 
 window.AppState = window.AppState || {};
 Object.defineProperties(window.AppState, {
@@ -37,6 +38,7 @@ Object.defineProperties(window.AppState, {
     dbDetailReturnState: {enumerable: true, get: () => dbDetailReturnState, set: value => { dbDetailReturnState = value; }},
     playerCompareSlots: {enumerable: true, get: () => playerCompareSlots, set: value => { playerCompareSlots = value; }},
     comparisonModalOpen: {enumerable: true, get: () => comparisonModalOpen, set: value => { comparisonModalOpen = value; }},
+    currentDetailMobileSection: {enumerable: true, get: () => currentDetailMobileSection, set: value => { currentDetailMobileSection = value; }},
 });
 
 function syncThemeToggleState() {

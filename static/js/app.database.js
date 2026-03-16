@@ -85,6 +85,7 @@ async function showPlayerDetail(uid, options = {}) {
     const returnTab = options.returnTab || 'database';
     dbDetailReturnState = {tab: returnTab};
     currentGrowthPreviewStep = 0;
+    currentDetailMobileSection = 'overview';
     playerReactionSubmitting = false;
     clearPlayerReactionCooldownTimer();
     clearPlayerReactionBounce();
@@ -184,6 +185,20 @@ var playerReactionCooldownTimer = null;
 var playerReactionAnimatingType = '';
 var playerReactionAnimationTimer = null;
 var compareDockExpanded = false;
+
+const DETAIL_MOBILE_SECTIONS = [
+    {key: 'overview', label: '概览'},
+    {key: 'skills', label: '能力'},
+    {key: 'charts', label: '图表'},
+    {key: 'hidden', label: '隐藏'},
+];
+
+const PLAYER_SHARE_HIDDEN_SUMMARY_FIELDS = [
+    ['professionalism', '职业'],
+    ['pressure', '抗压'],
+    ['sportsmanship', '体育道德'],
+    ['ambition', '雄心'],
+];
 
 function clampAttributeValue(value) {
     return Math.max(1, Math.min(20, Math.floor(Number(value) || 0)));
@@ -389,13 +404,16 @@ function buildRadarShell(profile, options = {}) {
     `;
 }
 
-function buildRadarSvg(profile) {
+function buildRadarSvg(profile, options = {}) {
     if (!profile.length) return '';
+    const cardClassName = options.cardClassName || 'player-radar-card';
+    const title = options.title === false ? '' : (options.title || '能力雷达');
+    const figureClassName = options.figureClassName || 'player-radar-figure';
     return `
-        <div class="player-radar-card">
-            <div class="player-radar-title">能力雷达</div>
-            <div class="player-radar-figure">
-                ${buildRadarShell(profile)}
+        <div class="${cardClassName}">
+            ${title ? `<div class="player-radar-title">${escapeHtml(title)}</div>` : ''}
+            <div class="${figureClassName}">
+                ${buildRadarShell(profile, options)}
             </div>
         </div>
     `;
@@ -499,12 +517,14 @@ function getPitchTooltipClasses(marker) {
     return classes.join(' ');
 }
 
-function buildPositionMap(player) {
+function buildPositionMap(player, options = {}) {
     const activeMarkers = POSITION_MARKERS
         .map(marker => ({...marker, score: Number(player[marker.key]) || 0}))
         .filter(marker => marker.score > 1);
 
     if (!activeMarkers.length) return '';
+    const cardClassName = options.cardClassName || 'position-map-card';
+    const title = options.title === false ? '' : (options.title || '位置熟练度图');
 
     const markers = activeMarkers.map(marker => `
         <button class="pitch-marker ${getPitchMarkerTone(marker.score)}" style="left:${marker.x}%;top:${marker.y}%;background:none;border:none;padding:0;" type="button" aria-label="${marker.label} \u719f\u7ec3\u5ea6 ${marker.score}">
@@ -514,8 +534,8 @@ function buildPositionMap(player) {
     `).join('');
 
     return `
-        <div class="position-map-card">
-            <h4>位置熟练度图</h4>
+        <div class="${cardClassName}">
+            ${title ? `<h4>${escapeHtml(title)}</h4>` : ''}
             <div class="pitch-board">
                 <div class="pitch-field">
                     <span class="pitch-half-line"></span>
@@ -573,6 +593,48 @@ function buildPlayerInfoRows(player, previewPlayer) {
         ['HEIGO俱乐部', `<span class="${player.heigo_club !== '大海' ? 'heigo-club' : ''}">${escapeHtml(player.heigo_club || '-')}</span>`, true],
         ['现实俱乐部', `<span class="real-club">${escapeHtml(player.club || '-')}</span>`, true],
     ];
+}
+
+function normalizeDetailMobileSection(section) {
+    if (DETAIL_MOBILE_SECTIONS.some(item => item.key === section)) return section;
+    return 'overview';
+}
+
+function buildDetailMobileNav() {
+    const activeSection = normalizeDetailMobileSection(currentDetailMobileSection);
+    return `
+        <div class="player-detail-mobile-nav" role="tablist" aria-label="球员详情区块">
+            ${DETAIL_MOBILE_SECTIONS.map(section => `
+                <button
+                    class="player-detail-mobile-tab ${section.key === activeSection ? 'is-active' : ''}"
+                    type="button"
+                    role="tab"
+                    data-section="${section.key}"
+                    aria-selected="${section.key === activeSection ? 'true' : 'false'}"
+                    onclick="setDetailMobileSection('${section.key}')"
+                >
+                    ${section.label}
+                </button>
+            `).join('')}
+        </div>
+    `;
+}
+
+function syncDetailMobileSectionUI() {
+    const shell = document.querySelector('#playerDetailContent .player-detail-shell');
+    if (!shell) return;
+    currentDetailMobileSection = normalizeDetailMobileSection(currentDetailMobileSection);
+    shell.dataset.mobileSection = currentDetailMobileSection;
+    shell.querySelectorAll('.player-detail-mobile-tab').forEach(button => {
+        const isActive = button.dataset.section === currentDetailMobileSection;
+        button.classList.toggle('is-active', isActive);
+        button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+}
+
+function setDetailMobileSection(section) {
+    currentDetailMobileSection = normalizeDetailMobileSection(section);
+    syncDetailMobileSectionUI();
 }
 
 function normalizeReactionSummary(summary = {}) {
@@ -750,10 +812,6 @@ async function submitPlayerReaction(reactionType) {
     }
 }
 
-function getPlayerDetailCaptureNode() {
-    return document.querySelector('#playerDetailContent .player-detail-container');
-}
-
 function ensureDetailExportToast() {
     let toast = document.getElementById('detailExportToast');
     if (toast) return toast;
@@ -786,20 +844,130 @@ function buildPlayerCaptureFileName(player) {
     return `${safeName}_${player?.uid || 'detail'}.png`;
 }
 
-function buildPlayerDetailCaptureSurface(sourceNode) {
+function getTopAttributeItems(items, count = 6) {
+    return [...items]
+        .filter(item => Number(item.value) > 0)
+        .sort((left, right) => Number(right.value || 0) - Number(left.value || 0))
+        .slice(0, count);
+}
+
+function buildShareMetricPills(player, previewPlayer) {
+    const weakFootPreview = previewPlayer.preview_weak_foot;
+    return [
+        player.position || '-',
+        `CA ${previewPlayer.preview_ca ?? player.ca ?? '-'}`,
+        `PA ${player.pa ?? '-'}`,
+        `${player.age ?? '-'} 岁`,
+        currentGrowthPreviewStep > 0 ? `预览 ${currentGrowthPreviewStep}` : '当前',
+        weakFootPreview ? `${weakFootPreview.label}逆足 +1` : null,
+    ].filter(Boolean);
+}
+
+function renderShareMetaRows(rows) {
+    return rows.map(([label, value, isHtml]) => `
+        <div class="player-share-meta-row">
+            <span class="player-share-meta-label">${escapeHtml(label)}</span>
+            <span class="player-share-meta-value">${isHtml ? value : escapeHtml(value)}</span>
+        </div>
+    `).join('');
+}
+
+function buildPlayerShareCard(player) {
+    const previewPlayer = buildPreviewPlayer(player, currentGrowthPreviewStep);
+    const collections = getPlayerFieldCollections(previewPlayer);
+    const technicalItems = getTopAttributeItems(collections.technical.concat(collections.setPieces), 5);
+    const mentalItems = getTopAttributeItems(collections.mental, 5);
+    const physicalItems = getTopAttributeItems(collections.physical, 5);
+    const hiddenSummary = PLAYER_SHARE_HIDDEN_SUMMARY_FIELDS
+        .map(([key, label]) => ({label, value: previewPlayer[key]}))
+        .filter(item => Number(item.value) > 0);
+    const infoRows = [
+        ['UID', player.uid || '-'],
+        ['国籍', player.nationality || '-'],
+        ['位置', player.position || '-'],
+        ['年龄', player.age ?? '-'],
+        ['CA / PA', `<strong>${escapeHtml(previewPlayer.preview_ca ?? player.ca ?? '-')}</strong> / ${escapeHtml(player.pa ?? '-')}`, true],
+        ['左 / 右脚', `${previewPlayer.left_foot ?? '-'} / ${previewPlayer.right_foot ?? '-'}`],
+        ['身高', formatHeight(player.height)],
+        ['HEIGO俱乐部', `<span class="${player.heigo_club !== '大海' ? 'heigo-club' : ''}">${escapeHtml(player.heigo_club || '-')}</span>`, true],
+        ['现实俱乐部', `<span class="real-club">${escapeHtml(player.club || '-')}</span>`, true],
+    ];
+    const positionMapMarkup = buildPositionMap(player, {
+        title: '位置热区',
+        cardClassName: 'position-map-card player-share-visual-card player-share-position-card',
+    });
+    const radarMarkup = buildRadarSvg(buildRadarProfile(previewPlayer), {
+        title: '能力雷达',
+        cardClassName: 'player-radar-card player-share-visual-card player-share-radar-card',
+        figureClassName: 'player-radar-figure player-share-radar-figure',
+        size: 252,
+        radius: 82,
+        labelRadius: 110,
+    });
+
+    return `
+        <article class="player-share-card">
+            <div class="player-share-header">
+                <div class="player-share-kicker">HEIGO 球员分享卡</div>
+                <div class="player-share-preview">${currentGrowthPreviewStep > 0 ? `成长预览 +${currentGrowthPreviewStep}` : '当前属性'}</div>
+            </div>
+            <div class="player-share-summary">
+                <div class="player-share-hero">
+                    <div class="player-share-name-row">
+                        <h1 class="player-share-name">${escapeHtml(player.name)}</h1>
+                        <span class="player-share-badge">${escapeHtml(player.position || '-')}</span>
+                    </div>
+                    <div class="player-share-pill-row">
+                        ${buildShareMetricPills(player, previewPlayer).map(item => `<span class="player-share-pill">${escapeHtml(item)}</span>`).join('')}
+                    </div>
+                </div>
+                <div class="player-share-meta-grid">${renderShareMetaRows(infoRows)}</div>
+            </div>
+            <div class="player-share-visuals">
+                ${positionMapMarkup}
+                ${radarMarkup}
+            </div>
+            <div class="player-share-attributes-grid">
+                <section class="player-share-attribute-card">
+                    <h3>${collections.isGoalkeeper ? '门将 / 技术' : '技术 / 定位球'}</h3>
+                    <div class="attribute-list">${renderAttributeList(technicalItems)}</div>
+                </section>
+                <section class="player-share-attribute-card">
+                    <h3>精神</h3>
+                    <div class="attribute-list">${renderAttributeList(mentalItems)}</div>
+                </section>
+                <section class="player-share-attribute-card">
+                    <h3>身体</h3>
+                    <div class="attribute-list">${renderAttributeList(physicalItems)}</div>
+                </section>
+            </div>
+            ${hiddenSummary.length ? `
+                <div class="player-share-hidden-strip">
+                    ${hiddenSummary.map(item => `
+                        <span class="player-share-hidden-pill ${getAttrClass(item.value)}">
+                            <span>${escapeHtml(item.label)}</span>
+                            <strong>${escapeHtml(item.value)}</strong>
+                        </span>
+                    `).join('')}
+                </div>
+            ` : ''}
+            ${player.player_habits ? `
+                <div class="player-share-habits">
+                    <span class="player-share-footnote">球员习惯</span>
+                    <div>${escapeHtml(player.player_habits)}</div>
+                </div>
+            ` : ''}
+        </article>
+    `;
+}
+
+function buildPlayerShareCaptureSurface(player) {
     const captureRoot = document.createElement('div');
     captureRoot.className = 'capture-export-root';
 
     const captureFrame = document.createElement('div');
-    captureFrame.className = 'player-detail-capture-frame';
-
-    const sourceRect = sourceNode.getBoundingClientRect();
-    const exportWidth = Math.ceil(Math.max(sourceNode.scrollWidth || 0, sourceRect.width || 0, 1180));
-    captureFrame.style.width = `${exportWidth + 64}px`;
-
-    const clonedDetail = sourceNode.cloneNode(true);
-    clonedDetail.classList.add('is-capture-export');
-    captureFrame.appendChild(clonedDetail);
+    captureFrame.className = 'player-share-capture-frame';
+    captureFrame.innerHTML = buildPlayerShareCard(player);
     captureRoot.appendChild(captureFrame);
     document.body.appendChild(captureRoot);
 
@@ -839,12 +1007,6 @@ async function copyCurrentPlayerDetailImage() {
         return;
     }
 
-    const sourceNode = getPlayerDetailCaptureNode();
-    if (!sourceNode) {
-        showModal('暂时无法复制', '未找到当前球员详情内容。');
-        return;
-    }
-
     playerDetailExportBusy = true;
     renderGrowthPreviewToolbar(currentDetailPlayer);
 
@@ -854,7 +1016,7 @@ async function copyCurrentPlayerDetailImage() {
             await document.fonts.ready;
         }
 
-        const captureSurface = buildPlayerDetailCaptureSurface(sourceNode);
+        const captureSurface = buildPlayerShareCaptureSurface(currentDetailPlayer);
         captureRoot = captureSurface.captureRoot;
 
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -871,14 +1033,14 @@ async function copyCurrentPlayerDetailImage() {
         const fileName = buildPlayerCaptureFileName(currentDetailPlayer);
         try {
             await copyBlobToClipboard(blob);
-            showDetailExportToast('已复制球员图到剪贴板');
+            showDetailExportToast('已复制球员分享图到剪贴板');
         } catch (clipboardError) {
             downloadBlob(blob, fileName);
-            showDetailExportToast('浏览器未允许写入剪贴板，已自动下载 PNG', 'warning');
+            showDetailExportToast('浏览器未允许写入剪贴板，已自动下载分享图', 'warning');
         }
     } catch (error) {
         console.error('Failed to export player detail image:', error);
-        showModal('生成球员图失败', '请刷新页面后重试。如果问题持续存在，我可以继续排查具体样式节点。');
+        showModal('生成球员图失败', '分享卡生成失败，请刷新页面后重试。');
     } finally {
         if (captureRoot) captureRoot.remove();
         playerDetailExportBusy = false;
@@ -1355,47 +1517,65 @@ function renderPlayerDetail(player) {
     const infoRows = buildPlayerInfoRows(player, previewPlayer);
 
     const html = `
-        <div class="player-detail-container">
-            <div class="player-info-panel">
-                <div class="player-identity-block">
-                    <div class="player-identity-head">
-                        <div class="player-name">${escapeHtml(player.name)}</div>
+        <div class="player-detail-shell" data-mobile-section="${normalizeDetailMobileSection(currentDetailMobileSection)}">
+            ${buildDetailMobileNav()}
+            <div class="player-detail-layout">
+                <section class="detail-section detail-section-overview">
+                    <div class="player-info-panel">
+                        <div class="player-identity-block">
+                            <div class="player-identity-head">
+                                <div class="player-name">${escapeHtml(player.name)}</div>
+                            </div>
+                            <div class="player-uid">UID: ${escapeHtml(player.uid)}</div>
+                            <div id="playerReactionControls" class="player-reaction-host"></div>
+                        </div>
+                        ${infoRows.map(([label, value, isHtml]) => `
+                            <div class="info-row">
+                                <span class="info-label">${escapeHtml(label)}</span>
+                                <span class="info-value">${isHtml ? value : escapeHtml(value)}</span>
+                            </div>
+                        `).join('')}
+                        ${player.player_habits ? `<div class="detail-note-block"><div class="detail-note-title">球员习惯</div><div class="detail-note-copy">${escapeHtml(player.player_habits)}</div></div>` : ''}
                     </div>
-                    <div class="player-uid">UID: ${escapeHtml(player.uid)}</div>
-                    <div id="playerReactionControls" class="player-reaction-host"></div>
-                </div>
-                ${infoRows.map(([label, value, isHtml]) => `
-                    <div class="info-row">
-                        <span class="info-label">${escapeHtml(label)}</span>
-                        <span class="info-value">${isHtml ? value : escapeHtml(value)}</span>
+                </section>
+                <section class="detail-section detail-section-skills">
+                    <div class="detail-skills-grid">
+                        <div class="attribute-group">
+                            <h3>${collections.isGoalkeeper ? '门将属性' : '技术'}</h3>
+                            <div class="attribute-list">${technicalMarkup}</div>
+                            ${setPieceMarkup ? `<div class="attribute-subgroup"><h3>定位球</h3><div class="attribute-list">${setPieceMarkup}</div></div>` : ''}
+                        </div>
+                        <div class="attribute-group">
+                            <h3>精神</h3>
+                            <div class="attribute-list">${renderAttributeList(collections.mental)}</div>
+                        </div>
+                        <div class="attribute-group">
+                            <h3>身体</h3>
+                            <div class="attribute-list">${renderAttributeList(collections.physical)}</div>
+                        </div>
                     </div>
-                `).join('')}
-                ${positionMapMarkup}
-                ${player.player_habits ? `<div class="detail-note-block"><div class="detail-note-title">球员习惯</div><div class="detail-note-copy">${escapeHtml(player.player_habits)}</div></div>` : ''}
-            </div>
-            <div class="attributes-panel">
-                <div class="attribute-group">
-                    <h3>${collections.isGoalkeeper ? '门将属性' : '技术'}</h3>
-                    <div class="attribute-list">${technicalMarkup}</div>
-                    ${setPieceMarkup ? `<div class="attribute-subgroup"><h3>定位球</h3><div class="attribute-list">${setPieceMarkup}</div></div>` : ''}
-                </div>
-                <div class="attribute-group">
-                    <h3>精神</h3>
-                    <div class="attribute-list">${renderAttributeList(collections.mental)}</div>
-                </div>
-                <div class="attribute-group">
-                    <h3>身体</h3>
-                    <div class="attribute-list">${renderAttributeList(collections.physical)}</div>
-                    ${radarMarkup}
-                </div>
-                <div class="attribute-group attribute-group-wide">
-                    <h3>隐藏</h3>
-                    <div class="attribute-list attribute-list-grid">${renderAttributeList(collections.hidden)}</div>
-                </div>
+                </section>
+                <section class="detail-section detail-section-charts">
+                    <div class="detail-chart-grid">
+                        <div class="detail-chart-panel detail-chart-panel-map">
+                            ${positionMapMarkup}
+                        </div>
+                        <div class="detail-chart-panel detail-chart-panel-radar">
+                            ${radarMarkup}
+                        </div>
+                    </div>
+                </section>
+                <section class="detail-section detail-section-hidden">
+                    <div class="attribute-group attribute-group-wide">
+                        <h3>隐藏</h3>
+                        <div class="attribute-list attribute-list-grid">${renderAttributeList(collections.hidden)}</div>
+                    </div>
+                </section>
             </div>
         </div>
     `;
     document.getElementById('playerDetailContent').innerHTML = html;
+    syncDetailMobileSectionUI();
     renderPlayerReactionControls(player);
     startPlayerReactionCooldownTimer();
     renderGrowthPreviewToolbar(player);
