@@ -381,24 +381,24 @@
         .player-detail-shell { display: flex; flex-direction: column; gap: 20px; }
         .player-detail-layout {
             display: grid;
-            grid-template-columns: minmax(300px, 340px) minmax(0, 1fr) minmax(0, 1fr);
+            grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
             gap: 24px;
             align-items: start;
         }
         .detail-section { min-width: 0; }
         .detail-section-overview { grid-column: 1; }
-        .detail-section-skills { grid-column: 2 / span 2; }
-        .detail-section-charts,
-        .detail-section-hidden { grid-column: 1 / -1; }
+        .detail-section-skills { grid-column: 2; }
+        .detail-section-charts { display: none; }
         .detail-skills-grid {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 20px;
-            align-items: start;
+            align-items: stretch;
         }
+        .detail-skills-grid > .attribute-group { height: 100%; }
         .detail-chart-grid {
             display: grid;
-            grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 20px;
             align-items: start;
         }
@@ -406,7 +406,7 @@
         .player-detail-mobile-nav {
             display: none;
             gap: 10px;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
         }
         .player-detail-mobile-tab {
             min-height: 42px;
@@ -970,6 +970,15 @@
             border-top: none;
             height: 100%;
         }
+        .detail-overview-map {
+            margin-top: 18px;
+        }
+        .attribute-group-physical .player-radar-card {
+            margin-top: auto;
+        }
+        .detail-hidden-panel {
+            margin-top: 20px;
+        }
         .detail-chart-panel .position-map-card h4,
         .detail-chart-panel .player-radar-title {
             margin-bottom: 12px;
@@ -1000,7 +1009,7 @@
             width: 1080px;
             height: 1350px;
             box-sizing: border-box;
-            padding: 38px;
+            padding: 34px;
             border-radius: 42px;
             background:
                 radial-gradient(circle at top left, rgba(122,162,247,0.18), transparent 34%),
@@ -1009,7 +1018,7 @@
             color: var(--text-primary);
             box-shadow: 0 36px 90px rgba(15, 23, 42, 0.28);
             display: grid;
-            gap: 20px;
+            gap: 18px;
             overflow: hidden;
         }
         body.light-mode .player-share-card {
@@ -1047,12 +1056,18 @@
         }
         .player-share-summary {
             display: grid;
+            gap: 14px;
+            align-items: start;
+        }
+        .player-share-main {
+            display: grid;
+            grid-template-columns: minmax(0, 1.25fr) 260px;
             gap: 18px;
             align-items: start;
         }
         .player-share-hero {
             display: grid;
-            gap: 16px;
+            gap: 12px;
         }
         .player-share-name-row {
             display: flex;
@@ -1107,16 +1122,16 @@
         }
         .player-share-meta-grid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 12px;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
         }
         .player-share-meta-row {
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            gap: 8px;
-            min-height: 84px;
-            padding: 14px 16px;
+            gap: 6px;
+            min-height: 72px;
+            padding: 12px 14px;
             border-radius: 16px;
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.08);
@@ -1127,13 +1142,13 @@
         }
         .player-share-meta-label {
             color: var(--text-secondary);
-            font-size: 0.76rem;
+            font-size: 0.72rem;
             font-weight: 700;
             letter-spacing: 0.04em;
             text-transform: uppercase;
         }
         .player-share-meta-value {
-            font-size: 0.98rem;
+            font-size: 0.92rem;
             font-weight: 700;
             color: var(--text-primary);
             text-align: left;
@@ -1141,13 +1156,13 @@
         }
         .player-share-visuals {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-            gap: 18px;
+            grid-template-columns: 1fr;
+            gap: 12px;
         }
         .player-share-visual-card {
             margin-top: 0;
-            padding: 18px;
-            border-radius: 24px;
+            padding: 14px;
+            border-radius: 20px;
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.08);
         }
@@ -1161,22 +1176,22 @@
             border: none;
         }
         .player-share-card .pitch-field {
-            height: 250px;
+            height: 180px;
         }
         .player-share-radar-figure {
-            min-height: 250px;
+            min-height: 180px;
         }
         .player-share-card .player-radar-svg {
-            width: min(100%, 250px);
+            width: min(100%, 180px);
         }
         .player-share-attributes-grid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
         }
         .player-share-attribute-card {
-            padding: 16px;
-            border-radius: 24px;
+            padding: 14px;
+            border-radius: 20px;
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.08);
         }
@@ -1185,53 +1200,47 @@
             border-color: rgba(76,79,105,0.08);
         }
         .player-share-attribute-card h3 {
-            margin-bottom: 12px;
+            margin-bottom: 10px;
             color: var(--text-secondary);
-            font-size: 0.9rem;
+            font-size: 0.82rem;
             text-transform: uppercase;
             letter-spacing: 0.08em;
         }
-        .player-share-attribute-card .attribute-bar .attr-name {
-            font-size: 0.8rem;
+        .player-share-attribute-card .attribute-bar {
+            padding: 5px 8px 5px 11px;
+            gap: 8px;
         }
+        .player-share-attribute-card .attribute-bar::before {
+            top: 5px;
+            bottom: 5px;
+        }
+        .player-share-attribute-card .attribute-bar .attr-name {
+            font-size: 0.72rem;
+            line-height: 1.2;
+        }
+        .player-share-attribute-card .attribute-bar .attr-value { font-size: 0.8rem; min-width: 24px; }
         .player-share-attribute-card .attribute-list {
             gap: 1px;
         }
-        .player-share-hidden-strip {
+        .player-share-footer {
             display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-        .player-share-hidden-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            min-height: 34px;
-            padding: 0 12px;
-            border-radius: 999px;
-            background: rgba(255,255,255,0.06);
-            border: 1px solid rgba(255,255,255,0.08);
-            font-size: 0.8rem;
-            font-weight: 700;
-        }
-        body.light-mode .player-share-hidden-pill {
-            background: rgba(76,79,105,0.04);
-            border-color: rgba(76,79,105,0.08);
-        }
-        .player-share-hidden-pill strong {
-            font-variant-numeric: tabular-nums;
+            justify-content: flex-start;
+            align-items: stretch;
+            min-height: 0;
         }
         .player-share-habits {
-            padding: 16px 18px;
-            border-radius: 24px;
+            width: min(100%, 520px);
+            padding: 14px 16px;
+            border-radius: 20px;
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.08);
             color: var(--text-secondary);
-            font-size: 0.9rem;
-            line-height: 1.65;
+            font-size: 0.82rem;
+            line-height: 1.6;
             white-space: pre-wrap;
-            max-height: 116px;
+            max-height: 94px;
             overflow: hidden;
+            text-align: left;
         }
         body.light-mode .player-share-habits {
             background: rgba(76,79,105,0.04);
@@ -1239,9 +1248,9 @@
         }
         .player-share-footnote {
             display: inline-block;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             color: var(--text-secondary);
-            font-size: 0.76rem;
+            font-size: 0.72rem;
             letter-spacing: 0.08em;
             text-transform: uppercase;
             font-weight: 800;
@@ -2138,15 +2147,18 @@
             .detail-chart-grid { grid-template-columns: 1fr; }
             .detail-section-overview,
             .detail-section-skills,
-            .detail-section-charts,
-            .detail-section-hidden { grid-column: auto; }
+            .detail-section-charts { grid-column: auto; }
+            .detail-section-charts { display: block; }
             .player-detail-shell[data-mobile-section="overview"] .detail-section:not(.detail-section-overview),
             .player-detail-shell[data-mobile-section="skills"] .detail-section:not(.detail-section-skills),
-            .player-detail-shell[data-mobile-section="charts"] .detail-section:not(.detail-section-charts),
-            .player-detail-shell[data-mobile-section="hidden"] .detail-section:not(.detail-section-hidden) {
+            .player-detail-shell[data-mobile-section="charts"] .detail-section:not(.detail-section-charts) {
                 display: none;
             }
             .player-info-panel { flex: 1; }
+            .detail-overview-map,
+            .attribute-group-physical .player-radar-card {
+                display: none;
+            }
             .player-identity-head { flex-direction: column; align-items: stretch; }
             .player-reaction-panel { align-items: flex-start; }
             .player-reaction-buttons { justify-content: flex-start; }

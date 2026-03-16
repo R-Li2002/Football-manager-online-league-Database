@@ -190,14 +190,6 @@ const DETAIL_MOBILE_SECTIONS = [
     {key: 'overview', label: '概览'},
     {key: 'skills', label: '能力'},
     {key: 'charts', label: '图表'},
-    {key: 'hidden', label: '隐藏'},
-];
-
-const PLAYER_SHARE_HIDDEN_SUMMARY_FIELDS = [
-    ['professionalism', '职业'],
-    ['pressure', '抗压'],
-    ['sportsmanship', '体育道德'],
-    ['ambition', '雄心'],
 ];
 
 function clampAttributeValue(value) {
@@ -844,13 +836,6 @@ function buildPlayerCaptureFileName(player) {
     return `${safeName}_${player?.uid || 'detail'}.png`;
 }
 
-function getTopAttributeItems(items, count = 6) {
-    return [...items]
-        .filter(item => Number(item.value) > 0)
-        .sort((left, right) => Number(right.value || 0) - Number(left.value || 0))
-        .slice(0, count);
-}
-
 function buildShareMetricPills(player, previewPlayer) {
     const weakFootPreview = previewPlayer.preview_weak_foot;
     return [
@@ -875,12 +860,10 @@ function renderShareMetaRows(rows) {
 function buildPlayerShareCard(player) {
     const previewPlayer = buildPreviewPlayer(player, currentGrowthPreviewStep);
     const collections = getPlayerFieldCollections(previewPlayer);
-    const technicalItems = getTopAttributeItems(collections.technical.concat(collections.setPieces), 5);
-    const mentalItems = getTopAttributeItems(collections.mental, 5);
-    const physicalItems = getTopAttributeItems(collections.physical, 5);
-    const hiddenSummary = PLAYER_SHARE_HIDDEN_SUMMARY_FIELDS
-        .map(([key, label]) => ({label, value: previewPlayer[key]}))
-        .filter(item => Number(item.value) > 0);
+    const technicalItems = collections.technical.concat(collections.setPieces);
+    const mentalItems = collections.mental;
+    const physicalItems = collections.physical;
+    const hiddenItems = collections.hidden;
     const infoRows = [
         ['UID', player.uid || '-'],
         ['国籍', player.nationality || '-'],
@@ -900,9 +883,9 @@ function buildPlayerShareCard(player) {
         title: '能力雷达',
         cardClassName: 'player-radar-card player-share-visual-card player-share-radar-card',
         figureClassName: 'player-radar-figure player-share-radar-figure',
-        size: 252,
-        radius: 82,
-        labelRadius: 110,
+        size: 208,
+        radius: 64,
+        labelRadius: 88,
     });
 
     return `
@@ -911,21 +894,23 @@ function buildPlayerShareCard(player) {
                 <div class="player-share-kicker">HEIGO 球员分享卡</div>
                 <div class="player-share-preview">${currentGrowthPreviewStep > 0 ? `成长预览 +${currentGrowthPreviewStep}` : '当前属性'}</div>
             </div>
-            <div class="player-share-summary">
-                <div class="player-share-hero">
-                    <div class="player-share-name-row">
-                        <h1 class="player-share-name">${escapeHtml(player.name)}</h1>
-                        <span class="player-share-badge">${escapeHtml(player.position || '-')}</span>
+            <div class="player-share-main">
+                <div class="player-share-summary">
+                    <div class="player-share-hero">
+                        <div class="player-share-name-row">
+                            <h1 class="player-share-name">${escapeHtml(player.name)}</h1>
+                            <span class="player-share-badge">${escapeHtml(player.position || '-')}</span>
+                        </div>
+                        <div class="player-share-pill-row">
+                            ${buildShareMetricPills(player, previewPlayer).map(item => `<span class="player-share-pill">${escapeHtml(item)}</span>`).join('')}
+                        </div>
                     </div>
-                    <div class="player-share-pill-row">
-                        ${buildShareMetricPills(player, previewPlayer).map(item => `<span class="player-share-pill">${escapeHtml(item)}</span>`).join('')}
-                    </div>
+                    <div class="player-share-meta-grid">${renderShareMetaRows(infoRows)}</div>
                 </div>
-                <div class="player-share-meta-grid">${renderShareMetaRows(infoRows)}</div>
-            </div>
-            <div class="player-share-visuals">
-                ${positionMapMarkup}
-                ${radarMarkup}
+                <div class="player-share-visuals">
+                    ${positionMapMarkup}
+                    ${radarMarkup}
+                </div>
             </div>
             <div class="player-share-attributes-grid">
                 <section class="player-share-attribute-card">
@@ -940,23 +925,19 @@ function buildPlayerShareCard(player) {
                     <h3>身体</h3>
                     <div class="attribute-list">${renderAttributeList(physicalItems)}</div>
                 </section>
+                <section class="player-share-attribute-card">
+                    <h3>隐藏</h3>
+                    <div class="attribute-list">${renderAttributeList(hiddenItems)}</div>
+                </section>
             </div>
-            ${hiddenSummary.length ? `
-                <div class="player-share-hidden-strip">
-                    ${hiddenSummary.map(item => `
-                        <span class="player-share-hidden-pill ${getAttrClass(item.value)}">
-                            <span>${escapeHtml(item.label)}</span>
-                            <strong>${escapeHtml(item.value)}</strong>
-                        </span>
-                    `).join('')}
-                </div>
-            ` : ''}
-            ${player.player_habits ? `
-                <div class="player-share-habits">
-                    <span class="player-share-footnote">球员习惯</span>
-                    <div>${escapeHtml(player.player_habits)}</div>
-                </div>
-            ` : ''}
+            <div class="player-share-footer">
+                ${player.player_habits ? `
+                    <div class="player-share-habits">
+                        <span class="player-share-footnote">球员习惯</span>
+                        <div>${escapeHtml(player.player_habits)}</div>
+                    </div>
+                ` : ''}
+            </div>
         </article>
     `;
 }
@@ -1511,7 +1492,13 @@ function renderPlayerDetail(player) {
     const previewPlayer = buildPreviewPlayer(player, currentGrowthPreviewStep);
     const collections = getPlayerFieldCollections(previewPlayer);
     const radarMarkup = buildRadarSvg(buildRadarProfile(previewPlayer));
+    const mobileRadarMarkup = buildRadarSvg(buildRadarProfile(previewPlayer), {
+        cardClassName: 'player-radar-card player-radar-card-mobile-chart',
+    });
     const positionMapMarkup = buildPositionMap(player);
+    const mobilePositionMapMarkup = buildPositionMap(player, {
+        cardClassName: 'position-map-card position-map-card-mobile-chart',
+    });
     const technicalMarkup = renderAttributeList(collections.technical);
     const setPieceMarkup = collections.setPieces.length ? renderAttributeList(collections.setPieces) : '';
     const infoRows = buildPlayerInfoRows(player, previewPlayer);
@@ -1535,6 +1522,9 @@ function renderPlayerDetail(player) {
                                 <span class="info-value">${isHtml ? value : escapeHtml(value)}</span>
                             </div>
                         `).join('')}
+                        <div class="detail-overview-map">
+                            ${positionMapMarkup}
+                        </div>
                         ${player.player_habits ? `<div class="detail-note-block"><div class="detail-note-title">球员习惯</div><div class="detail-note-copy">${escapeHtml(player.player_habits)}</div></div>` : ''}
                     </div>
                 </section>
@@ -1549,26 +1539,25 @@ function renderPlayerDetail(player) {
                             <h3>精神</h3>
                             <div class="attribute-list">${renderAttributeList(collections.mental)}</div>
                         </div>
-                        <div class="attribute-group">
+                        <div class="attribute-group attribute-group-physical">
                             <h3>身体</h3>
                             <div class="attribute-list">${renderAttributeList(collections.physical)}</div>
+                            ${radarMarkup}
                         </div>
+                    </div>
+                    <div class="attribute-group attribute-group-wide detail-hidden-panel">
+                        <h3>隐藏</h3>
+                        <div class="attribute-list attribute-list-grid">${renderAttributeList(collections.hidden)}</div>
                     </div>
                 </section>
                 <section class="detail-section detail-section-charts">
                     <div class="detail-chart-grid">
                         <div class="detail-chart-panel detail-chart-panel-map">
-                            ${positionMapMarkup}
+                            ${mobilePositionMapMarkup}
                         </div>
                         <div class="detail-chart-panel detail-chart-panel-radar">
-                            ${radarMarkup}
+                            ${mobileRadarMarkup}
                         </div>
-                    </div>
-                </section>
-                <section class="detail-section detail-section-hidden">
-                    <div class="attribute-group attribute-group-wide">
-                        <h3>隐藏</h3>
-                        <div class="attribute-list attribute-list-grid">${renderAttributeList(collections.hidden)}</div>
                     </div>
                 </section>
             </div>
