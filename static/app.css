@@ -386,14 +386,17 @@
             align-items: stretch;
         }
         .detail-section { min-width: 0; }
-        .detail-section-overview { grid-column: 1; }
-        .detail-section-skills { grid-column: 2; }
+        .detail-section-overview { grid-column: 1; display: flex; align-self: stretch; }
+        .detail-section-overview > .player-info-panel { flex: 1 1 auto; width: 100%; }
+        .detail-section-skills { grid-column: 2; display: flex; flex-direction: column; height: 100%; min-height: 0; }
         .detail-section-charts { display: none; }
         .detail-skills-grid {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 16px;
             align-items: stretch;
+            flex: 1 1 auto;
+            min-height: 0;
         }
         .detail-skills-grid > .attribute-group { height: 100%; }
         .detail-chart-grid {
@@ -485,9 +488,9 @@
         .detail-export-toast.is-warning {
             border-color: rgba(224, 175, 104, 0.28);
         }
-        .player-info-panel { position: relative; z-index: 4; overflow: visible; flex: 0 0 300px; background: rgba(255,255,255,0.05); border-radius: 16px; padding: 22px; border: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; height: 100%; }
+        .player-info-panel { position: relative; z-index: 4; overflow: visible; flex: 0 0 300px; background: rgba(255,255,255,0.05); border-radius: 16px; padding: 20px 22px 12px; border: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; height: 100%; }
         body.light-mode .player-info-panel { background: #ffffff; border: 1px solid rgba(0,0,0,0.1); box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
-        .player-identity-block { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border-color); }
+        .player-identity-block { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color); }
         .player-identity-head { display: block; margin-bottom: 8px; }
         .player-reaction-host { max-width: 100%; margin-top: 10px; }
         .player-reaction-panel { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: fit-content; max-width: 100%; }
@@ -946,7 +949,7 @@
         }
         .detail-note-block {
             margin-top: auto;
-            padding-top: 12px;
+            padding-top: 10px;
             border-top: 1px solid var(--border-color);
         }
         .detail-note-block .detail-note-title {
@@ -960,7 +963,7 @@
         .detail-note-block .detail-note-copy {
             font-size: 0.85rem;
             color: var(--text-secondary);
-            line-height: 1.7;
+            line-height: 1.62;
             white-space: pre-wrap;
         }
         .detail-chart-panel .position-map-card,
@@ -970,11 +973,11 @@
             border-top: none;
             height: 100%;
         }
-        .detail-overview-map { margin-top: 14px; }
+        .detail-overview-map { margin-top: 12px; }
         .attribute-group-physical .player-radar-card {
             margin-top: auto;
         }
-        .detail-hidden-panel { margin-top: 16px; }
+        .detail-hidden-panel { margin-top: auto; }
         .detail-chart-panel .position-map-card h4,
         .detail-chart-panel .player-radar-title {
             margin-bottom: 12px;
@@ -3093,4 +3096,217 @@
 .overview-section .info-card .value {
     font-size: 1.25rem;
     line-height: 1.35;
+}
+
+/* Export surface: force desktop detail layout and denser FM-like typography */
+.player-export-card {
+    font-variant-numeric: tabular-nums;
+    padding: 22px;
+    border-radius: 22px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: linear-gradient(180deg, rgba(23, 26, 36, 0.996), rgba(16, 20, 29, 0.996));
+    box-shadow: 0 22px 52px rgba(10, 14, 24, 0.28);
+}
+
+body.light-mode .player-export-card {
+    border-color: rgba(76,79,105,0.09);
+    background: linear-gradient(180deg, rgba(253, 254, 255, 0.998), rgba(244, 247, 252, 0.996));
+    box-shadow: 0 18px 38px rgba(76,79,105,0.14);
+}
+
+.player-export-head {
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.player-export-kicker,
+.player-export-preview {
+    min-height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+}
+
+.player-detail-layout.player-detail-layout-export {
+    grid-template-columns: minmax(296px, 320px) minmax(0, 1fr) !important;
+    gap: 14px !important;
+    align-items: stretch !important;
+}
+
+.player-export-card .detail-section-overview {
+    display: flex !important;
+    align-self: stretch !important;
+}
+
+.player-export-card .detail-section-overview > .player-info-panel {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+}
+
+.player-export-card .detail-section-skills {
+    display: flex !important;
+    flex-direction: column !important;
+    grid-column: 2 !important;
+    height: 100% !important;
+    min-height: 0 !important;
+}
+
+.player-export-card .detail-section-charts {
+    display: none !important;
+}
+
+.player-info-panel.player-info-panel-export {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    padding: 16px 18px 8px !important;
+}
+
+.player-export-card .player-identity-block {
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+}
+
+.player-export-card .player-name {
+    font-size: 2.02rem;
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: 0.012em;
+}
+
+.player-export-card .player-uid {
+    margin-bottom: 0;
+    font-size: 0.74rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.player-export-card .info-row {
+    padding: 4px 0;
+    font-size: 0.78rem;
+}
+
+.player-export-card .info-label,
+.player-export-card .position-map-card h4,
+.player-export-card .detail-note-title,
+.player-export-card .attribute-group.attribute-group-export h3,
+.player-export-card .detail-hidden-panel.detail-hidden-panel-export h3,
+.player-export-card .player-radar-title {
+    font-size: 0.67rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.player-export-card .info-value {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-align: right;
+}
+
+.player-export-card .detail-overview-map,
+.detail-overview-map.detail-overview-map-export {
+    display: block !important;
+    margin-top: 12px !important;
+}
+
+.player-export-card .position-map-card {
+    margin-top: 0;
+    padding-top: 10px;
+}
+
+.player-export-card .pitch-board {
+    padding: 5px;
+    border-radius: 10px;
+}
+
+.player-export-card .pitch-field {
+    height: 202px;
+}
+
+.detail-note-block.detail-note-block-export {
+    margin-top: auto !important;
+    margin-bottom: -2px;
+    padding-top: 10px !important;
+}
+
+.player-export-card .detail-note-copy {
+    font-size: 0.74rem;
+    line-height: 1.42;
+}
+
+.detail-skills-grid.detail-skills-grid-export {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+    align-items: stretch !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+}
+
+.detail-skills-grid.detail-skills-grid-export > .attribute-group {
+    height: 100%;
+}
+
+.player-export-card .attribute-group.attribute-group-export,
+.player-export-card .detail-hidden-panel.detail-hidden-panel-export {
+    gap: 6px;
+    padding: 10px 11px 9px !important;
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.028), rgba(255,255,255,0.012));
+    border: 1px solid rgba(255,255,255,0.06);
+    box-shadow: none;
+}
+
+body.light-mode .player-export-card .attribute-group.attribute-group-export,
+body.light-mode .player-export-card .detail-hidden-panel.detail-hidden-panel-export {
+    background: linear-gradient(180deg, rgba(255,255,255,0.76), rgba(255,255,255,0.6));
+    border-color: rgba(76,79,105,0.08);
+}
+
+.player-export-card .attribute-bar {
+    padding: 3px 6px 3px 9px !important;
+    gap: 6px !important;
+    border-radius: 5px !important;
+}
+
+.player-export-card .attribute-bar::before {
+    top: 3px !important;
+    bottom: 3px !important;
+    width: 2px;
+}
+
+.player-export-card .attribute-bar .attr-name {
+    font-size: 0.68rem !important;
+    line-height: 1.12;
+    font-weight: 700;
+}
+
+.player-export-card .attribute-bar .attr-value {
+    min-width: 20px !important;
+    font-size: 0.74rem !important;
+    font-weight: 800;
+}
+
+.player-export-card .attribute-group-physical .player-radar-card {
+    display: block !important;
+    margin-top: auto !important;
+}
+
+.player-export-card .player-radar-card {
+    margin-top: 8px !important;
+    padding-top: 8px !important;
+}
+
+.player-export-radar-figure {
+    min-height: 170px !important;
+}
+
+.player-export-card .player-radar-svg {
+    width: min(100%, 198px) !important;
+}
+
+.detail-hidden-panel.detail-hidden-panel-export {
+    margin-top: auto !important;
 }
