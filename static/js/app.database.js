@@ -336,6 +336,7 @@ function buildRadarShell(profile, options = {}) {
     const radius = options.radius || 72;
     const labelRadius = options.labelRadius || 94;
     const stepCount = options.stepCount || 5;
+    const labelInset = options.labelInset || 0;
     const shapeClass = options.shapeClass || 'radar-shape';
     const pointClass = options.pointClass || 'radar-point';
     const metricClass = options.metricClass || 'radar-metric';
@@ -374,12 +375,17 @@ function buildRadarShell(profile, options = {}) {
         const edge = getPoint(axisIndex, 1, radius);
         const label = getPoint(axisIndex, 1, labelRadius);
         const textAnchor = label.x < center - 10 ? 'end' : label.x > center + 10 ? 'start' : 'middle';
+        const labelX = textAnchor === 'end'
+            ? label.x + labelInset
+            : textAnchor === 'start'
+                ? label.x - labelInset
+                : label.x;
         const labelY = label.y > center ? label.y + 10 : label.y - 4;
         return `
             <g class="${metricClass}" tabindex="0" aria-label="${escapeHtml(item.label)} ${formatRadarValue(item.value)}">
                 <line class="radar-axis-metric" x1="${point.x.toFixed(2)}" y1="${point.y.toFixed(2)}" x2="${edge.x.toFixed(2)}" y2="${edge.y.toFixed(2)}" style="stroke:${palette.axisMetricStroke};stroke-width:1;"></line>
                 <circle class="${pointClass}" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="4" style="fill:${palette.pointFill};stroke:${palette.pointStroke};stroke-width:1.35;"></circle>
-                <text class="radar-label" x="${label.x.toFixed(2)}" y="${labelY.toFixed(2)}" text-anchor="${textAnchor}" style="fill:${palette.labelFill};">${escapeHtml(item.label)}</text>
+                <text class="radar-label" x="${labelX.toFixed(2)}" y="${labelY.toFixed(2)}" text-anchor="${textAnchor}" style="fill:${palette.labelFill};">${escapeHtml(item.label)}</text>
                 <circle class="radar-hit" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="12" style="fill:transparent;stroke:transparent;"></circle>
                 <title>${escapeHtml(item.label)}：${formatRadarValue(item.value)}</title>
             </g>
@@ -849,9 +855,10 @@ function buildPlayerShareCard(player) {
     const radarMarkup = buildRadarSvg(buildRadarProfile(previewPlayer), {
         cardClassName: 'player-radar-card player-export-radar-card',
         figureClassName: 'player-radar-figure player-export-radar-figure',
-        size: 228,
+        size: 264,
         radius: 72,
-        labelRadius: 96,
+        labelRadius: 116,
+        labelInset: 10,
     });
     const previewHeader = currentGrowthPreviewStep > 0
         ? `成长预览 +${currentGrowthPreviewStep}${previewPlayer.preview_weak_foot ? ` · ${previewPlayer.preview_weak_foot.label}逆足 +1` : ''}`
