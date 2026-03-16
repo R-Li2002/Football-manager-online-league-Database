@@ -836,23 +836,17 @@ function buildPlayerCaptureFileName(player) {
     return `${safeName}_${player?.uid || 'detail'}.png`;
 }
 
-function buildShareMetricPills(player, previewPlayer) {
+function buildSharePlayerSnapshot(player, previewPlayer) {
     const weakFootPreview = previewPlayer.preview_weak_foot;
-    return [
-        player.position || '-',
-        `CA ${previewPlayer.preview_ca ?? player.ca ?? '-'}`,
-        `PA ${player.pa ?? '-'}`,
-        `${player.age ?? '-'} 岁`,
-        currentGrowthPreviewStep > 0 ? `预览 ${currentGrowthPreviewStep}` : '当前',
-        weakFootPreview ? `${weakFootPreview.label}逆足 +1` : null,
-    ].filter(Boolean);
+    const stateLabel = currentGrowthPreviewStep > 0 ? `成长预览 +${currentGrowthPreviewStep}` : '当前属性';
+    return [stateLabel, weakFootPreview ? `${weakFootPreview.label}逆足 +1` : null].filter(Boolean).join(' · ');
 }
 
-function renderShareMetaRows(rows) {
+function renderShareInfoRows(rows) {
     return rows.map(([label, value, isHtml]) => `
-        <div class="player-share-meta-row">
-            <span class="player-share-meta-label">${escapeHtml(label)}</span>
-            <span class="player-share-meta-value">${isHtml ? value : escapeHtml(value)}</span>
+        <div class="player-share-info-item">
+            <span class="player-share-info-label">${escapeHtml(label)}</span>
+            <span class="player-share-info-value">${isHtml ? value : escapeHtml(value)}</span>
         </div>
     `).join('');
 }
@@ -865,10 +859,10 @@ function buildPlayerShareCard(player) {
     const physicalItems = collections.physical;
     const hiddenItems = collections.hidden;
     const infoRows = [
-        ['UID', player.uid || '-'],
         ['国籍', player.nationality || '-'],
         ['位置', player.position || '-'],
         ['年龄', player.age ?? '-'],
+        ['生日', player.birth_date || '未知'],
         ['CA / PA', `<strong>${escapeHtml(previewPlayer.preview_ca ?? player.ca ?? '-')}</strong> / ${escapeHtml(player.pa ?? '-')}`, true],
         ['左 / 右脚', `${previewPlayer.left_foot ?? '-'} / ${previewPlayer.right_foot ?? '-'}`],
         ['身高', formatHeight(player.height)],
@@ -901,11 +895,20 @@ function buildPlayerShareCard(player) {
                             <h1 class="player-share-name">${escapeHtml(player.name)}</h1>
                             <span class="player-share-badge">${escapeHtml(player.position || '-')}</span>
                         </div>
-                        <div class="player-share-pill-row">
-                            ${buildShareMetricPills(player, previewPlayer).map(item => `<span class="player-share-pill">${escapeHtml(item)}</span>`).join('')}
+                        <div class="player-share-subline">
+                            <span>UID ${escapeHtml(player.uid || '-')}</span>
+                            <span>${escapeHtml(buildSharePlayerSnapshot(player, previewPlayer))}</span>
                         </div>
                     </div>
-                    <div class="player-share-meta-grid">${renderShareMetaRows(infoRows)}</div>
+                    <section class="player-share-info-board">
+                        <div class="player-share-info-grid">${renderShareInfoRows(infoRows)}</div>
+                        ${player.player_habits ? `
+                            <div class="player-share-info-habits">
+                                <span class="player-share-footnote">球员习惯</span>
+                                <div class="player-share-info-habits-copy">${escapeHtml(player.player_habits)}</div>
+                            </div>
+                        ` : ''}
+                    </section>
                 </div>
                 <div class="player-share-visuals">
                     ${positionMapMarkup}
@@ -929,14 +932,6 @@ function buildPlayerShareCard(player) {
                     <h3>隐藏</h3>
                     <div class="attribute-list">${renderAttributeList(hiddenItems)}</div>
                 </section>
-            </div>
-            <div class="player-share-footer">
-                ${player.player_habits ? `
-                    <div class="player-share-habits">
-                        <span class="player-share-footnote">球员习惯</span>
-                        <div>${escapeHtml(player.player_habits)}</div>
-                    </div>
-                ` : ''}
             </div>
         </article>
     `;
