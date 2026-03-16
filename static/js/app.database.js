@@ -579,8 +579,7 @@ function buildPlayerInfoRows(player, previewPlayer) {
         ['生日', player.birth_date || '未知'],
         ['位置', player.position || '-'],
         ['CA / PA', `<strong>${escapeHtml(previewPlayer.preview_ca ?? player.ca ?? '-')}</strong>${caGrowth > 0 ? `<span class="growth-indicator growth-positive">(+${caGrowth})</span>` : ''} / ${escapeHtml(player.pa ?? '-')}`, true],
-        ['左脚', previewPlayer.left_foot ?? '-'],
-        ['右脚', previewPlayer.right_foot ?? '-'],
+        ['左脚 / 右脚', `${previewPlayer.left_foot ?? '-'} / ${previewPlayer.right_foot ?? '-'}`],
         ['身高', formatHeight(player.height)],
         ['HEIGO俱乐部', `<span class="${player.heigo_club !== '大海' ? 'heigo-club' : ''}">${escapeHtml(player.heigo_club || '-')}</span>`, true],
         ['现实俱乐部', `<span class="real-club">${escapeHtml(player.club || '-')}</span>`, true],
@@ -836,21 +835,6 @@ function buildPlayerCaptureFileName(player) {
     return `${safeName}_${player?.uid || 'detail'}.png`;
 }
 
-function buildSharePlayerSnapshot(player, previewPlayer) {
-    const weakFootPreview = previewPlayer.preview_weak_foot;
-    const stateLabel = currentGrowthPreviewStep > 0 ? `成长预览 +${currentGrowthPreviewStep}` : '当前属性';
-    return [stateLabel, weakFootPreview ? `${weakFootPreview.label}逆足 +1` : null].filter(Boolean).join(' · ');
-}
-
-function renderShareInfoRows(rows) {
-    return rows.map(([label, value, isHtml]) => `
-        <div class="player-share-info-item">
-            <span class="player-share-info-label">${escapeHtml(label)}</span>
-            <span class="player-share-info-value">${isHtml ? value : escapeHtml(value)}</span>
-        </div>
-    `).join('');
-}
-
 function buildPlayerShareCard(player) {
     const previewPlayer = buildPreviewPlayer(player, currentGrowthPreviewStep);
     const collections = getPlayerFieldCollections(previewPlayer);
@@ -858,79 +842,73 @@ function buildPlayerShareCard(player) {
     const mentalItems = collections.mental;
     const physicalItems = collections.physical;
     const hiddenItems = collections.hidden;
-    const infoRows = [
-        ['国籍', player.nationality || '-'],
-        ['位置', player.position || '-'],
-        ['年龄', player.age ?? '-'],
-        ['生日', player.birth_date || '未知'],
-        ['CA / PA', `<strong>${escapeHtml(previewPlayer.preview_ca ?? player.ca ?? '-')}</strong> / ${escapeHtml(player.pa ?? '-')}`, true],
-        ['左 / 右脚', `${previewPlayer.left_foot ?? '-'} / ${previewPlayer.right_foot ?? '-'}`],
-        ['身高', formatHeight(player.height)],
-        ['HEIGO俱乐部', `<span class="${player.heigo_club !== '大海' ? 'heigo-club' : ''}">${escapeHtml(player.heigo_club || '-')}</span>`, true],
-        ['现实俱乐部', `<span class="real-club">${escapeHtml(player.club || '-')}</span>`, true],
-    ];
+    const infoRows = buildPlayerInfoRows(player, previewPlayer);
     const positionMapMarkup = buildPositionMap(player, {
-        title: '位置热区',
-        cardClassName: 'position-map-card player-share-visual-card player-share-position-card',
+        cardClassName: 'position-map-card player-export-position-map',
     });
     const radarMarkup = buildRadarSvg(buildRadarProfile(previewPlayer), {
-        title: '能力雷达',
-        cardClassName: 'player-radar-card player-share-visual-card player-share-radar-card',
-        figureClassName: 'player-radar-figure player-share-radar-figure',
-        size: 208,
-        radius: 64,
-        labelRadius: 88,
+        cardClassName: 'player-radar-card player-export-radar-card',
+        figureClassName: 'player-radar-figure player-export-radar-figure',
+        size: 228,
+        radius: 72,
+        labelRadius: 96,
     });
+    const previewHeader = currentGrowthPreviewStep > 0
+        ? `成长预览 +${currentGrowthPreviewStep}${previewPlayer.preview_weak_foot ? ` · ${previewPlayer.preview_weak_foot.label}逆足 +1` : ''}`
+        : '当前属性';
 
     return `
-        <article class="player-share-card">
-            <div class="player-share-header">
-                <div class="player-share-kicker">HEIGO 球员分享卡</div>
-                <div class="player-share-preview">${currentGrowthPreviewStep > 0 ? `成长预览 +${currentGrowthPreviewStep}` : '当前属性'}</div>
+        <article class="player-export-card">
+            <div class="player-export-head">
+                <div class="player-export-kicker">HEIGO 球员详情图</div>
+                <div class="player-export-preview">${escapeHtml(previewHeader)}</div>
             </div>
-            <div class="player-share-main">
-                <div class="player-share-summary">
-                    <div class="player-share-hero">
-                        <div class="player-share-name-row">
-                            <h1 class="player-share-name">${escapeHtml(player.name)}</h1>
-                            <span class="player-share-badge">${escapeHtml(player.position || '-')}</span>
+            <div class="player-detail-layout player-detail-layout-export">
+                <section class="detail-section detail-section-overview">
+                    <div class="player-info-panel player-info-panel-export">
+                        <div class="player-identity-block">
+                            <div class="player-identity-head">
+                                <div class="player-name">${escapeHtml(player.name)}</div>
+                            </div>
+                            <div class="player-uid">UID: ${escapeHtml(player.uid)}</div>
                         </div>
-                        <div class="player-share-subline">
-                            <span>UID ${escapeHtml(player.uid || '-')}</span>
-                            <span>${escapeHtml(buildSharePlayerSnapshot(player, previewPlayer))}</span>
+                        ${infoRows.map(([label, value, isHtml]) => `
+                            <div class="info-row">
+                                <span class="info-label">${escapeHtml(label)}</span>
+                                <span class="info-value">${isHtml ? value : escapeHtml(value)}</span>
+                            </div>
+                        `).join('')}
+                        <div class="detail-overview-map detail-overview-map-export">
+                            ${positionMapMarkup}
                         </div>
-                    </div>
-                    <section class="player-share-info-board">
-                        <div class="player-share-info-grid">${renderShareInfoRows(infoRows)}</div>
                         ${player.player_habits ? `
-                            <div class="player-share-info-habits">
-                                <span class="player-share-footnote">球员习惯</span>
-                                <div class="player-share-info-habits-copy">${escapeHtml(player.player_habits)}</div>
+                            <div class="detail-note-block detail-note-block-export">
+                                <div class="detail-note-title">球员习惯</div>
+                                <div class="detail-note-copy">${escapeHtml(player.player_habits)}</div>
                             </div>
                         ` : ''}
-                    </section>
-                </div>
-                <div class="player-share-visuals">
-                    ${positionMapMarkup}
-                    ${radarMarkup}
-                </div>
-            </div>
-            <div class="player-share-attributes-grid">
-                <section class="player-share-attribute-card">
-                    <h3>${collections.isGoalkeeper ? '门将 / 技术' : '技术 / 定位球'}</h3>
-                    <div class="attribute-list">${renderAttributeList(technicalItems)}</div>
+                    </div>
                 </section>
-                <section class="player-share-attribute-card">
-                    <h3>精神</h3>
-                    <div class="attribute-list">${renderAttributeList(mentalItems)}</div>
-                </section>
-                <section class="player-share-attribute-card">
-                    <h3>身体</h3>
-                    <div class="attribute-list">${renderAttributeList(physicalItems)}</div>
-                </section>
-                <section class="player-share-attribute-card">
-                    <h3>隐藏</h3>
-                    <div class="attribute-list">${renderAttributeList(hiddenItems)}</div>
+                <section class="detail-section detail-section-skills">
+                    <div class="detail-skills-grid detail-skills-grid-export">
+                        <div class="attribute-group attribute-group-export">
+                            <h3>${collections.isGoalkeeper ? '门将属性' : '技术'}</h3>
+                            <div class="attribute-list">${renderAttributeList(technicalItems)}</div>
+                        </div>
+                        <div class="attribute-group attribute-group-export">
+                            <h3>精神</h3>
+                            <div class="attribute-list">${renderAttributeList(mentalItems)}</div>
+                        </div>
+                        <div class="attribute-group attribute-group-physical attribute-group-export">
+                            <h3>身体</h3>
+                            <div class="attribute-list">${renderAttributeList(physicalItems)}</div>
+                            ${radarMarkup}
+                        </div>
+                    </div>
+                    <div class="attribute-group attribute-group-wide detail-hidden-panel detail-hidden-panel-export">
+                        <h3>隐藏</h3>
+                        <div class="attribute-list attribute-list-grid">${renderAttributeList(hiddenItems)}</div>
+                    </div>
                 </section>
             </div>
         </article>
