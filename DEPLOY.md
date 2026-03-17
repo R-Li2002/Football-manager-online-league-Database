@@ -135,6 +135,7 @@ curl http://127.0.0.1:8080/health
 当前 `docker-compose.yml` 中的关键环境变量是：
 
 - `PORT=8080`
+- `HEIGO_PORT_BIND=127.0.0.1:8080:8080`
 - `DATABASE_PATH=/app/data/fm_league.db`
 - `HEIGO_IMPORT_ROOT=/app/imports`
 - `HEIGO_BACKUP_ROOT=/app/data/backups`
@@ -150,6 +151,20 @@ curl http://127.0.0.1:8080/health
 - 生产数据库持久化在宿主机 `data/`
 - 导入文件持久化在宿主机 `imports/`
 - 更新镜像不会覆盖这两类数据
+
+其中端口映射默认值为：
+
+```text
+127.0.0.1:8080:8080
+```
+
+如果你当前不是通过 Nginx 反代，而是希望直接对外开放 `8080`，不要修改被 Git 管理的 `docker-compose.yml`，改为在服务器的 `/srv/heigo/.env` 写入：
+
+```text
+HEIGO_PORT_BIND=8080:8080
+```
+
+`.env` 默认不纳入 Git 管理，这样后续 `git pull --ff-only` 和 GitHub Actions 自动部署都不会再因为 `docker-compose.yml` 本地脏改动而卡住。
 
 ## 7. 更新代码
 
@@ -256,6 +271,12 @@ docker compose restart heigo
 - Docker 仅监听本机回环地址
 - Nginx 对外提供 80/443
 - 域名经 Nginx 反代到 `127.0.0.1:8080`
+
+如果只是临时直连 IP:8080，也可以在 `.env` 中设置：
+
+```text
+HEIGO_PORT_BIND=8080:8080
+```
 
 Nginx 模板文件：
 
