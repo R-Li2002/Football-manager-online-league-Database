@@ -141,6 +141,9 @@ function renderTeamStatSourceDebugView() {
 function toggleOverviewMetaPanel() {
     overviewMetaExpanded = !overviewMetaExpanded;
     syncOverviewMetaPanelState();
+    if (typeof syncAppHistory === 'function') {
+        syncAppHistory('replace');
+    }
 }
 
 function syncOverviewMetaPanelState() {
@@ -152,22 +155,31 @@ function syncOverviewMetaPanelState() {
     button.setAttribute('aria-expanded', overviewMetaExpanded ? 'true' : 'false');
 }
 
+function buildOverviewInfoCard(item) {
+    return `<div class="info-card"><div class="label">${item.key}</div><div class="value">${item.value}</div></div>`;
+}
+
 function renderOverview() {
     const basic = leagueInfo.filter(item => item.category === '基本信息');
     const stats = leagueInfo.filter(item => item.category === '统计');
     const wage = leagueInfo.filter(item => item.category === '工资系数');
+    const rosterSummary = [
+        {key: '球队数量', value: teams.length},
+        {key: '球员总数', value: allPlayers.length},
+    ];
+    const basicCards = [...basic, ...rosterSummary];
 
     const basicInfo = document.getElementById('basicInfo');
     const statsInfo = document.getElementById('statsInfo');
     const wageInfo = document.getElementById('wageInfo');
     if (basicInfo) {
-        basicInfo.innerHTML = basic.map(item => `<div class="info-card"><div class="label">${item.key}</div><div class="value">${item.value}</div></div>`).join('');
+        basicInfo.innerHTML = basicCards.map(buildOverviewInfoCard).join('');
     }
     if (statsInfo) {
-        statsInfo.innerHTML = stats.map(item => `<div class="info-card"><div class="label">${item.key}</div><div class="value">${item.value}</div></div>`).join('');
+        statsInfo.innerHTML = stats.map(buildOverviewInfoCard).join('');
     }
     if (wageInfo) {
-        wageInfo.innerHTML = wage.map(item => `<div class="info-card"><div class="label">${item.key}</div><div class="value">${item.value}</div></div>`).join('');
+        wageInfo.innerHTML = wage.map(buildOverviewInfoCard).join('');
     }
 
     renderOverviewStatusCards();
@@ -245,6 +257,9 @@ function toggleTeamSort(field) {
         };
     }
     renderTeamsTable();
+    if (typeof syncAppHistory === 'function') {
+        syncAppHistory('replace');
+    }
 }
 
 function getTeamSortIndicator(field) {
@@ -327,11 +342,11 @@ function getLevelBadge(level) {
     return `<span class="level-badge ${classes[level] || ''}">${level || '未知'}</span>`;
 }
 
-function viewTeamPlayers(teamName) {
-    showTab('players');
+function viewTeamPlayers(teamName, options = {}) {
+    showTab('players', null, {syncHistory: false});
     document.getElementById('teamSelect').value = teamName;
     document.getElementById('playerSearch').value = '';
-    searchPlayers();
+    searchPlayers(options);
 }
 
 function populateTeamSelect() {

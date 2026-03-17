@@ -56,6 +56,9 @@ function toggleRosterSort(field) {
         };
     }
     renderPlayers(currentPlayers);
+    if (typeof syncAppHistory === 'function') {
+        syncAppHistory('replace');
+    }
 }
 
 function getRosterSortIndicator(field) {
@@ -128,8 +131,6 @@ function sortPlayers() {
 }
 
 function renderPlayers(players) {
-    const displayCount = document.getElementById('displayCount');
-    if (displayCount) displayCount.textContent = players.length;
     renderPlayerQueryState();
     if (players.length === 0) {
         document.getElementById('playersTable').innerHTML = '<div class="no-data">没有找到符合条件的球员</div>';
@@ -269,14 +270,19 @@ function updateDetailDisplay(uid, data) {
     document.getElementById(`detail-wage-calc-${uid}`).textContent = `${data.final_value.toFixed(3)} × ${data.coefficient} = ${data.wage.toFixed(3)}M`;
 }
 
-async function searchPlayers() {
+async function searchPlayers(options = {}) {
+    const shouldSyncHistory = options.pushHistory !== false;
+    const historyMode = options.historyMode || 'push';
     const teamName = document.getElementById('teamSelect').value;
     const playerName = document.getElementById('playerSearch').value.trim();
 
     if (playerName.toLowerCase() === 'heigomanage') {
         document.getElementById('adminTab').classList.remove('hidden-tab');
-        showTab('admin');
+        showTab('admin', null, {syncHistory: false});
         document.getElementById('playerSearch').value = '';
+        if (shouldSyncHistory && typeof syncAppHistory === 'function') {
+            syncAppHistory(historyMode);
+        }
         return;
     }
 
@@ -299,9 +305,14 @@ async function searchPlayers() {
     }
 
     renderPlayers(currentPlayers);
+    if (shouldSyncHistory && typeof syncAppHistory === 'function') {
+        syncAppHistory(historyMode);
+    }
 }
 
-function resetPlayers() {
+function resetPlayers(options = {}) {
+    const shouldSyncHistory = options.pushHistory !== false;
+    const historyMode = options.historyMode || 'push';
     document.getElementById('teamSelect').value = '';
     document.getElementById('playerSearch').value = '';
     document.getElementById('tableTitle').textContent = '全部联赛名单';
@@ -309,6 +320,9 @@ function resetPlayers() {
     currentSelectedRosterUid = null;
     currentPlayers = [...allPlayers];
     renderPlayers(currentPlayers);
+    if (shouldSyncHistory && typeof syncAppHistory === 'function') {
+        syncAppHistory(historyMode);
+    }
 }
 
 document.getElementById('playerSearch')?.addEventListener('keypress', event => {

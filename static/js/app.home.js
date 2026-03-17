@@ -90,28 +90,39 @@ async function runHeroSearch() {
     renderHeroSearchResults(query, results);
 }
 
-async function openDatabaseDetailFromHero(uid) {
+async function openDatabaseDetailFromHero(uid, options = {}) {
     clearHeroSearchResults();
-    await showPlayerDetail(uid, {returnTab: 'home'});
+    await showPlayerDetail(uid, {returnTab: 'home', ...options});
 }
 
-async function openDatabaseResultsFromHero(query = '') {
-    showTab('database');
-    document.getElementById('dbDetailView').classList.remove('active');
-    document.getElementById('dbListView').classList.add('active');
-    const detailToolbar = document.getElementById('playerDetailToolbar');
-    if (detailToolbar) detailToolbar.innerHTML = '';
+async function openDatabaseResultsFromHero(query = '', options = {}) {
+    const shouldSyncHistory = options.pushHistory !== false;
+    const historyMode = options.historyMode || 'push';
+    showTab('database', null, {syncHistory: false});
+    if (typeof activateDatabaseView === 'function') {
+        activateDatabaseView('list');
+    }
     const dbSearch = document.getElementById('dbPlayerSearch');
     if (dbSearch) {
         dbSearch.value = query;
     }
     if (query) {
-        await searchDatabase(query);
+        await searchDatabase(query, {pushHistory: shouldSyncHistory, historyMode});
+        return;
+    }
+    if (shouldSyncHistory && typeof syncAppHistory === 'function') {
+        syncAppHistory(historyMode);
     }
 }
 
-function goToTeamDirectory() {
-    showTab('overview');
+function goToTeamDirectory(options = {}) {
+    showTab('overview', null, {
+        syncHistory: options.pushHistory !== false,
+        historyMode: options.historyMode || 'push',
+    });
+    if (options.scroll === false) {
+        return;
+    }
     window.setTimeout(() => {
         document.getElementById('teamsTable')?.scrollIntoView({behavior: 'smooth', block: 'start'});
     }, 60);

@@ -51,6 +51,9 @@ function toggleDbSort(field) {
         };
     }
     renderDbPlayers(currentDbPlayers);
+    if (typeof syncAppHistory === 'function') {
+        syncAppHistory('replace');
+    }
 }
 
 function getDbSortIndicator(field) {
@@ -63,19 +66,49 @@ function buildDbHeader(label, field, numeric = false) {
     return `<th class="${className}" role="button" tabindex="0" onclick="toggleDbSort('${field}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleDbSort('${field}');}"><span class="sortable-label">${label}</span>${getDbSortIndicator(field)}</th>`;
 }
 
-async function searchDatabase(nameOverride = null) {
+function activateDatabaseView(viewName = 'list') {
+    const isDetailView = viewName === 'detail';
+    const dbListView = document.getElementById('dbListView');
+    const dbDetailView = document.getElementById('dbDetailView');
+    if (dbListView) {
+        dbListView.classList.toggle('active', !isDetailView);
+    }
+    if (dbDetailView) {
+        dbDetailView.classList.toggle('active', isDetailView);
+    }
+    if (!isDetailView) {
+        const detailToolbar = document.getElementById('playerDetailToolbar');
+        if (detailToolbar) detailToolbar.innerHTML = '';
+    }
+}
+
+async function searchDatabase(nameOverride = null, options = {}) {
+    const shouldSyncHistory = options.pushHistory !== false;
+    const historyMode = options.historyMode || 'push';
     const name = nameOverride ?? document.getElementById('dbPlayerSearch').value.trim();
+    const searchInput = document.getElementById('dbPlayerSearch');
+    if (nameOverride !== null && searchInput) {
+        searchInput.value = name;
+    }
+    activateDatabaseView('list');
     if (!name) {
         document.getElementById('dbPlayersTable').innerHTML = '<div class="no-data">请输入球员姓名或 UID 进行搜索</div>';
+        currentDbPlayers = [];
+        if (shouldSyncHistory && typeof syncAppHistory === 'function') {
+            syncAppHistory(historyMode);
+        }
         return;
     }
     if (/^\d+$/.test(name)) {
-        await showPlayerDetail(name, {returnTab: 'database'});
+        await showPlayerDetail(name, {returnTab: 'database', pushHistory: shouldSyncHistory, historyMode});
         return;
     }
     document.getElementById('dbPlayersTable').innerHTML = '<div class="loading">搜索中...</div>';
     currentDbPlayers = await fetchDatabaseSearchResults(name);
     renderDbPlayers(currentDbPlayers);
+    if (shouldSyncHistory && typeof syncAppHistory === 'function') {
+        syncAppHistory(historyMode);
+    }
 }
 
 function sortDbPlayers() {
@@ -131,15 +164,16 @@ async function viewPlayerInDatabase(uid) {
 
 async function showPlayerDetail(uid, options = {}) {
     const returnTab = options.returnTab || 'database';
+    const shouldSyncHistory = options.pushHistory !== false;
+    const historyMode = options.historyMode || 'push';
     dbDetailReturnState = {tab: returnTab};
     currentGrowthPreviewStep = 0;
     currentDetailMobileSection = 'overview';
     playerReactionSubmitting = false;
     clearPlayerReactionCooldownTimer();
     clearPlayerReactionBounce();
-    showTab('database');
-    document.getElementById('dbListView').classList.remove('active');
-    document.getElementById('dbDetailView').classList.add('active');
+    showTab('database', null, {syncHistory: false});
+    activateDatabaseView('detail');
     document.getElementById('playerDetailContent').innerHTML = '<div class="loading">加载中...</div>';
     const detailToolbar = document.getElementById('playerDetailToolbar');
     if (detailToolbar) detailToolbar.innerHTML = '';
@@ -155,6 +189,9 @@ async function showPlayerDetail(uid, options = {}) {
     currentDetailPlayer = player;
     syncComparedPlayerState(player);
     renderPlayerDetail(player);
+    if (shouldSyncHistory && typeof syncAppHistory === 'function') {
+        syncAppHistory(historyMode);
+    }
 }
 
 function getAttrClass(val) {
@@ -1599,19 +1636,24 @@ function renderPlayerDetail(player) {
     renderCompareDock();
 }
 
-function backToList() {
+function backToList(options = {}) {
+    if (options.useBrowserHistory !== false && typeof canUseAppHistoryBack === 'function' && canUseAppHistoryBack()) {
+        history.back();
+        return;
+    }
     clearPlayerReactionCooldownTimer();
     clearPlayerReactionBounce();
     playerReactionSubmitting = false;
-    document.getElementById('dbDetailView').classList.remove('active');
-    document.getElementById('dbListView').classList.add('active');
-    const detailToolbar = document.getElementById('playerDetailToolbar');
-    if (detailToolbar) detailToolbar.innerHTML = '';
+    activateDatabaseView('list');
+    currentDetailPlayer = null;
     const returnTab = dbDetailReturnState.tab || 'database';
     if (returnTab !== 'database') {
-        showTab(returnTab);
+        showTab(returnTab, null, {syncHistory: false});
     } else {
-        showTab('database');
+        showTab('database', null, {syncHistory: false});
+    }
+    if (options.pushHistory !== false && typeof syncAppHistory === 'function') {
+        syncAppHistory(options.historyMode || 'replace');
     }
 }
 
