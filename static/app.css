@@ -2218,7 +2218,7 @@
         }
 
         .container {
-            max-width: 1500px;
+            max-width: 1660px;
             padding: 24px 24px 48px;
         }
 
@@ -2639,8 +2639,8 @@
 
         .players-workspace {
             display: grid;
-            grid-template-columns: 300px minmax(0, 1fr);
-            gap: 22px;
+            grid-template-columns: 252px minmax(0, 1fr);
+            gap: 18px;
             align-items: start;
         }
 
@@ -2653,13 +2653,14 @@
             position: sticky;
             top: 22px;
             border-radius: 28px;
-            padding: 24px;
+            padding: 22px 20px;
             background: linear-gradient(180deg, var(--surface-strong), var(--surface-muted));
         }
 
         .player-results-panel .table-container {
             border-radius: 28px;
-            overflow: hidden;
+            overflow-x: auto;
+            overflow-y: hidden;
         }
 
         .query-status-bar {
@@ -3057,18 +3058,168 @@
 }
 
 .players-list-table {
-    table-layout: fixed;
+    table-layout: auto;
+    min-width: 1310px;
+}
+
+.uid-column {
+    width: 108px;
+}
+
+.name-column {
+    width: 238px;
+}
+
+.position-column {
+    width: 80px;
+}
+
+.nation-column {
+    width: 118px;
+}
+
+.team-column {
+    width: 136px;
+}
+
+.table-slot-col,
+.slot-column,
+.slot-cell {
+    min-width: 98px;
+    width: 98px;
+    max-width: 98px;
 }
 
 .players-list-table th,
 .players-list-table td {
+    padding-inline: 6px;
     white-space: nowrap;
+}
+
+.players-list-table thead th:first-child,
+.players-list-table tbody td:first-child,
+.players-list-table .name-cell,
+.players-list-table .team-name-cell {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+
+.players-list-table .roster-player-link {
+    display: inline-block;
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+
+.compare-dock {
+    top: auto;
+    bottom: 18px;
+    right: 4px;
+    transform: none;
+}
+
+.compare-dock-shell {
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.compare-dock-handle {
+    width: 46px;
+    min-height: 108px;
+    padding: 10px 6px;
+    border-right: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+}
+
+.compare-dock-handle-dot {
+    min-width: 24px;
+    min-height: 24px;
+    font-size: 0.76rem;
+}
+
+.compare-dock-handle-label {
+    font-size: 0.7rem;
+}
+
+.compare-dock-handle-meta {
+    font-size: 0.62rem;
+}
+
+.compare-dock-card {
+    width: min(248px, calc(100vw - 84px));
+    padding: 18px 14px 16px;
+    border-right: 1px solid rgba(255,255,255,0.08);
+    border-radius: 22px;
+}
+
+.compare-dock-head {
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.compare-dock-head h4 {
+    font-size: 0.96rem;
+}
+
+.compare-dock-summary {
+    font-size: 0.78rem;
+}
+
+.compare-slot {
+    padding: 12px 12px 10px;
+}
+
+.compare-slot-name {
+    font-size: 0.94rem;
+}
+
+.compare-slot-meta {
+    font-size: 0.78rem;
 }
 
 .players-list-table .numeric-cell,
 .players-list-table .numeric-column {
-    text-align: right;
+    text-align: center;
     font-variant-numeric: tabular-nums;
+}
+
+.players-list-table .position-cell,
+.players-list-table .nationality-cell,
+.players-list-table .slot-cell {
+    text-align: center;
+}
+
+.players-list-table thead th.header-align-left {
+    text-align: left;
+}
+
+.players-list-table thead th.header-align-center {
+    text-align: center;
+}
+
+.players-list-table thead th.header-align-right {
+    text-align: right;
+}
+
+.players-list-table .sortable-heading {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+}
+
+.players-list-table thead th.header-align-left .sortable-heading {
+    justify-content: flex-start;
+}
+
+.players-list-table thead th.header-align-center .sortable-heading {
+    justify-content: center;
+}
+
+.players-list-table thead th.header-align-right .sortable-heading {
+    justify-content: flex-end;
 }
 
 .players-list-table tr[data-player-uid] {
@@ -3096,6 +3247,113 @@
 .overview-section .info-card .value {
     font-size: 1.25rem;
     line-height: 1.35;
+}
+
+.overview-summary-card {
+    display: grid;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.overview-summary-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.overview-summary-copy h2 {
+    margin-bottom: 8px;
+}
+
+.overview-summary-copy p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.65;
+}
+
+.overview-meta-panel {
+    display: grid;
+    gap: 16px;
+}
+
+.overview-meta-panel.is-collapsed {
+    display: none;
+}
+
+.overview-meta-group {
+    display: grid;
+    gap: 12px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color);
+}
+
+.overview-meta-group h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+.overview-meta-toggle-wrap {
+    display: flex;
+    justify-content: center;
+    padding-top: 4px;
+}
+
+.overview-meta-toggle {
+    min-width: 188px;
+}
+
+.sortable-header {
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.2s ease, background 0.2s ease;
+}
+
+.sortable-header:hover {
+    color: var(--text-primary);
+}
+
+.sortable-header:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: -2px;
+}
+
+.sortable-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sort-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 14px;
+    margin-left: 6px;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    line-height: 1;
+}
+
+.sort-indicator.is-active {
+    color: var(--accent-primary);
+}
+
+.db-players-table .numeric-cell,
+.db-players-table .numeric-column {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 780px) {
+    .overview-summary-head {
+        flex-direction: column;
+    }
+
+    .overview-meta-toggle {
+        width: 100%;
+    }
 }
 
 /* Export surface: force desktop detail layout and denser FM-like typography */

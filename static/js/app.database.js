@@ -1,4 +1,69 @@
-﻿async function searchDatabase(nameOverride = null) {
+﻿var currentDbSort = {field: '', order: '', type: 'number'};
+
+const DB_SORT_FIELD_CONFIG = {
+    name: {label: '姓名', type: 'text'},
+    position: {label: '位置', type: 'text'},
+    age: {label: '年龄', type: 'number'},
+    ca: {label: 'CA', type: 'number'},
+    pa: {label: 'PA', type: 'number'},
+    nationality: {label: '国籍', type: 'text'},
+    heigo_club: {label: 'HEIGO俱乐部', type: 'text'},
+    club: {label: '现实俱乐部', type: 'text'},
+};
+
+function getDefaultDbSortOrder(type) {
+    return type === 'text' ? 'asc' : 'desc';
+}
+
+function compareDbValues(left, right, type, order) {
+    if (type === 'text') {
+        const lhs = String(left || '').trim();
+        const rhs = String(right || '').trim();
+        const result = lhs.localeCompare(rhs, ['en', 'zh-CN'], {numeric: true, sensitivity: 'base'});
+        return order === 'asc' ? result : -result;
+    }
+    const lhs = Number(left || 0);
+    const rhs = Number(right || 0);
+    return order === 'asc' ? lhs - rhs : rhs - lhs;
+}
+
+function getSortedDbPlayers(players) {
+    if (!currentDbSort.field) return [...players];
+    const sorted = [...players];
+    sorted.sort((left, right) => compareDbValues(
+        left[currentDbSort.field],
+        right[currentDbSort.field],
+        currentDbSort.type || 'number',
+        currentDbSort.order || 'desc'
+    ));
+    return sorted;
+}
+
+function toggleDbSort(field) {
+    const config = DB_SORT_FIELD_CONFIG[field] || {type: 'text'};
+    if (currentDbSort.field === field) {
+        currentDbSort.order = currentDbSort.order === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentDbSort = {
+            field,
+            type: config.type,
+            order: getDefaultDbSortOrder(config.type),
+        };
+    }
+    renderDbPlayers(currentDbPlayers);
+}
+
+function getDbSortIndicator(field) {
+    if (currentDbSort.field !== field) return '<span class="sort-indicator">↕</span>';
+    return `<span class="sort-indicator is-active">${currentDbSort.order === 'asc' ? '↑' : '↓'}</span>`;
+}
+
+function buildDbHeader(label, field, numeric = false) {
+    const className = numeric ? 'sortable-header numeric-column' : 'sortable-header';
+    return `<th class="${className}" role="button" tabindex="0" onclick="toggleDbSort('${field}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleDbSort('${field}');}"><span class="sortable-label">${label}</span>${getDbSortIndicator(field)}</th>`;
+}
+
+async function searchDatabase(nameOverride = null) {
     const name = nameOverride ?? document.getElementById('dbPlayerSearch').value.trim();
     if (!name) {
         document.getElementById('dbPlayersTable').innerHTML = '<div class="no-data">请输入球员姓名或 UID 进行搜索</div>';
@@ -10,29 +75,11 @@
     }
     document.getElementById('dbPlayersTable').innerHTML = '<div class="loading">搜索中...</div>';
     currentDbPlayers = await fetchDatabaseSearchResults(name);
-    document.getElementById('dbSortField').value = '';
     renderDbPlayers(currentDbPlayers);
 }
 
 function sortDbPlayers() {
-    const field = document.getElementById('dbSortField').value;
-    const order = document.getElementById('dbSortOrder').value;
-    if (!field) {
-        renderDbPlayers(currentDbPlayers);
-        return;
-    }
-    const sorted = [...currentDbPlayers];
-    sorted.sort((a, b) => {
-        const left = a[field];
-        const right = b[field];
-        if (typeof left === 'string' || typeof right === 'string') {
-            const lhs = String(left || '');
-            const rhs = String(right || '');
-            return order === 'asc' ? lhs.localeCompare(rhs, 'zh-CN') : rhs.localeCompare(lhs, 'zh-CN');
-        }
-        return order === 'asc' ? Number(left || 0) - Number(right || 0) : Number(right || 0) - Number(left || 0);
-    });
-    renderDbPlayers(sorted);
+    renderDbPlayers(currentDbPlayers);
 }
 
 function renderDbPlayers(players) {
@@ -41,28 +88,29 @@ function renderDbPlayers(players) {
         return;
     }
     document.getElementById('dbTableTitle').textContent = `球员库搜索结果 (${players.length} 名球员)`;
+    const sortedPlayers = getSortedDbPlayers(players);
     const html = `
-        <table>
+        <table class="db-players-table">
             <thead>
                 <tr>
-                    <th>姓名</th>
-                    <th>位置</th>
-                    <th>年龄</th>
-                    <th>CA</th>
-                    <th>PA</th>
-                    <th>国籍</th>
-                    <th>HEIGO俱乐部</th>
-                    <th>现实俱乐部</th>
+                    ${buildDbHeader('姓名', 'name')}
+                    ${buildDbHeader('位置', 'position')}
+                    ${buildDbHeader('年龄', 'age', true)}
+                    ${buildDbHeader('CA', 'ca', true)}
+                    ${buildDbHeader('PA', 'pa', true)}
+                    ${buildDbHeader('国籍', 'nationality')}
+                    ${buildDbHeader('HEIGO俱乐部', 'heigo_club')}
+                    ${buildDbHeader('现实俱乐部', 'club')}
                 </tr>
             </thead>
             <tbody>
-                ${players.map(p => `
+                ${sortedPlayers.map(p => `
                     <tr>
                         <td><span class="player-link" onclick="showPlayerDetail(${p.uid}, {returnTab: 'database'})">${escapeHtml(p.name)}</span></td>
                         <td>${escapeHtml(p.position || '-')}</td>
-                        <td>${escapeHtml(p.age ?? '-')}</td>
-                        <td><strong>${escapeHtml(p.ca ?? '-')}</strong></td>
-                        <td>${escapeHtml(p.pa ?? '-')}</td>
+                        <td class="numeric-cell">${escapeHtml(p.age ?? '-')}</td>
+                        <td class="numeric-cell"><strong>${escapeHtml(p.ca ?? '-')}</strong></td>
+                        <td class="numeric-cell">${escapeHtml(p.pa ?? '-')}</td>
                         <td>${escapeHtml(p.nationality || '-')}</td>
                         <td class="${p.heigo_club !== '大海' ? 'heigo-club' : ''}">${escapeHtml(p.heigo_club || '-')}</td>
                         <td class="real-club">${escapeHtml(p.club || '-')}</td>

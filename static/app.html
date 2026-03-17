@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HEIGO 联赛数据台</title>
-    <link rel="icon" href="data:,">
+    <link rel="icon" href="/favicon.ico">
     <link rel="stylesheet" href="/static/app.css">
 </head>
 <body class="light-mode">
@@ -81,44 +81,44 @@
         </div>
 
         <div id="overview" class="tab-content">
-            <div class="overview-section">
-                <h2>基本信息</h2>
+            <div class="overview-section overview-summary-card">
+                <div class="overview-summary-head">
+                    <div class="overview-summary-copy">
+                        <span class="panel-kicker">League Snapshot</span>
+                        <h2>联赛概览</h2>
+                        <p>默认只展示基础联赛信息。点击展开后，可继续查看统计数据、工资系数、数据更新状态和最近维护摘要。</p>
+                    </div>
+                </div>
+
                 <div class="info-grid" id="basicInfo"><div class="loading">加载中...</div></div>
-            </div>
-            <div class="overview-section">
-                <h2>统计数据</h2>
-                <div class="info-grid" id="statsInfo"><div class="loading">加载中...</div></div>
-            </div>
-            <div class="overview-section">
-                <h2>工资系数</h2>
-                <div class="info-grid" id="wageInfo"><div class="loading">加载中...</div></div>
-            </div>
-            <div class="overview-section">
-                <h2>数据更新状态</h2>
-                <div class="info-grid" id="overviewUpdateStatus"><div class="loading">加载中...</div></div>
-            </div>
-            <div class="overview-section">
-                <h2>最近维护摘要</h2>
-                <div class="info-grid" id="overviewOpsSummary"><div class="loading">加载中...</div></div>
+
+                <div id="overviewMetaExpandedContent" class="overview-meta-panel is-collapsed">
+                    <div class="overview-meta-group">
+                        <h3>统计数据</h3>
+                        <div class="info-grid" id="statsInfo"><div class="loading">加载中...</div></div>
+                    </div>
+                    <div class="overview-meta-group">
+                        <h3>工资系数</h3>
+                        <div class="info-grid" id="wageInfo"><div class="loading">加载中...</div></div>
+                    </div>
+                    <div class="overview-meta-group">
+                        <h3>数据更新状态</h3>
+                        <div class="info-grid" id="overviewUpdateStatus"><div class="loading">加载中...</div></div>
+                    </div>
+                    <div class="overview-meta-group">
+                        <h3>最近维护摘要</h3>
+                        <div class="info-grid" id="overviewOpsSummary"><div class="loading">加载中...</div></div>
+                    </div>
+                </div>
+
+                <div class="overview-meta-toggle-wrap">
+                    <button class="btn btn-secondary overview-meta-toggle" id="overviewMetaToggle" type="button" onclick="toggleOverviewMetaPanel()" aria-expanded="false">展开详细信息</button>
+                </div>
             </div>
 
             <div class="teams-table">
                 <div class="table-header-row">
                     <h2 class="table-title">球队列表</h2>
-                    <div class="sort-controls">
-                        <select class="sort-select" id="teamSortField" onchange="sortTeams()">
-                            <option value="">排序方式</option>
-                            <option value="final_wage">按工资</option>
-                            <option value="total_value">按身价</option>
-                            <option value="avg_ca">按平均 CA</option>
-                            <option value="avg_pa">按平均 PA</option>
-                            <option value="team_size">按人数</option>
-                        </select>
-                        <select class="sort-select" id="teamSortOrder" onchange="sortTeams()">
-                            <option value="desc">降序</option>
-                            <option value="asc">升序</option>
-                        </select>
-                    </div>
                 </div>
                 <div id="teamsTable"><div class="loading">加载中...</div></div>
             </div>
@@ -182,20 +182,6 @@
                     <div class="table-container surface-card">
                         <div class="table-header-row">
                             <h2 id="tableTitle" class="table-title">全部联赛名单</h2>
-                            <div class="sort-controls">
-                                <select class="sort-select" id="playerSortField" onchange="sortPlayers()">
-                                    <option value="">排序方式</option>
-                                    <option value="age">按年龄</option>
-                                    <option value="initial_ca">按初始 CA</option>
-                                    <option value="ca">按当前 CA</option>
-                                    <option value="pa">按 PA</option>
-                                    <option value="wage">按工资</option>
-                                </select>
-                                <select class="sort-select" id="playerSortOrder" onchange="sortPlayers()">
-                                    <option value="desc">降序</option>
-                                    <option value="asc">升序</option>
-                                </select>
-                            </div>
                         </div>
                         <div id="playersTable"><div class="loading">加载中...</div></div>
                     </div>
@@ -222,18 +208,6 @@
                 <div class="table-container">
                     <div class="table-header-row">
                         <h2 id="dbTableTitle" class="table-title">球员库搜索结果</h2>
-                        <div class="sort-controls">
-                            <select class="sort-select" id="dbSortField" onchange="sortDbPlayers()">
-                                <option value="">排序方式</option>
-                                <option value="age">按年龄</option>
-                                <option value="ca">按 CA</option>
-                                <option value="pa">按 PA</option>
-                            </select>
-                            <select class="sort-select" id="dbSortOrder" onchange="sortDbPlayers()">
-                                <option value="desc">降序</option>
-                                <option value="asc">升序</option>
-                            </select>
-                        </div>
                     </div>
                     <div id="dbPlayersTable"><div class="no-data">请输入球员姓名或 UID 进行搜索</div></div>
                 </div>

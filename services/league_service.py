@@ -195,7 +195,7 @@ def calculate_team_value_stats(players: list[Player]):
             "avg_value": total_value / len(players),
             "avg_ca": sum(player.ca for player in players) / len(players),
             "avg_pa": sum(player.pa for player in players) / len(players),
-            "total_growth": sum(max(0, player.pa - player.initial_ca) for player in players),
+            "total_growth": sum((player.ca or 0) - (player.initial_ca if player.initial_ca is not None else (player.ca or 0)) for player in players),
         }
 
     return {
