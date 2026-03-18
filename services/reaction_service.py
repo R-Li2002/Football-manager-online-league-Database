@@ -60,13 +60,14 @@ def record_player_reaction(
     player_uid: int,
     visitor_token: str,
     reaction_type: str,
+    data_version: str | None = None,
     now: datetime | None = None,
 ) -> PlayerReactionActionResponse:
     if reaction_type not in REACTION_TYPES:
         raise HTTPException(status_code=400, detail="不支持的互动类型。")
 
     current_time = now or datetime.now()
-    if not get_player_attribute_by_uid(db, player_uid):
+    if not get_player_attribute_by_uid(db, player_uid, data_version=data_version):
         raise HTTPException(status_code=404, detail="找不到球员信息。")
 
     latest_reaction = get_latest_player_reaction_for_visitor(db, player_uid, visitor_token)

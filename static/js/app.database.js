@@ -66,6 +66,31 @@ function buildDbHeader(label, field, numeric = false) {
     return `<th class="${className}" role="button" tabindex="0" onclick="toggleDbSort('${field}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleDbSort('${field}');}"><span class="sortable-label">${label}</span>${getDbSortIndicator(field)}</th>`;
 }
 
+function getPlayerDataVersion(player) {
+    return String(player?.data_version || getCurrentAttributeVersion() || '').trim();
+}
+
+function getPlayerVersionKey(playerOrUid, dataVersion = '') {
+    if (typeof playerOrUid === 'object' && playerOrUid !== null) {
+        return `${playerOrUid.uid}:${getPlayerDataVersion(playerOrUid)}`;
+    }
+    return `${playerOrUid}:${String(dataVersion || getCurrentAttributeVersion() || '').trim()}`;
+}
+
+function getAttributeVersionLabel(version) {
+    return version ? `${version} 版本` : '未命名版本';
+}
+
+function refreshAttributeVersionBanner() {
+    const banner = document.getElementById('attributeVersionBanner');
+    if (!banner) return;
+    const version = getCurrentAttributeVersion();
+    const available = Array.isArray(availableAttributeVersions) ? availableAttributeVersions.join(' / ') : '';
+    banner.innerHTML = version
+        ? `当前球员库版本：<strong>${escapeHtml(version)}</strong>${available ? `，可切换版本：${escapeHtml(available)}` : ''}`
+        : '当前球员库版本尚未加载。';
+}
+
 function activateDatabaseView(viewName = 'list') {
     const isDetailView = viewName === 'detail';
     const dbListView = document.getElementById('dbListView');
@@ -85,6 +110,8 @@ function activateDatabaseView(viewName = 'list') {
 async function searchDatabase(nameOverride = null, options = {}) {
     const shouldSyncHistory = options.pushHistory !== false;
     const historyMode = options.historyMode || 'push';
+    await loadAttributeVersionCatalog();
+    refreshAttributeVersionBanner();
     const name = nameOverride ?? document.getElementById('dbPlayerSearch').value.trim();
     const searchInput = document.getElementById('dbPlayerSearch');
     if (nameOverride !== null && searchInput) {
@@ -100,11 +127,16 @@ async function searchDatabase(nameOverride = null, options = {}) {
         return;
     }
     if (/^\d+$/.test(name)) {
-        await showPlayerDetail(name, {returnTab: 'database', pushHistory: shouldSyncHistory, historyMode});
+        await showPlayerDetail(name, {
+            returnTab: 'database',
+            pushHistory: shouldSyncHistory,
+            historyMode,
+            version: getCurrentAttributeVersion(),
+        });
         return;
     }
     document.getElementById('dbPlayersTable').innerHTML = '<div class="loading">搜索中...</div>';
-    currentDbPlayers = await fetchDatabaseSearchResults(name);
+    currentDbPlayers = await fetchDatabaseSearchResults(name, {version: getCurrentAttributeVersion()});
     renderDbPlayers(currentDbPlayers);
     if (shouldSyncHistory && typeof syncAppHistory === 'function') {
         syncAppHistory(historyMode);
@@ -120,7 +152,8 @@ function renderDbPlayers(players) {
         document.getElementById('dbPlayersTable').innerHTML = '<div class="no-data">没有找到符合条件的球员</div>';
         return;
     }
-    document.getElementById('dbTableTitle').textContent = `球员库搜索结果 (${players.length} 名球员)`;
+    const activeVersion = getCurrentAttributeVersion();
+    document.getElementById('dbTableTitle').textContent = `球员库搜索结果 ${activeVersion ? `(${activeVersion}) ` : ''}(${players.length} 名球员)`;
     const sortedPlayers = getSortedDbPlayers(players);
     const html = `
         <table class="db-players-table">
@@ -139,7 +172,7 @@ function renderDbPlayers(players) {
             <tbody>
                 ${sortedPlayers.map(p => `
                     <tr>
-                        <td><span class="player-link" onclick="showPlayerDetail(${p.uid}, {returnTab: 'database'})">${escapeHtml(p.name)}</span></td>
+                        <td><span class="player-link" onclick="showPlayerDetail(${p.uid}, {returnTab: 'database', version: '${escapeHtml(p.data_version)}'})">${escapeHtml(p.name)}</span></td>
                         <td>${escapeHtml(p.position || '-')}</td>
                         <td class="numeric-cell">${escapeHtml(p.age ?? '-')}</td>
                         <td class="numeric-cell"><strong>${escapeHtml(p.ca ?? '-')}</strong></td>
@@ -166,8 +199,15 @@ async function showPlayerDetail(uid, options = {}) {
     const returnTab = options.returnTab || 'database';
     const shouldSyncHistory = options.pushHistory !== false;
     const historyMode = options.historyMode || 'push';
+    const preservePreviewStep = options.preservePreviewStep === true;
+    await loadAttributeVersionCatalog();
+    const requestedVersion = options.version || getCurrentAttributeVersion();
+    setCurrentAttributeVersion(requestedVersion);
+    refreshAttributeVersionBanner();
     dbDetailReturnState = {tab: returnTab};
-    currentGrowthPreviewStep = 0;
+    if (!preservePreviewStep) {
+        currentGrowthPreviewStep = 0;
+    }
     currentDetailMobileSection = 'overview';
     playerReactionSubmitting = false;
     clearPlayerReactionCooldownTimer();
@@ -177,12 +217,14 @@ async function showPlayerDetail(uid, options = {}) {
     document.getElementById('playerDetailContent').innerHTML = '<div class="loading">加载中...</div>';
     const detailToolbar = document.getElementById('playerDetailToolbar');
     if (detailToolbar) detailToolbar.innerHTML = '';
-    const res = await fetch(`/api/attributes/${uid}`);
+    const res = await fetch(buildAttributeVersionedPath(`/api/attributes/${uid}`, getCurrentAttributeVersion()));
     const player = await res.json();
     if (!player) {
-        document.getElementById('playerDetailContent').innerHTML = '<div class="no-data">找不到球员信息</div>';
+        document.getElementById('playerDetailContent').innerHTML = `<div class="no-data">${escapeHtml(getCurrentAttributeVersion() || '当前')} 版本下找不到球员信息</div>`;
         return;
     }
+    setCurrentAttributeVersion(player.data_version);
+    refreshAttributeVersionBanner();
     if (typeof selectRosterPlayer === 'function') {
         selectRosterPlayer(uid);
     }
@@ -237,8 +279,8 @@ const DETAIL_PREVIEW_KEYS = [
 ];
 const GOALKEEPER_TECHNICAL_FIELDS = [
     ['reflexes', '反应'], ['aerial_ability', '制空能力'], ['kicking', '大脚开球'], ['handling', '手控球'],
-    ['command_of_area', '拦截传中'], ['throwing', '手抛球'], ['one_on_ones', '一对一'], ['communication', '沟通'],
-    ['tendency_to_punch', '击球倾向'], ['rushing_out', '出击'], ['eccentricity', '意外性'],
+    ['command_of_area', '拦截传中'], ['throwing', '手抛球'], ['one_on_ones', '一对一'], ['communication', '指挥防守'],
+    ['tendency_to_punch', '击球倾向'], ['rushing_out', '出击'], ['eccentricity', '神经指数'],
 ];
 const OUTFIELD_TECHNICAL_FIELDS = [
     ['passing', '传球'], ['crossing', '传中'], ['marking', '盯人'], ['technique', '技术'],
@@ -249,7 +291,7 @@ const SET_PIECE_FIELDS = [
     ['penalty', '罚点球'], ['corner', '角球'], ['long_throws', '界外球'], ['free_kick', '任意球'],
 ];
 const MENTAL_FIELDS = [
-    ['flair', '才华'], ['positioning', '站位'], ['work_rate', '投入'], ['concentration', '集中'],
+    ['flair', '想象力'], ['positioning', '防守站位'], ['work_rate', '工作投入'], ['concentration', '集中'],
     ['decisions', '决断'], ['leadership', '领导力'], ['aggression', '侵略性'], ['vision', '视野'],
     ['teamwork', '团队合作'], ['off_the_ball', '无球跑动'], ['determination', '意志力'], ['bravery', '勇敢'],
     ['anticipation', '预判'], ['composure', '镇定'],
@@ -259,9 +301,9 @@ const PHYSICAL_FIELDS = [
     ['balance', '平衡'], ['strength', '强壮'], ['pace', '速度'], ['natural_fitness', '体质'],
 ];
 const HIDDEN_FIELDS = [
-    ['consistency', '稳定'], ['adaptability', '适应性'], ['pressure', '抗压'], ['ambition', '雄心'],
-    ['professionalism', '职业'], ['important_matches', '大赛'], ['injury_proneness', '伤病'], ['versatility', '多样性'],
-    ['sportsmanship', '体育道德'], ['temperament', '情绪控制'], ['loyalty', '忠诚'],
+    ['consistency', '稳定性'], ['adaptability', '适应性'], ['pressure', '抗压能力'], ['ambition', '野心'],
+    ['professionalism', '职业素养'], ['important_matches', '大赛发挥'], ['injury_proneness', '受伤倾向'], ['versatility', '多样性'],
+    ['sportsmanship', '体育精神'], ['temperament', '情绪控制'], ['loyalty', '忠诚'],
 ];
 var playerDetailExportBusy = false;
 var detailExportToastTimer = null;
@@ -328,27 +370,27 @@ function buildRadarProfile(player) {
     const isGoalkeeper = Number(player.pos_gk) >= 15;
     if (isGoalkeeper) {
         const profile = [
-            ['扑救', averageValues([player.reflexes, player.handling, player.one_on_ones])],
-            ['身体', averageValues([player.acceleration, player.agility, player.balance, player.strength, player.jumping])],
-            ['速度', averageValues([player.acceleration, player.pace, player.agility, player.rushing_out])],
-            ['精神', averageValues([player.anticipation, player.concentration, player.decisions, player.positioning])],
-            ['指挥防线', averageValues([player.command_of_area, player.communication, player.leadership, player.positioning])],
+            ['拦截射门', averageValues([player.one_on_ones, player.reflexes])],
+            ['身体', averageValues([player.agility, player.balance, player.stamina, player.strength])],
+            ['速度', averageValues([player.acceleration, player.pace])],
+            ['精神', averageValues([player.anticipation, player.bravery, player.concentration, player.decisions, player.determination, player.teamwork])],
+            ['指挥防守', averageValues([player.command_of_area, player.communication])],
             ['意外性', Number(player.eccentricity) || 0],
-            ['制空', averageValues([player.aerial_ability, player.jumping, player.command_of_area, player.bravery])],
-            ['大脚', averageValues([player.kicking, player.throwing, player.passing])],
+            ['制空', averageValues([player.aerial_ability, player.handling])],
+            ['大脚', averageValues([player.kicking, player.throwing])],
         ];
         return profile.map(([label, value]) => ({label, value: value || 0}));
     }
 
     return [
-        ['防守', averageValues([player.marking, player.tackling, player.positioning, player.anticipation])],
-        ['身体', averageValues([player.stamina, player.strength, player.balance, player.natural_fitness])],
-        ['速度', averageValues([player.acceleration, player.pace, player.agility])],
-        ['创造', averageValues([player.passing, player.technique, player.vision, player.flair, player.first_touch])],
-        ['进攻', averageValues([player.finishing, player.off_the_ball, player.first_touch, player.composure, player.long_shots])],
-        ['技术', averageValues([player.dribbling, player.technique, player.passing, player.first_touch, player.crossing])],
-        ['制空', averageValues([player.heading, player.jumping, player.bravery])],
-        ['精神', averageValues([player.decisions, player.concentration, player.teamwork, player.determination, player.work_rate])],
+        ['防守', averageValues([player.marking, player.tackling, player.positioning])],
+        ['身体', averageValues([player.agility, player.balance, player.stamina, player.strength])],
+        ['速度', averageValues([player.acceleration, player.pace])],
+        ['创造', averageValues([player.passing, player.flair, player.vision])],
+        ['进攻', averageValues([player.finishing, player.composure, player.off_the_ball])],
+        ['技术', averageValues([player.dribbling, player.first_touch, player.technique])],
+        ['制空', averageValues([player.heading, player.jumping])],
+        ['精神', averageValues([player.anticipation, player.bravery, player.concentration, player.decisions, player.determination, player.teamwork])],
     ].map(([label, value]) => ({label, value: value || 0}));
 }
 
@@ -503,8 +545,9 @@ function buildRadarSvg(profile, options = {}) {
 }
 
 function buildComparisonRadarSvg(leftPlayer, rightPlayer) {
-    const leftProfile = buildComparisonRadarProfile(leftPlayer);
-    const rightProfile = buildComparisonRadarProfile(rightPlayer);
+    const bothGoalkeepers = Number(leftPlayer.pos_gk) >= 15 && Number(rightPlayer.pos_gk) >= 15;
+    const leftProfile = bothGoalkeepers ? buildRadarProfile(leftPlayer) : buildComparisonRadarProfile(leftPlayer);
+    const rightProfile = bothGoalkeepers ? buildRadarProfile(rightPlayer) : buildComparisonRadarProfile(rightPlayer);
     if (!leftProfile.length || !rightProfile.length) return '';
 
     const size = 288;
@@ -871,7 +914,7 @@ async function submitPlayerReaction(reactionType) {
     renderPlayerReactionControls(currentDetailPlayer);
 
     try {
-        const response = await fetch(`/api/attributes/${currentDetailPlayer.uid}/reactions/${reactionType}`, {
+        const response = await fetch(buildAttributeVersionedPath(`/api/attributes/${currentDetailPlayer.uid}/reactions/${reactionType}`, getPlayerDataVersion(currentDetailPlayer)), {
             method: 'POST',
         });
         const payload = await response.json();
@@ -923,7 +966,8 @@ function buildPlayerCaptureFileName(player) {
         .replace(/[\\/:*?"<>|]+/g, '_')
         .replace(/\s+/g, '_')
         .replace(/^_+|_+$/g, '') || 'player';
-    return `${safeName}_${player?.uid || 'detail'}.png`;
+    const versionSuffix = getPlayerDataVersion(player) ? `_${getPlayerDataVersion(player)}` : '';
+    return `${safeName}_${player?.uid || 'detail'}${versionSuffix}.png`;
 }
 
 function buildPlayerShareCard(player) {
@@ -953,7 +997,7 @@ function buildPlayerShareCard(player) {
         <article class="player-export-card">
             <div class="player-export-head">
                 <div class="player-export-kicker">HEIGO 球员详情图</div>
-                <div class="player-export-preview">${escapeHtml(previewHeader)}</div>
+                <div class="player-export-preview">${escapeHtml(previewHeader)}${getPlayerDataVersion(player) ? ` · ${escapeHtml(getAttributeVersionLabel(getPlayerDataVersion(player)))}` : ''}</div>
             </div>
             <div class="player-detail-layout player-detail-layout-export">
                 <section class="detail-section detail-section-overview">
@@ -962,7 +1006,7 @@ function buildPlayerShareCard(player) {
                             <div class="player-identity-head">
                                 <div class="player-name">${escapeHtml(player.name)}</div>
                             </div>
-                            <div class="player-uid">UID: ${escapeHtml(player.uid)}</div>
+                            <div class="player-uid">UID: ${escapeHtml(player.uid)}${getPlayerDataVersion(player) ? ` · ${escapeHtml(getPlayerDataVersion(player))}` : ''}</div>
                         </div>
                         ${infoRows.map(([label, value, isHtml]) => `
                             <div class="info-row">
@@ -1106,10 +1150,27 @@ function renderGrowthPreviewToolbar(player) {
     const labels = ['当前', '+1', '+2', '+3', '+4', '+5'];
     const previewCa = (Number(player.ca) || 0) + getPreviewCaGain(currentGrowthPreviewStep);
     const weakFootPreview = getWeakFootPreview(player, currentGrowthPreviewStep);
-    const compareSlotIndex = getCompareSlotIndex(player.uid);
+    const compareSlotIndex = getCompareSlotIndex(player);
+    const versionSource = (availableAttributeVersions && availableAttributeVersions.length)
+        ? availableAttributeVersions
+        : [getPlayerDataVersion(player)].filter(Boolean);
+    const versionOptions = versionSource
+        .map(version => `<option value="${escapeHtml(version)}" ${version === getPlayerDataVersion(player) ? 'selected' : ''}>${escapeHtml(version)}</option>`)
+        .join('');
 
     detailToolbar.innerHTML = `
         <div class="detail-toolbar-actions">
+            <label class="detail-version-picker detail-toolbar-button" for="playerDetailVersionSelect" title="切换球员属性版本">
+                <span class="detail-version-value">${escapeHtml(getPlayerDataVersion(player) || (versionSource[0] || ''))}</span>
+                <select
+                    id="playerDetailVersionSelect"
+                    class="detail-version-select"
+                    aria-label="切换球员属性版本"
+                    onchange="handleAttributeVersionChange(this.value)"
+                >
+                    ${versionOptions}
+                </select>
+            </label>
             <button
                 id="copyPlayerDetailButton"
                 class="btn detail-toolbar-button detail-copy-button"
@@ -1151,6 +1212,33 @@ function renderGrowthPreviewToolbar(player) {
     `;
 }
 
+async function handleAttributeVersionChange(version) {
+    await loadAttributeVersionCatalog();
+    const nextVersion = setCurrentAttributeVersion(version);
+    refreshAttributeVersionBanner();
+    const currentQuery = document.getElementById('dbPlayerSearch')?.value.trim() || '';
+    if (document.getElementById('dbListView')?.classList.contains('active')) {
+        if (currentQuery) {
+            await searchDatabase(currentQuery, {pushHistory: true, historyMode: 'replace'});
+        } else if (typeof syncAppHistory === 'function') {
+            syncAppHistory('replace');
+        }
+        return;
+    }
+    if (!currentDetailPlayer) return;
+    if (currentQuery) {
+        currentDbPlayers = await fetchDatabaseSearchResults(currentQuery, {version: nextVersion});
+        renderDbPlayers(currentDbPlayers);
+    }
+    await showPlayerDetail(currentDetailPlayer.uid, {
+        returnTab: dbDetailReturnState.tab || 'database',
+        pushHistory: true,
+        historyMode: 'replace',
+        version: nextVersion,
+        preservePreviewStep: true,
+    });
+}
+
 function setGrowthPreviewStep(step) {
     currentGrowthPreviewStep = clampGrowthPreviewStep(step);
     if (currentDetailPlayer) {
@@ -1164,25 +1252,34 @@ function normalizeCompareSlots() {
     }
     playerCompareSlots = playerCompareSlots.map(slot => {
         if (!slot || !slot.player) return null;
+        const player = {
+            ...slot.player,
+            data_version: slot.player.data_version || slot.data_version || getCurrentAttributeVersion(),
+        };
         return {
-            uid: slot.uid ?? slot.player.uid,
-            player: slot.player,
+            uid: slot.uid ?? player.uid,
+            data_version: slot.data_version || getPlayerDataVersion(player),
+            version_key: slot.version_key || getPlayerVersionKey(player),
+            player,
             step: clampGrowthPreviewStep(slot.step),
         };
     });
     return playerCompareSlots;
 }
 
-function getCompareSlotIndex(uid) {
+function getCompareSlotIndex(playerOrUid, dataVersion = '') {
     normalizeCompareSlots();
-    return playerCompareSlots.findIndex(slot => slot && String(slot.uid) === String(uid));
+    const targetKey = getPlayerVersionKey(playerOrUid, dataVersion);
+    return playerCompareSlots.findIndex(slot => slot && slot.version_key === targetKey);
 }
 
 function syncComparedPlayerState(player) {
-    const slotIndex = getCompareSlotIndex(player.uid);
+    const slotIndex = getCompareSlotIndex(player);
     if (slotIndex === -1) return;
     playerCompareSlots[slotIndex] = {
         ...playerCompareSlots[slotIndex],
+        data_version: getPlayerDataVersion(player),
+        version_key: getPlayerVersionKey(player),
         player: {...player},
     };
     renderCompareDock();
@@ -1198,10 +1295,12 @@ function queueCurrentPlayerForCompare() {
 
 function queuePlayerForCompare(player) {
     normalizeCompareSlots();
-    const slotIndex = getCompareSlotIndex(player.uid);
+    const slotIndex = getCompareSlotIndex(player);
     if (slotIndex !== -1) {
         playerCompareSlots[slotIndex] = {
             ...playerCompareSlots[slotIndex],
+            data_version: getPlayerDataVersion(player),
+            version_key: getPlayerVersionKey(player),
             player: {...player},
         };
         compareDockExpanded = true;
@@ -1221,6 +1320,8 @@ function queuePlayerForCompare(player) {
 
     playerCompareSlots[emptyIndex] = {
         uid: player.uid,
+        data_version: getPlayerDataVersion(player),
+        version_key: getPlayerVersionKey(player),
         player: {...player},
         step: 0,
     };
@@ -1277,7 +1378,7 @@ function renderCompareDock() {
 
     const filledSlots = playerCompareSlots.filter(Boolean);
     const filledCount = filledSlots.length;
-    const compareNames = filledSlots.map(slot => escapeHtml(slot.player.name));
+    const compareNames = filledSlots.map(slot => `${escapeHtml(slot.player.name)} (${escapeHtml(getPlayerDataVersion(slot.player))})`);
     const detailReturnTab = activeTab === 'players' ? 'players' : 'database';
 
     dock.innerHTML = `
@@ -1307,9 +1408,9 @@ function renderCompareDock() {
                                 <div class="compare-slot is-filled is-${index === 0 ? 'blue' : 'red'}">
                                     <span class="compare-slot-index">槽位 ${index + 1}</span>
                                     <div class="compare-slot-name">${escapeHtml(slot.player.name)}</div>
-                                    <div class="compare-slot-meta">${escapeHtml(slot.player.position || '-')} · CA ${escapeHtml(previewPlayer.preview_ca ?? slot.player.ca ?? '-')}</div>
+                                    <div class="compare-slot-meta">${escapeHtml(slot.player.position || '-')} · ${escapeHtml(getPlayerDataVersion(slot.player))} · CA ${escapeHtml(previewPlayer.preview_ca ?? slot.player.ca ?? '-')}</div>
                                     <div class="compare-slot-actions">
-                                        <button class="compare-slot-action" type="button" onclick="showPlayerDetail(${slot.player.uid}, {returnTab: '${detailReturnTab}'})">查看球员</button>
+                                        <button class="compare-slot-action" type="button" onclick="showPlayerDetail(${slot.player.uid}, {returnTab: '${detailReturnTab}', version: '${escapeHtml(getPlayerDataVersion(slot.player))}'})">查看球员</button>
                                         <button class="compare-slot-action is-danger" type="button" onclick="removePlayerFromCompare(${index})">移除</button>
                                     </div>
                                 </div>
@@ -1368,7 +1469,7 @@ function buildComparisonPlayerCard(slot, slotIndex) {
             <div class="comparison-player-head">
                 <div>
                     <div class="comparison-player-name">${escapeHtml(slot.player.name)}</div>
-                    <div class="comparison-player-version">UID ${escapeHtml(slot.player.uid)}</div>
+                    <div class="comparison-player-version">UID ${escapeHtml(slot.player.uid)} · ${escapeHtml(getPlayerDataVersion(slot.player))}</div>
                 </div>
                 <div class="comparison-player-tag">${escapeHtml(slot.player.position || '-')}</div>
             </div>
@@ -1388,6 +1489,7 @@ function buildComparisonPlayerCard(slot, slotIndex) {
 function buildComparisonMetaCard(leftPreview, rightPreview) {
     const rows = [
         ['UID', leftPreview.uid, rightPreview.uid],
+        ['版本', getPlayerDataVersion(leftPreview) || '-', getPlayerDataVersion(rightPreview) || '-'],
         ['国籍', leftPreview.nationality || '-', rightPreview.nationality || '-'],
         ['生日', leftPreview.birth_date || '未知', rightPreview.birth_date || '未知'],
         ['年龄', leftPreview.age ?? '-', rightPreview.age ?? '-'],

@@ -135,6 +135,7 @@ class TeamInfoResponse(BaseModel):
 class AttributeSearchResponse(BaseModel):
     uid: int
     name: str
+    data_version: str
     position: str
     age: int
     ca: int
@@ -172,6 +173,7 @@ class PlayerReactionActionResponse(BaseModel):
 class PlayerAttributeDetailResponse(BaseModel):
     uid: int
     name: str
+    data_version: str
     position: str
     age: int
     ca: int
@@ -195,6 +197,8 @@ class PlayerAttributeDetailResponse(BaseModel):
     national_caps: int
     national_goals: int
     player_habits: Optional[str] = None
+    player_habits_raw_code: Optional[str] = None
+    player_habits_high_bits: Optional[str] = None
     corner: int
     crossing: int
     dribbling: int
@@ -272,6 +276,11 @@ class PlayerAttributeDetailResponse(BaseModel):
     top_positions: list[PositionScoreResponse]
     radar_profile: list[PlayerRadarMetricResponse]
     reaction_summary: PlayerReactionSummaryResponse = Field(default_factory=PlayerReactionSummaryResponse)
+
+
+class AttributeVersionsResponse(BaseModel):
+    available_versions: list[str] = Field(default_factory=list)
+    default_version: str
 
 
 class WageDetailResponse(BaseModel):

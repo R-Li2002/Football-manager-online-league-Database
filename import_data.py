@@ -2,20 +2,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import unicodedata
 from dataclasses import asdict, dataclass, field
+from decimal import Decimal, InvalidOperation
 from functools import lru_cache
+from numbers import Integral, Real
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 from sqlalchemy.orm import Session, sessionmaker
 
+from attribute_versions import infer_attribute_data_version
 from auth_utils import hash_password
 from database import engine, init_database
 from league_settings import create_league_info_record, get_growth_age_limit
-from models import AdminUser, LeagueInfo, Player, PlayerAttribute, Team, TransferLog
+from models import AdminUser, LeagueInfo, Player, PlayerAttribute, PlayerAttributeVersion, Team, TransferLog
 from services.league_service import (
     PERSISTED_TEAM_STAT_SCOPES,
     TEAM_CACHE_REFRESH_MODE_FULL_RECALC,
@@ -202,6 +206,8 @@ ATTRIBUTE_COLUMN_ALIASES = {
     "national_caps": ["国家队出场"],
     "national_goals": ["国家队进球"],
     "player_habits": ["球员习惯"],
+    "player_habits_raw_code": ["球员习惯原始码"],
+    "player_habits_high_bits": ["球员习惯高位码"],
 }
 
 TEAM_NAME_ALIASES = {
@@ -238,6 +244,142 @@ TEAM_NAME_ALIASES = {
 }
 
 ERROR_DETAIL_SAMPLE_LIMIT = 50
+
+ATTRIBUTE_SOURCE_PATTERNS = ["*球员属性.csv", "*球员属性.xlsx"]
+ATTRIBUTE_XLSX_HEADER_SCAN_ROWS = 5
+ATTRIBUTE_XLSX_SHEET_INDEX = 0
+
+ATTRIBUTE_HEADER_CANONICAL_RENAMES = {
+    "名字": "姓名",
+    "在此输入名字": "姓名",
+    "当前能力": "ca",
+    "当前ca": "ca",
+    "当前PA": "pa",
+    "球队": "俱乐部",
+    "停球": "接球",
+    "点球": "罚点球",
+    "平衡2": "平衡",
+    "指挥防守": "沟通",
+    "手抛球": "手抛球的能力",
+    "稳定性": "稳定",
+    "肮脏动作": "肮脏",
+    "大赛发挥": "大赛",
+    "多样性": "多样",
+    "受伤倾向": "伤病",
+    "野心": "雄心",
+    "争论倾向": "争论",
+    "职业素养": "职业",
+    "体育精神": "体育道德",
+    "前腰": "AMC",
+    "左前腰": "AML",
+    "右前腰": "AMR",
+    "中后卫": "DC",
+    "左后卫": "DL",
+    "右后卫": "DR",
+    "后腰": "DM",
+    "门将": "GK",
+    "中前卫": "MC",
+    "左前卫": "ML",
+    "右前卫": "MR",
+    "前锋": "ST",
+    "进攻型左边卫": "WBL",
+    "进攻型右边卫": "WBR",
+    "习惯": "球员习惯",
+}
+
+PLAYER_HABIT_TEXT_COLUMN = "球员习惯"
+PLAYER_HABIT_RAW_CODE_COLUMN = "球员习惯原始码"
+PLAYER_HABIT_HIGH_BITS_COLUMN = "球员习惯高位码"
+NUMERIC_HABIT_CODE_RE = re.compile(r"^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$")
+MAX_SAFE_PLAYER_HABIT_COUNT = 9
+IEEE754_SAFE_INTEGER_MAX = (1 << 53) - 1
+PLAYER_HABIT_BIT_LABELS: tuple[tuple[int, str], ...] = (
+    (1 << 0, "沿左路带球突进"),
+    (1 << 1, "沿右路带球突进"),
+    (1 << 2, "中路带球突进"),
+    (1 << 3, "插入对方禁区"),
+    (1 << 4, "跑肋部空间接球"),
+    (1 << 5, "有机会就前插"),
+    (1 << 6, "习惯简单短传配合"),
+    (1 << 7, "经常尝试传身后球"),
+    (1 << 8, "远射"),
+    (1 << 9, "大力射门"),
+    (1 << 10, "角度刁钻的射门"),
+    (1 << 11, "弧线球射门"),
+    (1 << 12, "喜欢盘过门将后射门"),
+    (1 << 13, "乐于反越位"),
+    (1 << 14, "用外脚背"),
+    (1 << 15, "贴身盯防"),
+    (1 << 16, "激怒对手"),
+    (1 << 17, "与裁判争论"),
+    (1 << 18, "背身拿球"),
+    (1 << 19, "回撤拿球"),
+    (1 << 20, "撞墙式配合"),
+    (1 << 21, "喜欢过顶球吊射"),
+    (1 << 22, "控制节奏"),
+    (1 << 23, "尝试倒勾球"),
+    (1 << 24, "乐意把球传给位置更好的队友而不是射门"),
+    (1 << 25, "不喜欢传身后球"),
+    (1 << 26, "停球观察"),
+    (1 << 27, "趟球变向加速过人"),
+    (1 << 28, "在盘带前先将球停至右脚"),
+    (1 << 29, "在盘带前先将球停至左脚"),
+    (1 << 30, "长时间控球"),
+    (1 << 31, "后排插上进攻"),
+    (1 << 32, "利用脚下技术将球带出危险区"),
+    (1 << 33, "从不前插"),
+    (1 << 34, "避免使用弱势脚"),
+    (1 << 35, "尝试花式动作"),
+    (1 << 36, "主罚远距离任意球"),
+    (1 << 37, "倒地铲球"),
+    (1 << 38, "不喜欢倒地铲球"),
+    (1 << 39, "喜欢从双侧内切"),
+    (1 << 40, "拉边"),
+    (1 << 41, "鼓动观众情绪"),
+    (1 << 42, "第一时间射门"),
+    (1 << 43, "长距离传球"),
+    (1 << 44, "用脚触球"),
+    (1 << 45, "任意球大力攻门"),
+    (1 << 46, "喜欢连续过多人"),
+    (1 << 47, "喜欢将球转移到边路"),
+    (1 << 48, "倾向于在职业生涯巅峰期便选择退役（隐藏习惯）"),
+    (1 << 49, "倾向于尽可能长地延续自己的职业生涯（隐藏习惯）"),
+    (1 << 50, "喜欢掷长距离界外球"),
+    (1 << 51, "经常带球"),
+    (1 << 52, "尽量不带球"),
+    (1 << 53, "尝试提高弱势脚能力"),
+    (1 << 54, "喜欢顶在小禁区进攻"),
+    (1 << 55, "喜欢通过长距离手抛球发起防守反击"),
+    (1 << 56, "不喜欢尝试远射"),
+    (1 << 57, "从左路内切"),
+    (1 << 58, "从右路内切"),
+    (1 << 59, "尽早传中"),
+    (1 << 60, "把球带出防守区域"),
+    (1 << 61, "脚控球倾向"),
+)
+PLAYER_HABIT_KNOWN_MASK = sum(bit for bit, _ in PLAYER_HABIT_BIT_LABELS)
+
+DERIVED_RADAR_AVERAGE_RECIPES = {
+    "防守": ("盯人", "抢断", "防守站位"),
+    "身体": ("灵活", "平衡", "耐力", "强壮"),
+    "速度.1": ("爆发力", "速度"),
+    "创造": ("传球", "想象力", "视野"),
+    "进攻": ("射门", "镇定", "无球跑动"),
+    "技术.1": ("盘带", "接球", "技术"),
+    "制空": ("头球", "弹跳"),
+    "精神": ("预判", "勇敢", "集中", "决断", "意志力", "团队合作"),
+    "拦截射门": ("一对一", "反应"),
+    "指挥防守": ("拦截传中", "沟通"),
+    "制空.1": ("制空能力", "手控球"),
+    "大脚": ("大脚开球", "手抛球的能力"),
+}
+
+DERIVED_RADAR_COPY_RECIPES = {
+    "身体.1": "身体",
+    "速度.2": "速度.1",
+    "精神.1": "精神",
+    "意外性": "神经指数",
+}
 
 
 @dataclass
@@ -344,6 +486,275 @@ def parse_optional_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def parse_player_habit_code(value: Any) -> tuple[int, str, bool] | None:
+    if is_blank(value) or isinstance(value, bool):
+        return None
+
+    if isinstance(value, Integral):
+        number = int(value)
+        return (number, str(number), True) if number >= 0 else None
+
+    if isinstance(value, Real):
+        number = float(value)
+        if pd.isna(number) or not number.is_integer():
+            return None
+        normalized = int(number)
+        if normalized < 0:
+            return None
+        return normalized, str(normalized), normalized <= IEEE754_SAFE_INTEGER_MAX
+
+    text = clean_string(value)
+    if not text or not NUMERIC_HABIT_CODE_RE.fullmatch(text):
+        return None
+
+    try:
+        decimal_value = Decimal(text)
+    except InvalidOperation:
+        return None
+
+    if decimal_value != decimal_value.to_integral_value():
+        return None
+
+    normalized = int(decimal_value)
+    if normalized < 0:
+        return None
+
+    is_exact_integer = "e" not in text.casefold() and "." not in text
+    return normalized, str(normalized), is_exact_integer
+
+
+def decode_player_habit_value(value: Any) -> dict[str, Any] | None:
+    parsed = parse_player_habit_code(value)
+    if parsed is None:
+        return None
+
+    numeric_code, raw_code, is_exact = parsed
+    low_bits = numeric_code & PLAYER_HABIT_KNOWN_MASK
+    high_bits = numeric_code & ~PLAYER_HABIT_KNOWN_MASK
+    bit_count = numeric_code.bit_count()
+    is_reliable = is_exact and bit_count <= MAX_SAFE_PLAYER_HABIT_COUNT
+    decoded_text = ""
+    if is_reliable and low_bits:
+        decoded_text = "\n".join(label for bit, label in PLAYER_HABIT_BIT_LABELS if low_bits & bit)
+
+    return {
+        "decoded_text": decoded_text,
+        "raw_code": raw_code if numeric_code != 0 else "",
+        "high_bits": str(high_bits) if high_bits else "",
+        "is_reliable": is_reliable,
+        "bit_count": bit_count,
+    }
+
+
+def decode_player_habits(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]]:
+    if PLAYER_HABIT_TEXT_COLUMN not in df.columns:
+        return df, {
+            "player_habit_numeric_rows": 0,
+            "player_habit_decoded_rows": 0,
+            "player_habit_high_bits_rows": 0,
+            "player_habit_unresolved_rows": 0,
+        }
+
+    habit_texts: list[str] = []
+    raw_codes: list[str] = []
+    high_bits_codes: list[str] = []
+    numeric_rows = 0
+    decoded_rows = 0
+    high_bits_rows = 0
+    unresolved_rows = 0
+
+    for raw_value in df[PLAYER_HABIT_TEXT_COLUMN].tolist():
+        decoded = decode_player_habit_value(raw_value)
+        if decoded is None:
+            habit_texts.append(clean_string(raw_value))
+            raw_codes.append("")
+            high_bits_codes.append("")
+            continue
+
+        numeric_rows += 1
+        raw_codes.append(decoded["raw_code"])
+        high_bits_codes.append(decoded["high_bits"])
+        if decoded["high_bits"]:
+            high_bits_rows += 1
+        if decoded["is_reliable"] and decoded["decoded_text"]:
+            habit_texts.append(decoded["decoded_text"])
+            decoded_rows += 1
+        else:
+            habit_texts.append("")
+            unresolved_rows += 1
+
+    additions = {
+        PLAYER_HABIT_TEXT_COLUMN: pd.Series(habit_texts, index=df.index, dtype=object),
+        PLAYER_HABIT_RAW_CODE_COLUMN: pd.Series(raw_codes, index=df.index, dtype=object),
+        PLAYER_HABIT_HIGH_BITS_COLUMN: pd.Series(high_bits_codes, index=df.index, dtype=object),
+    }
+    df = pd.concat([df.drop(columns=[PLAYER_HABIT_TEXT_COLUMN], errors="ignore"), pd.DataFrame(additions)], axis=1)
+    return df, {
+        "player_habit_numeric_rows": numeric_rows,
+        "player_habit_decoded_rows": decoded_rows,
+        "player_habit_high_bits_rows": high_bits_rows,
+        "player_habit_unresolved_rows": unresolved_rows,
+    }
+
+
+def read_csv_with_fallback_encodings(path: Path) -> tuple[pd.DataFrame, str]:
+    last_error: Exception | None = None
+    for encoding in ("utf-8-sig", "utf-8", "gb18030", "gbk"):
+        try:
+            return pd.read_csv(path, dtype=object, low_memory=False, encoding=encoding), encoding
+        except UnicodeDecodeError as exc:
+            last_error = exc
+        except Exception as exc:
+            last_error = exc
+            break
+    if last_error is None:
+        raise ValueError(f"无法读取属性文件: {path}")
+    raise last_error
+
+
+def dedupe_headers(headers: list[Any]) -> list[str]:
+    seen: dict[str, int] = {}
+    deduped: list[str] = []
+    for index, value in enumerate(headers):
+        base = clean_string(value, default=f"Unnamed: {index}")
+        counter = seen.get(base, 0)
+        deduped.append(base if counter == 0 else f"{base}.{counter}")
+        seen[base] = counter + 1
+    return deduped
+
+
+def detect_attribute_workbook_header_row(preview: pd.DataFrame) -> int:
+    best_row = 0
+    best_score = -1
+    for row_index in preview.index:
+        cells = [normalize_header(value) for value in preview.loc[row_index].tolist() if not is_blank(value)]
+        if not cells:
+            continue
+        text_like = sum(not cell.isdigit() for cell in cells)
+        score = text_like * 100 + len(cells)
+        if text_like >= max(8, len(cells) // 2) and score > best_score:
+            best_row = int(row_index)
+            best_score = score
+    return best_row
+
+
+def read_attribute_workbook(path: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
+    with pd.ExcelFile(path) as workbook:
+        sheet_name = workbook.sheet_names[ATTRIBUTE_XLSX_SHEET_INDEX]
+        preview = workbook.parse(
+            sheet_name=sheet_name,
+            header=None,
+            nrows=ATTRIBUTE_XLSX_HEADER_SCAN_ROWS,
+            dtype=object,
+        )
+        header_row = detect_attribute_workbook_header_row(preview)
+        raw_df = workbook.parse(sheet_name=sheet_name, header=None, dtype=object)
+
+    headers = dedupe_headers(raw_df.iloc[header_row].tolist())
+    df = raw_df.iloc[header_row + 1 :].reset_index(drop=True)
+    df.columns = headers
+    metadata = {
+        "source_format": "xlsx",
+        "sheet_name": sheet_name,
+        "header_row": header_row + 1,
+    }
+    return df, metadata
+
+
+def canonicalize_attribute_headers(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
+    rename_lookup = {
+        normalize_header(source): target
+        for source, target in ATTRIBUTE_HEADER_CANONICAL_RENAMES.items()
+    }
+    renamed_headers: dict[str, str] = {}
+    rename_map: dict[str, str] = {}
+    existing_headers = set(df.columns)
+
+    for column in df.columns:
+        canonical = rename_lookup.get(normalize_header(column))
+        if canonical is None or canonical == column:
+            continue
+        if canonical in existing_headers and canonical != column:
+            continue
+        rename_map[column] = canonical
+        renamed_headers[column] = canonical
+        existing_headers.add(canonical)
+
+    if rename_map:
+        df = df.rename(columns=rename_map)
+    return df, renamed_headers
+
+
+def apply_negative_pa_override(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    if "负潜" not in df.columns:
+        return df, 0
+
+    negative_pa = pd.to_numeric(df["负潜"], errors="coerce")
+    override_mask = negative_pa.notna() & (negative_pa != 0)
+    if not override_mask.any():
+        return df, 0
+
+    if "pa" in df.columns:
+        pa_series = pd.to_numeric(df["pa"], errors="coerce")
+        df = df.copy()
+        df["pa"] = pa_series.where(~override_mask, negative_pa)
+    else:
+        df = df.copy()
+        df["pa"] = negative_pa.where(override_mask)
+
+    return df, int(override_mask.sum())
+
+
+def add_derived_radar_columns(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    derived_columns: list[str] = []
+    additions: dict[str, pd.Series] = {}
+
+    def get_numeric_series(column_name: str) -> pd.Series:
+        if column_name in additions:
+            return additions[column_name]
+        return pd.to_numeric(df[column_name], errors="coerce")
+
+    for target, source_columns in DERIVED_RADAR_AVERAGE_RECIPES.items():
+        if target in df.columns or any(source not in df.columns and source not in additions for source in source_columns):
+            continue
+        numeric_source = [get_numeric_series(source) for source in source_columns]
+        additions[target] = pd.concat(numeric_source, axis=1).mean(axis=1)
+        derived_columns.append(target)
+
+    for target, source in DERIVED_RADAR_COPY_RECIPES.items():
+        if target in df.columns or (source not in df.columns and source not in additions):
+            continue
+        additions[target] = get_numeric_series(source)
+        derived_columns.append(target)
+
+    if additions:
+        df = pd.concat([df, pd.DataFrame(additions, index=df.index)], axis=1)
+
+    return df, derived_columns
+
+
+def load_player_attributes_source(path: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
+    suffix = path.suffix.lower()
+    metadata: dict[str, Any]
+    if suffix == ".csv":
+        df, encoding = read_csv_with_fallback_encodings(path)
+        metadata = {"source_format": "csv", "encoding": encoding}
+    elif suffix in {".xlsx", ".xls"}:
+        df, metadata = read_attribute_workbook(path)
+    else:
+        raise ValueError(f"不支持的属性文件格式: {path.suffix}")
+
+    df, renamed_headers = canonicalize_attribute_headers(df)
+    df, negative_pa_override_count = apply_negative_pa_override(df)
+    df, player_habit_decode_stats = decode_player_habits(df)
+    df, derived_columns = add_derived_radar_columns(df)
+    metadata["renamed_headers"] = renamed_headers
+    metadata["derived_columns"] = derived_columns
+    metadata["negative_pa_override_count"] = negative_pa_override_count
+    metadata.update(player_habit_decode_stats)
+    return df, metadata
+
+
 def choose_latest_file(root_dir: Path, patterns: list[str], label: str, warnings: list[str]) -> Path:
     candidates: list[Path] = []
     for pattern in patterns:
@@ -369,16 +780,16 @@ def resolve_explicit_path(path_value: str | Path, root_dir: Path, label: str) ->
 def resolve_input_files(workbook_path: str | Path | None, attributes_csv_path: str | Path | None, root_dir: Path) -> tuple[Path, Path, list[str]]:
     warnings: list[str] = []
     workbook = (
-        resolve_explicit_path(workbook_path, root_dir, "联机联赛 Excel")
+        resolve_explicit_path(workbook_path, root_dir, "league workbook")
         if workbook_path
-        else choose_latest_file(root_dir, ["*HEIGO*.xlsx"], "联机联赛 Excel", warnings)
+        else choose_latest_file(root_dir, ["*HEIGO*.xlsx"], "league workbook", warnings)
     )
-    attributes_csv = (
-        resolve_explicit_path(attributes_csv_path, root_dir, "球员属性 CSV")
+    attributes_path = (
+        resolve_explicit_path(attributes_csv_path, root_dir, "player attributes")
         if attributes_csv_path
-        else choose_latest_file(root_dir, ["*球员属性*.csv"], "球员属性 CSV", warnings)
+        else choose_latest_file(root_dir, ATTRIBUTE_SOURCE_PATTERNS, "player attributes", warnings)
     )
-    return workbook, attributes_csv, warnings
+    return workbook, attributes_path, warnings
 
 
 def build_column_lookup(df: pd.DataFrame) -> dict[str, str]:
@@ -875,11 +1286,35 @@ def import_players(db: Session, workbook_path: Path, report: ImportReport, *, st
 
 def import_player_attributes(db: Session, attributes_csv_path: Path, report: ImportReport) -> None:
     summary = dataset_summary(report, "player_attributes", attributes_csv_path)
+    data_version = infer_attribute_data_version(attributes_csv_path)
+    summary.details["data_version"] = data_version
     try:
-        df = pd.read_csv(attributes_csv_path, dtype=object, low_memory=False)
+        df, source_metadata = load_player_attributes_source(attributes_csv_path)
     except Exception as exc:
-        summary.add_error(f"读取球员属性 CSV 失败: {exc}")
+        summary.add_error(f"读取球员属性文件失败: {exc}")
         return
+
+    summary.details["source_format"] = source_metadata.get("source_format", "unknown")
+    if source_metadata.get("encoding"):
+        summary.details["encoding"] = source_metadata["encoding"]
+    if source_metadata.get("sheet_name"):
+        summary.details["sheet_name"] = source_metadata["sheet_name"]
+    if source_metadata.get("header_row"):
+        summary.details["header_row"] = source_metadata["header_row"]
+    if source_metadata.get("renamed_headers"):
+        summary.details["header_renames"] = source_metadata["renamed_headers"]
+    if source_metadata.get("derived_columns"):
+        summary.details["derived_columns"] = source_metadata["derived_columns"]
+    if source_metadata.get("negative_pa_override_count"):
+        summary.details["negative_pa_override_count"] = source_metadata["negative_pa_override_count"]
+    for detail_key in (
+        "player_habit_numeric_rows",
+        "player_habit_decoded_rows",
+        "player_habit_high_bits_rows",
+        "player_habit_unresolved_rows",
+    ):
+        if detail_key in source_metadata:
+            summary.details[detail_key] = source_metadata[detail_key]
 
     try:
         resolved_columns = {
@@ -890,8 +1325,17 @@ def import_player_attributes(db: Session, attributes_csv_path: Path, report: Imp
         summary.add_error(str(exc))
         return
 
-    existing_attributes = {record.uid: record for record in db.query(PlayerAttribute).all()}
+    existing_versioned_attributes = {
+        (record.uid, record.data_version): record
+        for record in db.query(PlayerAttributeVersion)
+        .filter(PlayerAttributeVersion.data_version == data_version)
+        .all()
+    }
+    existing_legacy_attributes = {record.uid: record for record in db.query(PlayerAttribute).all()}
     seen_uids: set[int] = set()
+    legacy_cache_created = 0
+    legacy_cache_updated = 0
+    legacy_cache_unchanged = 0
 
     for row_index, row in df.iterrows():
         csv_row = row_index + 2
@@ -911,12 +1355,20 @@ def import_player_attributes(db: Session, attributes_csv_path: Path, report: Imp
             continue
         seen_uids.add(uid)
 
-        record = existing_attributes.get(uid)
-        is_new = record is None
-        if record is None:
-            record = PlayerAttribute(uid=uid)
-            db.add(record)
-            existing_attributes[uid] = record
+        versioned_key = (uid, data_version)
+        versioned_record = existing_versioned_attributes.get(versioned_key)
+        is_new = versioned_record is None
+        if versioned_record is None:
+            versioned_record = PlayerAttributeVersion(uid=uid, data_version=data_version)
+            db.add(versioned_record)
+            existing_versioned_attributes[versioned_key] = versioned_record
+
+        legacy_record = existing_legacy_attributes.get(uid)
+        legacy_is_new = legacy_record is None
+        if legacy_record is None:
+            legacy_record = PlayerAttribute(uid=uid)
+            db.add(legacy_record)
+            existing_legacy_attributes[uid] = legacy_record
 
         field_values: dict[str, Any] = {"uid": uid}
         float_attribute_fields = {
@@ -941,7 +1393,16 @@ def import_player_attributes(db: Session, attributes_csv_path: Path, report: Imp
             if field_name == "uid" or column_name is None:
                 continue
             raw_value = row.get(column_name)
-            if field_name in {"name", "position", "nationality", "club", "birth_date", "player_habits"}:
+            if field_name in {
+                "name",
+                "position",
+                "nationality",
+                "club",
+                "birth_date",
+                "player_habits",
+                "player_habits_raw_code",
+                "player_habits_high_bits",
+            }:
                 field_values[field_name] = clean_string(raw_value)
             elif field_name in float_attribute_fields:
                 field_values[field_name] = parse_optional_float(raw_value, default=0.0)
@@ -952,11 +1413,17 @@ def import_player_attributes(db: Session, attributes_csv_path: Path, report: Imp
             summary.add_error(f"CSV 行 {csv_row}: UID {uid} 缺少姓名")
             summary.skipped += 1
             if is_new:
-                db.expunge(record)
-                existing_attributes.pop(uid, None)
+                db.expunge(versioned_record)
+                existing_versioned_attributes.pop(versioned_key, None)
+            if legacy_is_new:
+                db.expunge(legacy_record)
+                existing_legacy_attributes.pop(uid, None)
             continue
 
-        changed = apply_model_updates(record, field_values)
+        versioned_field_values = dict(field_values)
+        versioned_field_values["data_version"] = data_version
+        changed = apply_model_updates(versioned_record, versioned_field_values)
+        legacy_changed = apply_model_updates(legacy_record, field_values)
         if is_new:
             summary.created += 1
         elif changed:
@@ -964,6 +1431,16 @@ def import_player_attributes(db: Session, attributes_csv_path: Path, report: Imp
         else:
             summary.unchanged += 1
 
+        if legacy_is_new:
+            legacy_cache_created += 1
+        elif legacy_changed:
+            legacy_cache_updated += 1
+        else:
+            legacy_cache_unchanged += 1
+
+    summary.details["legacy_cache_created"] = legacy_cache_created
+    summary.details["legacy_cache_updated"] = legacy_cache_updated
+    summary.details["legacy_cache_unchanged"] = legacy_cache_unchanged
     db.flush()
 
 

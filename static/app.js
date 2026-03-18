@@ -2,7 +2,15 @@ const AppModules = {
     home: {onEnter: () => { if (typeof updateHeroBadgeState === 'function') updateHeroBadgeState(); }},
     overview: {onEnter: () => { if (typeof renderOverview === 'function') renderOverview(); }},
     players: {onEnter: () => { if (typeof renderPlayerQueryState === 'function') renderPlayerQueryState(); }},
-    database: {onEnter: () => { if (typeof renderCompareDock === 'function') renderCompareDock(); }},
+    database: {onEnter: async () => {
+        if (typeof loadAttributeVersionCatalog === 'function') {
+            await loadAttributeVersionCatalog();
+        }
+        if (typeof refreshAttributeVersionBanner === 'function') {
+            refreshAttributeVersionBanner();
+        }
+        if (typeof renderCompareDock === 'function') renderCompareDock();
+    }},
     admin: {onEnter: () => { if (isAdmin && typeof renderOperationsAuditCard === 'function') renderOperationsAuditCard(); }},
 };
 
@@ -59,6 +67,7 @@ function captureDatabaseHistoryState() {
     const isDetailView = document.getElementById('dbDetailView')?.classList.contains('active');
     return {
         query: document.getElementById('dbPlayerSearch')?.value.trim() || '',
+        attributeVersion: typeof getCurrentAttributeVersion === 'function' ? getCurrentAttributeVersion() : '',
         sort: normalizeSortState(currentDbSort, 'number'),
         view: isDetailView && currentDetailPlayer ? 'detail' : 'list',
         detailUid: isDetailView && currentDetailPlayer ? Number(currentDetailPlayer.uid) || null : null,
@@ -100,6 +109,7 @@ function normalizeHistoryState(rawState, index = appHistoryIndex) {
         },
         database: {
             query: typeof baseState.database?.query === 'string' ? baseState.database.query : '',
+            attributeVersion: typeof baseState.database?.attributeVersion === 'string' ? baseState.database.attributeVersion : '',
             sort: normalizeSortState(baseState.database?.sort, 'number'),
             view: baseState.database?.view === 'detail' ? 'detail' : 'list',
             detailUid: Number.isFinite(Number(baseState.database?.detailUid))
@@ -192,6 +202,12 @@ async function restoreDatabaseHistoryState(databaseState) {
         searchInput.value = databaseState.query || '';
     }
 
+    if (typeof loadAttributeVersionCatalog === 'function') {
+        await loadAttributeVersionCatalog();
+    }
+    if (typeof setCurrentAttributeVersion === 'function') {
+        setCurrentAttributeVersion(databaseState.attributeVersion);
+    }
     currentDbSort = normalizeSortState(databaseState.sort, 'number');
     dbDetailReturnState = {tab: normalizeAppTabName(databaseState.returnTab || 'database')};
 
@@ -270,6 +286,9 @@ async function init() {
             fetch('/api/league/info'),
             fetch('/api/admin/check'),
         ]);
+        if (typeof loadAttributeVersionCatalog === 'function') {
+            await loadAttributeVersionCatalog({force: true});
+        }
         teams = await teamsRes.json();
         allPlayers = await playersRes.json();
         currentPlayers = [...allPlayers];

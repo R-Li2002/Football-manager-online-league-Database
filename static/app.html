@@ -184,8 +184,8 @@
         </div>
 
         <div id="database" class="tab-content">
-            <div class="warning-banner">
-                ⚠️ <strong>提示：</strong>2600 版本数据已过时，仅供参考。当前数据可能不是最新版本。
+            <div class="warning-banner" id="attributeVersionBanner">
+                当前球员库版本尚未加载。
             </div>
 
             <div class="list-view active" id="dbListView">
@@ -350,7 +350,7 @@
                                     <div class="admin-action-card maintenance-card warning">
                                         <div class="maintenance-badge warning">高影响</div>
                                         <h4>正式导入最新联赛数据</h4>
-                                        <div class="maintenance-copy">按严格模式读取最新 HEIGO Excel 和球员属性 CSV，自动备份当前数据库后再写入联赛规则、球队、球员和属性库。</div>
+                                        <div class="maintenance-copy">按严格模式读取最新 HEIGO Excel 和球员属性 CSV/XLSX，自动备份当前数据库后再写入联赛规则、球队、球员和属性库；球员属性会按版本并存。</div>
                                         <div class="maintenance-impact">
                                             <strong>影响范围：</strong>联赛规则、球队名单、球员属性、缓存摘要和部分维护日志都会同步更新。
                                         </div>

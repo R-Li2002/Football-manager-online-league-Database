@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from schemas_read import (
     AttributeSearchResponse,
+    AttributeVersionsResponse,
     HealthResponse,
     LeagueInfoResponse,
     PlayerReactionActionResponse,
@@ -67,22 +68,32 @@ def build_public_router(get_db):
         return read_service.search_player(db, player_name)
 
     @router.get("/api/attributes/search/{player_name}", response_model=list[AttributeSearchResponse])
-    def search_player_attributes(player_name: str, db: Session = Depends(get_db)):
-        return read_service.search_player_attributes(db, player_name)
+    def search_player_attributes(
+        player_name: str,
+        version: str | None = None,
+        db: Session = Depends(get_db),
+    ):
+        return read_service.search_player_attributes(db, player_name, data_version=version)
+
+    @router.get("/api/attributes/versions", response_model=AttributeVersionsResponse)
+    def get_attribute_versions(db: Session = Depends(get_db)):
+        return read_service.get_attribute_versions(db)
 
     @router.get("/api/attributes/{uid}", response_model=PlayerAttributeDetailResponse | None)
     def get_player_attribute_detail(
         uid: int,
+        version: str | None = None,
         visitor_token: str | None = Cookie(None, alias=REACTION_VISITOR_COOKIE_NAME),
         db: Session = Depends(get_db),
     ):
-        return read_service.get_player_attribute_detail(db, uid, visitor_token=visitor_token)
+        return read_service.get_player_attribute_detail(db, uid, data_version=version, visitor_token=visitor_token)
 
     @router.post("/api/attributes/{uid}/reactions/{reaction_type}", response_model=PlayerReactionActionResponse)
     def react_to_player(
         uid: int,
         reaction_type: str,
         response: Response,
+        version: str | None = None,
         visitor_token: str | None = Cookie(None, alias=REACTION_VISITOR_COOKIE_NAME),
         db: Session = Depends(get_db),
     ):
@@ -92,6 +103,7 @@ def build_public_router(get_db):
             player_uid=uid,
             visitor_token=stable_visitor_token,
             reaction_type=reaction_type,
+            data_version=version,
         )
 
     @router.get("/api/export/excel")

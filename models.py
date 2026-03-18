@@ -97,9 +97,7 @@ class Player(Base):
     slot_type = Column(String)
 
 
-class PlayerAttribute(Base):
-    __tablename__ = "player_attributes"
-
+class PlayerAttributeColumns:
     uid = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     position = Column(String)
@@ -213,6 +211,19 @@ class PlayerAttribute(Base):
     national_caps = Column(Integer, default=0)
     national_goals = Column(Integer, default=0)
     player_habits = Column(String)
+    player_habits_raw_code = Column(String)
+    player_habits_high_bits = Column(String)
+
+
+class PlayerAttribute(PlayerAttributeColumns, Base):
+    __tablename__ = "player_attributes"
+
+
+class PlayerAttributeVersion(PlayerAttributeColumns, Base):
+    __tablename__ = "player_attribute_versions"
+
+    uid = Column(Integer, primary_key=True, index=True)
+    data_version = Column(String, primary_key=True, index=True, nullable=False)
 
 
 class PlayerReactionSummary(Base):

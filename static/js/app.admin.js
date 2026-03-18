@@ -454,7 +454,7 @@ async function batchConsume() {
 }
 
 async function runFormalImport() {
-    const confirmed = confirm('确定要执行正式导入吗？\n\n这会按严格模式读取最新的 HEIGO Excel 和球员属性 CSV，先自动备份当前数据库，再正式写入联赛规则、球队、球员和属性库。');
+    const confirmed = confirm('确定要执行正式导入吗？\n\n这会按严格模式读取最新的 HEIGO Excel 和球员属性 CSV/XLSX，先自动备份当前数据库，再正式写入联赛规则、球队、球员和属性库。球员属性会按版本并存。');
     if (!confirmed) return;
     try {
         const res = await fetch('/api/admin/import/formal', {method: 'POST'});
@@ -468,6 +468,12 @@ async function runFormalImport() {
             await refreshLeagueInfoDataset();
             await refreshPlayerDataset();
             await refreshTeamDataset();
+            if (typeof loadAttributeVersionCatalog === 'function') {
+                await loadAttributeVersionCatalog({force: true});
+            }
+            if (typeof refreshAttributeVersionBanner === 'function') {
+                refreshAttributeVersionBanner();
+            }
             loadSchemaBootstrapStatus();
             loadSeaPlayers();
             loadLogFile();

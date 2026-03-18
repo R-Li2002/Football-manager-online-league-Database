@@ -46,7 +46,7 @@ function renderHeroSearchResults(query, players) {
             </div>
             <div class="home-results-list">
                 ${preview.map(player => `
-                    <button class="home-result-item" onclick="openDatabaseDetailFromHero(${player.uid})">
+                    <button class="home-result-item" onclick="openDatabaseDetailFromHero(${player.uid}, {version: '${escapeHtml(player.data_version)}'})">
                         <span class="home-result-main">
                             <strong>${escapeHtml(player.name)}</strong>
                             <span>${escapeHtml(player.position || '-')} · ${escapeHtml(String(player.age ?? '-'))} 岁</span>
@@ -83,7 +83,7 @@ async function runHeroSearch() {
     const results = await fetchDatabaseSearchResults(query);
     const exactMatches = results.filter(player => isExactDatabaseMatch(player, query));
     if (exactMatches.length === 1) {
-        await openDatabaseDetailFromHero(exactMatches[0].uid);
+        await openDatabaseDetailFromHero(exactMatches[0].uid, {version: exactMatches[0].data_version});
         return;
     }
 

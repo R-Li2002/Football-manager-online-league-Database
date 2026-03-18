@@ -8,7 +8,7 @@ from sqlalchemy.pool import NullPool
 
 from database import init_database, run_manual_runtime_fallback, run_schema_migrations
 
-LATEST_REVISION = "20260311_000008"
+LATEST_REVISION = "20260318_000013"
 
 
 class AlembicMigrationTests(unittest.TestCase):
@@ -29,6 +29,7 @@ class AlembicMigrationTests(unittest.TestCase):
             "teams",
             "players",
             "player_attributes",
+            "player_attribute_versions",
             "transfer_logs",
             "admin_users",
             "admin_sessions",
@@ -141,6 +142,14 @@ class AlembicMigrationTests(unittest.TestCase):
         inspector = inspect(self.engine)
         player_columns = {column["name"] for column in inspector.get_columns("players")}
         self.assertIn("team_id", player_columns)
+
+        player_attribute_columns = {column["name"] for column in inspector.get_columns("player_attributes")}
+        self.assertIn("player_habits_raw_code", player_attribute_columns)
+        self.assertIn("player_habits_high_bits", player_attribute_columns)
+
+        player_attribute_version_columns = {column["name"] for column in inspector.get_columns("player_attribute_versions")}
+        self.assertIn("player_habits_raw_code", player_attribute_version_columns)
+        self.assertIn("player_habits_high_bits", player_attribute_version_columns)
 
         transfer_log_columns = {column["name"] for column in inspector.get_columns("transfer_logs")}
         self.assertIn("from_team_id", transfer_log_columns)

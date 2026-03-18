@@ -7,8 +7,11 @@ from sqlalchemy.orm import Session
 from database import BOOTSTRAP_LOG_PATH
 from models import Team
 from repositories.attribute_repository import (
+    get_default_attribute_version,
     get_player_attribute_by_uid,
+    list_available_attribute_versions,
     map_attribute_uid_to_primary_nationality,
+    resolve_attribute_version,
     search_player_attributes_by_name,
 )
 from repositories.league_info_repository import list_league_info
@@ -18,6 +21,7 @@ from repositories.team_repository import list_visible_teams
 from repositories.transfer_log_repository import list_recent_transfer_logs
 from schemas_read import (
     AttributeSearchResponse,
+    AttributeVersionsResponse,
     LogsResponse,
     OperationAuditResponse,
     PlayerResponse,
@@ -133,7 +137,11 @@ def get_teams(db: Session):
 
 
 def _build_player_responses(db: Session, players) -> list[PlayerResponse]:
-    nationality_map = map_attribute_uid_to_primary_nationality(db, (player.uid for player in players))
+    nationality_map = map_attribute_uid_to_primary_nationality(
+        db,
+        (player.uid for player in players),
+        data_version=get_default_attribute_version(db),
+    )
     return [
         PlayerResponse(
             uid=player.uid,
@@ -164,13 +172,19 @@ def search_player(db: Session, player_name: str):
     return _build_player_responses(db, search_players_by_name(db, player_name))
 
 
-def search_player_attributes(db: Session, player_name: str) -> list[AttributeSearchResponse]:
-    players = search_player_attributes_by_name(db, player_name, limit=50)
+def search_player_attributes(
+    db: Session,
+    player_name: str,
+    data_version: str | None = None,
+) -> list[AttributeSearchResponse]:
+    resolved_version = resolve_attribute_version(db, data_version)
+    players = search_player_attributes_by_name(db, player_name, limit=50, data_version=resolved_version)
     heigo_players = map_player_uid_to_team_name(db)
     return [
         AttributeSearchResponse(
             uid=player.uid,
             name=player.name,
+            data_version=getattr(player, "data_version", resolved_version),
             position=player.position,
             age=player.age,
             ca=player.ca,
@@ -186,9 +200,11 @@ def search_player_attributes(db: Session, player_name: str) -> list[AttributeSea
 def get_player_attribute_detail(
     db: Session,
     uid: int,
+    data_version: str | None = None,
     visitor_token: str | None = None,
 ) -> PlayerAttributeDetailResponse | None:
-    attr = get_player_attribute_by_uid(db, uid)
+    resolved_version = resolve_attribute_version(db, data_version)
+    attr = get_player_attribute_by_uid(db, uid, data_version=resolved_version)
     if not attr:
         return None
 
@@ -244,6 +260,7 @@ def get_player_attribute_detail(
     return PlayerAttributeDetailResponse(
         uid=attr.uid,
         name=attr.name,
+        data_version=getattr(attr, "data_version", resolved_version),
         position=attr.position,
         age=attr.age,
         ca=attr.ca,
@@ -267,6 +284,8 @@ def get_player_attribute_detail(
         national_caps=attr.national_caps,
         national_goals=attr.national_goals,
         player_habits=attr.player_habits,
+        player_habits_raw_code=attr.player_habits_raw_code,
+        player_habits_high_bits=attr.player_habits_high_bits,
         corner=attr.corner,
         crossing=attr.crossing,
         dribbling=attr.dribbling,
@@ -344,6 +363,14 @@ def get_player_attribute_detail(
         top_positions=top_positions,
         radar_profile=radar_profile,
         reaction_summary=build_player_reaction_summary(db, uid, visitor_token=visitor_token),
+    )
+
+
+def get_attribute_versions(db: Session) -> AttributeVersionsResponse:
+    available_versions = list_available_attribute_versions(db)
+    return AttributeVersionsResponse(
+        available_versions=available_versions,
+        default_version=get_default_attribute_version(db),
     )
 
 

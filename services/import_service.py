@@ -87,6 +87,8 @@ def import_current_league_data(db: Session, admin: str | None, write_to_log: Log
         for name, summary in report.to_dict()["datasets"].items()
     }
     cleanup_summary = datasets.get("team_cleanup")
+    attribute_summary = datasets.get("player_attributes")
+    imported_attribute_version = attribute_summary.details.get("data_version") if attribute_summary else None
     removed_count = cleanup_summary.details.get("removed_count", 0) if cleanup_summary else 0
 
     if report.has_errors or not report.committed:
