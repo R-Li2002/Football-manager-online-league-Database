@@ -21,7 +21,7 @@ def _verify_internal_share_access(
     header_name: str,
 ) -> None:
     if not expected_token:
-        return
+        raise HTTPException(status_code=503, detail="internal_share_not_configured")
 
     provided_token = (request.headers.get(header_name) or "").strip()
     if hmac.compare_digest(provided_token, expected_token):
@@ -84,5 +84,32 @@ def build_frontend_router(
             theme=theme,
         )
         return HTMLResponse(content=html)
+
+    @router.get("/internal/render/player/{uid}.svg")
+    def read_internal_player_share_svg(
+        request: Request,
+        uid: int,
+        version: str | None = Query(default=None),
+        step: int = Query(default=0, ge=0, le=5),
+        theme: str = Query(default="dark", pattern="^(dark|light)$"),
+        db: Session = Depends(get_db),
+    ):
+        _verify_internal_share_access(
+            request,
+            expected_token=internal_share_token,
+            header_name=internal_share_header_name,
+        )
+
+        player = read_service.get_player_attribute_detail(db, uid, data_version=version)
+        if not player:
+            raise HTTPException(status_code=404, detail="player_not_found")
+
+        svg = share_page_service.build_player_share_svg(
+            player,
+            version=version or player.data_version,
+            step=step,
+            theme=theme,
+        )
+        return Response(content=svg, media_type="image/svg+xml")
 
     return router

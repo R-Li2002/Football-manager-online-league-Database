@@ -10,6 +10,8 @@ try {
         test_health_contract.py `
         test_admin_bootstrap_config.py `
         test_internal_share_page.py `
+        test_internal_render_svg.py `
+        test_share_card_presenter.py `
         test_search_normalization.py
 
     & node test_frontend_search_normalization.js

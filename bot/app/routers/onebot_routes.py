@@ -54,11 +54,13 @@ def build_onebot_router(
 
     @router.get("/health")
     async def health():
+        image_rendering = "ok" if settings.internal_share_token else "disabled"
         detail = {
             "status": "ok",
             "reply_mode": settings.bot_reply_mode,
             "heigo_api": "ok",
             "onebot_api": "disabled",
+            "image_rendering": image_rendering,
             "config": {
                 "onebot_access_token_configured": bool(settings.onebot_access_token),
                 "onebot_secret_configured": bool(settings.onebot_secret),
@@ -66,7 +68,7 @@ def build_onebot_router(
                 "internal_share_token_configured": bool(settings.internal_share_token),
                 "allow_all_groups": settings.qq_bot_allow_all_groups,
                 "allowed_group_count": len(settings.qq_bot_allowed_groups),
-                "playwright_headless": settings.bot_playwright_headless,
+                "image_renderer": settings.image_renderer,
             },
         }
         try:

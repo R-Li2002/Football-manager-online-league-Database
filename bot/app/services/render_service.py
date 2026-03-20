@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from app.config import BotSettings
-from app.render.playwright_renderer import PlaywrightPlayerShareRenderer, RenderedImage
+from app.render.svg_renderer import RenderedImage, SvgPlayerShareRenderer
 
 
 def _safe_fragment(value: str) -> str:
@@ -29,6 +29,20 @@ def build_player_share_url(
     return f"{settings.bot_render_base_url}/internal/share/player/{uid}?{urlencode(query)}"
 
 
+def build_player_share_svg_url(
+    settings: BotSettings,
+    uid: int,
+    *,
+    version: str | None = None,
+    step: int = 0,
+    theme: str = "dark",
+) -> str:
+    query = {"step": step, "theme": theme}
+    if version:
+        query["version"] = version
+    return f"{settings.bot_render_base_url}/internal/render/player/{uid}.svg?{urlencode(query)}"
+
+
 def build_player_share_headers(settings: BotSettings) -> dict[str, str]:
     if not settings.internal_share_token:
         return {}
@@ -36,13 +50,12 @@ def build_player_share_headers(settings: BotSettings) -> dict[str, str]:
 
 
 class PlayerShareRenderService:
-    def __init__(self, settings: BotSettings, renderer: PlaywrightPlayerShareRenderer | None = None):
+    def __init__(self, settings: BotSettings, renderer: SvgPlayerShareRenderer | None = None):
         self.settings = settings
         self.output_root = settings.bot_output_path / "player-shares"
-        self.renderer = renderer or PlaywrightPlayerShareRenderer(
+        self.renderer = renderer or SvgPlayerShareRenderer(
             output_root=self.output_root,
             timeout_seconds=settings.bot_render_timeout_seconds,
-            headless=settings.bot_playwright_headless,
         )
 
     def _build_file_name(self, *, player_name: str, uid: int, version: str | None, step: int) -> str:
@@ -77,6 +90,13 @@ class PlayerShareRenderService:
             step=step,
             theme=theme,
         )
+        svg_url = build_player_share_svg_url(
+            self.settings,
+            uid,
+            version=version,
+            step=step,
+            theme=theme,
+        )
         file_name = self._build_file_name(player_name=player_name, uid=uid, version=version, step=step)
         cached = self._resolve_cached_image(file_name)
         if cached and self._is_cache_fresh(cached.file_path):
@@ -84,7 +104,7 @@ class PlayerShareRenderService:
 
         try:
             rendered = await self.renderer.render(
-                url=share_url,
+                url=svg_url,
                 file_name=file_name,
                 extra_headers=build_player_share_headers(self.settings),
             )

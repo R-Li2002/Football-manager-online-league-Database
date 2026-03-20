@@ -106,6 +106,8 @@ docker compose ps
 curl http://127.0.0.1:8080/health
 ```
 
+首次上线建议先只启动主站；`qqbot` 与 `napcat` 可在主站稳定后再通过 `--profile qqbot` 单独启用。
+
 预期返回：
 
 ```json
@@ -228,3 +230,9 @@ curl -I https://example.com
 3. `git push origin main`
 4. GitHub Actions 先运行发布前检查，再自动部署
 5. 服务器继续保留原有 `data/` 和 `imports/`
+
+如果后续要启用 QQ 机器人，再额外确认：
+
+- `/srv/heigo/.env` 中已配置 `INTERNAL_SHARE_TOKEN`
+- NapCat 已登录并开放 OneBot HTTP API
+- 使用 `docker compose --profile qqbot up -d --build` 启动机器人相关服务

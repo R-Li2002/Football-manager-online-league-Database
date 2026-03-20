@@ -12,7 +12,7 @@ services:
       HEIGO_BACKUP_ROOT: /app/data/backups
       SESSION_COOKIE_SECURE: "true"
       HEIGO_BOOTSTRAP_ADMINS: "${HEIGO_BOOTSTRAP_ADMINS:-}"
-      INTERNAL_SHARE_TOKEN: "${INTERNAL_SHARE_TOKEN:?Set INTERNAL_SHARE_TOKEN in .env}"
+      INTERNAL_SHARE_TOKEN: "${INTERNAL_SHARE_TOKEN:-}"
     ports:
       - "${HEIGO_PORT_BIND:-127.0.0.1:8080:8080}"
     volumes:
@@ -33,6 +33,7 @@ services:
     container_name: heigo-napcat
     restart: unless-stopped
     init: true
+    profiles: ["qqbot"]
     expose:
       - "3000"
       - "3001"
@@ -45,11 +46,12 @@ services:
     container_name: heigo-qqbot
     restart: unless-stopped
     init: true
+    profiles: ["qqbot"]
     environment:
       BOT_PORT: "8090"
       HEIGO_BASE_URL: http://heigo:8080
       BOT_RENDER_BASE_URL: http://heigo:8080
-      INTERNAL_SHARE_TOKEN: "${INTERNAL_SHARE_TOKEN:?Set INTERNAL_SHARE_TOKEN in .env}"
+      INTERNAL_SHARE_TOKEN: "${INTERNAL_SHARE_TOKEN:-}"
       HEIGO_TIMEOUT_SECONDS: "10"
       ONEBOT_API_ROOT: "${ONEBOT_API_ROOT:-http://napcat:3000}"
       ONEBOT_ACCESS_TOKEN: "${ONEBOT_ACCESS_TOKEN:-}"
@@ -62,7 +64,6 @@ services:
       BOT_GROUP_LIMIT_PER_MINUTE: "${BOT_GROUP_LIMIT_PER_MINUTE:-20}"
       BOT_RENDER_TIMEOUT_SECONDS: "${BOT_RENDER_TIMEOUT_SECONDS:-20}"
       BOT_RENDER_CACHE_TTL_SECONDS: "${BOT_RENDER_CACHE_TTL_SECONDS:-1800}"
-      BOT_PLAYWRIGHT_HEADLESS: "${BOT_PLAYWRIGHT_HEADLESS:-true}"
       BOT_OUTPUT_ROOT: "${BOT_OUTPUT_ROOT:-output/qqbot}"
     ports:
       - "127.0.0.1:8090:8090"

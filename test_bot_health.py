@@ -36,11 +36,13 @@ class BotHealthRouteTests(unittest.TestCase):
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["reply_mode"], "echo_response")
         self.assertEqual(payload["onebot_api"], "disabled")
+        self.assertEqual(payload["image_rendering"], "ok")
         self.assertTrue(payload["config"]["onebot_access_token_configured"])
         self.assertTrue(payload["config"]["onebot_secret_configured"])
         self.assertTrue(payload["config"]["onebot_self_id_configured"])
         self.assertTrue(payload["config"]["internal_share_token_configured"])
         self.assertEqual(payload["config"]["allowed_group_count"], 2)
+        self.assertEqual(payload["config"]["image_renderer"], "svg")
 
     def test_health_returns_503_when_heigo_health_is_not_ok(self):
         settings = BotSettings(heigo_base_url="http://heigo.test")

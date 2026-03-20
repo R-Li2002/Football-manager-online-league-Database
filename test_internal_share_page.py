@@ -124,11 +124,14 @@ def _sample_player_detail() -> PlayerAttributeDetailResponse:
 class InternalSharePageTests(unittest.TestCase):
     def test_internal_share_page_renders_html(self):
         app = FastAPI()
-        app.include_router(build_frontend_router(_dummy_db))
+        app.include_router(build_frontend_router(_dummy_db, internal_share_token="share-secret"))
         client = TestClient(app)
 
         with patch("routers.frontend_routes.read_service.get_player_attribute_detail", return_value=_sample_player_detail()):
-            response = client.get("/internal/share/player/24048100?version=2026-03&step=2")
+            response = client.get(
+                "/internal/share/player/24048100?version=2026-03&step=2",
+                headers={"X-Internal-Share-Token": "share-secret"},
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("HEIGO 球员详情图", response.text)
@@ -137,11 +140,11 @@ class InternalSharePageTests(unittest.TestCase):
 
     def test_internal_share_page_returns_404_when_missing(self):
         app = FastAPI()
-        app.include_router(build_frontend_router(_dummy_db))
+        app.include_router(build_frontend_router(_dummy_db, internal_share_token="share-secret"))
         client = TestClient(app)
 
         with patch("routers.frontend_routes.read_service.get_player_attribute_detail", return_value=None):
-            response = client.get("/internal/share/player/999")
+            response = client.get("/internal/share/player/999", headers={"X-Internal-Share-Token": "share-secret"})
 
         self.assertEqual(response.status_code, 404)
 
@@ -155,6 +158,16 @@ class InternalSharePageTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["detail"], "internal_share_token_required")
+
+    def test_internal_share_page_returns_503_when_token_not_configured(self):
+        app = FastAPI()
+        app.include_router(build_frontend_router(_dummy_db))
+        client = TestClient(app)
+
+        response = client.get("/internal/share/player/24048100")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], "internal_share_not_configured")
 
     def test_internal_share_page_accepts_valid_token_when_configured(self):
         app = FastAPI()

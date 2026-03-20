@@ -98,7 +98,10 @@ async def build_reply(
         uid, candidates = await _resolve_player_uid(client, command)
         if uid is None:
             if candidates:
-                return PreparedReply(reply_type="text", text=_format_candidate_list("找到多个候选，请改用 UID 生成球员图：", candidates))
+                return PreparedReply(
+                    reply_type="text",
+                    text=_format_candidate_list("找到多个候选，请改用 UID 生成球员图：", candidates),
+                )
             return PreparedReply(reply_type="text", text=f"未找到球员：{command.keyword or '空查询'}")
 
         detail = await client.get_player_attribute_detail(uid, version=command.version)
@@ -136,7 +139,7 @@ async def build_reply(
                 text=(
                     f"球员图生成失败：{detail.get('name', uid)}\n"
                     f"错误：{type(exc).__name__}\n"
-                    "请检查 Playwright 依赖、浏览器运行时和内部分享页可访问性。"
+                    "请检查 SVG 渲染链路、内部生图接口和图片发送降级能力。"
                 ),
                 meta={"uid": uid, "error": str(exc)},
             )
@@ -172,6 +175,7 @@ async def build_reply(
         detail = await client.get_player_attribute_detail(uid, version=command.version)
         if not detail:
             return PreparedReply(reply_type="text", text=f"未找到 UID {uid} 的球员详情")
+
         wage = await client.get_player_wage_detail(uid)
         return PreparedReply(
             reply_type="text",

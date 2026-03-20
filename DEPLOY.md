@@ -24,7 +24,7 @@ GitHub -> 云服务器 /srv/heigo -> Docker Compose -> Nginx -> 域名 / HTTPS
 - 数据库保存在服务器本地挂载目录
 - 导入文件保存在服务器本地挂载目录
 - 容器镜像不内置生产数据库
-- 如启用 QQ 群机器人，可在同一套 `docker-compose.yml` 中额外挂载 `napcat` 与 `qqbot` 服务
+- 如启用 QQ 群机器人，可在同一套 `docker-compose.yml` 中通过 `qqbot` profile 额外挂载 `napcat` 与 `qqbot` 服务
 
 ## 2. 服务器前置条件
 
@@ -112,6 +112,13 @@ cd /srv/heigo
 docker compose up -d --build
 ```
 
+如果要同时启用 QQ 机器人：
+
+```bash
+cd /srv/heigo
+docker compose --profile qqbot up -d --build
+```
+
 ### 5.2 检查状态
 
 ```bash
@@ -142,7 +149,7 @@ curl http://127.0.0.1:8080/health
 - `HEIGO_BACKUP_ROOT=/app/data/backups`
 - `SESSION_COOKIE_SECURE=true`
 - `HEIGO_BOOTSTRAP_ADMINS=`（仅首次初始化管理员时临时设置）
-- `INTERNAL_SHARE_TOKEN=...`
+- `INTERNAL_SHARE_TOKEN=...`（仅启用内部分享页 / SVG 渲染 / qqbot 时需要）
 
 当前 volume 映射是：
 
@@ -160,14 +167,15 @@ curl http://127.0.0.1:8080/health
 - `qqbot` 通过 Docker 内网访问 `http://heigo:8080`
 - `qqbot` 通过 Docker 内网访问 `http://napcat:3000`
 - `qqbot` 默认仅绑定宿主机 `127.0.0.1:8090`
-- `qqbot` 访问内部分享页时会携带 `INTERNAL_SHARE_TOKEN` 请求头
+- `qqbot` 通过 `X-Internal-Share-Token` 访问 `/internal/render/player/{uid}.svg`
+- `qqbot` 仍可把 `/internal/share/player/{uid}` 作为调试页或失败降级链接
 - `napcat` 默认仅对宿主机暴露本地 WebUI 端口 `6099`，OneBot API 通过 Docker 内网访问
 - `qqbot` 不直接挂载生产 SQLite 数据目录
 - 如需真实向 QQ 群发文本或图片，需在服务器 `.env` 中设置 `BOT_REPLY_MODE=onebot`
 - 需在服务器 `.env` 中配置 `ONEBOT_ACCESS_TOKEN`，并建议同步设置 `ONEBOT_SECRET`
-- 需在服务器 `.env` 中配置 `INTERNAL_SHARE_TOKEN`，用于保护 `/internal/share/player/{uid}`
+- 需在服务器 `.env` 中配置 `INTERNAL_SHARE_TOKEN`，用于保护内部 HTML 分享页与 SVG 渲染接口
 - `ONEBOT_API_ROOT` 默认可使用 `http://napcat:3000`
-- 球员图截图默认走文件缓存，可通过 `BOT_RENDER_CACHE_TTL_SECONDS` 调整缓存时长
+- 球员图默认走 SVG -> PNG 渲染与文件缓存，可通过 `BOT_RENDER_CACHE_TTL_SECONDS` 调整缓存时长
 
 如果启用了 `napcat` 服务，建议额外约定如下：
 

@@ -36,7 +36,7 @@ class BotSettings:
     bot_render_timeout_seconds: float = 20.0
     bot_render_cache_ttl_seconds: int = 1800
     bot_output_root: str = "output/qqbot"
-    bot_playwright_headless: bool = True
+    image_renderer: str = "svg"
 
     @classmethod
     def from_env(cls) -> "BotSettings":
@@ -69,7 +69,6 @@ class BotSettings:
                 os.environ.get("BOT_RENDER_CACHE_TTL_SECONDS", cls.bot_render_cache_ttl_seconds)
             ),
             bot_output_root=os.environ.get("BOT_OUTPUT_ROOT", cls.bot_output_root).strip() or cls.bot_output_root,
-            bot_playwright_headless=_parse_bool(os.environ.get("BOT_PLAYWRIGHT_HEADLESS"), default=True),
         )
 
     @property

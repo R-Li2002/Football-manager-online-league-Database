@@ -10,7 +10,7 @@
 - 命令解析与只读查询编排
 - HEIGO 内部 API 客户端
 - 机器人 Dockerfile 与依赖文件
-- Playwright 球员图截图链路
+- 服务端 SVG 拉取 + PNG 转换球员图链路
 - NapCat / OneBot 消息发送客户端
 - 健康检查与配置摘要接口
 - 图片发送失败后的文本降级
@@ -26,18 +26,25 @@
 
 球员图命令会：
 
-1. 调用 HEIGO `/internal/share/player/{uid}`
-2. 使用 Playwright 截图
+1. 调用 HEIGO `/internal/render/player/{uid}.svg`
+2. 使用 `CairoSVG` 转成 PNG 并写入本地缓存
 3. 在 `onebot` 模式下通过 NapCat 自动发送到 QQ 群
+4. 同时保留 `/internal/share/player/{uid}` 作为人工查看与失败降级链接
 
 当前运行时约定：
 
-- `/health` 会返回 `reply_mode`、`heigo_api`、`onebot_api` 和关键配置是否已设置
+- `/health` 会返回 `reply_mode`、`heigo_api`、`onebot_api`、`image_rendering` 和关键配置是否已设置
 - 事件处理过程中如果 HEIGO 请求、渲染或发送失败，会尽量 `ack` 当前事件并返回降级文本，而不是直接抛出 500
 
 推荐部署形态：
 
 `NapCat (QQ 登录与 OneBot 协议) -> HEIGO qqbot-service -> HEIGO 主服务`
+
+当前部署约定：
+
+- `qqbot` 与 `napcat` 默认通过 Compose `profile` 可选启用
+- 主站默认部署不构建 `qqbot`
+- 启用机器人时使用 `docker compose --profile qqbot up -d --build`
 
 当前关键环境变量：
 
@@ -53,6 +60,6 @@
 
 安全建议：
 
-- `INTERNAL_SHARE_TOKEN` 应与主应用保持一致，用于访问 `/internal/share/player/{uid}`
+- `INTERNAL_SHARE_TOKEN` 应与主应用保持一致，用于访问 `/internal/share/player/{uid}` 与 `/internal/render/player/{uid}.svg`
 - `ONEBOT_ACCESS_TOKEN` 与 `ONEBOT_SECRET` 不应留空用于生产环境
 - NapCat WebUI 建议只绑定到 `127.0.0.1`

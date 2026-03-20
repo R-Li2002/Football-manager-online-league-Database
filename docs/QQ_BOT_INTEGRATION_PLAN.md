@@ -87,8 +87,8 @@ flowchart LR
 #### Render Worker
 
 - 负责把“球员分享卡”生成 PNG
-- 初期建议通过浏览器渲染 + 截图实现
-- 后期若查询量上升，可替换为 SVG / Pillow 直出
+- 当前实现改为：拉取 HEIGO 服务端 SVG，再由 `CairoSVG` 转为 PNG
+- Playwright 截图方案保留为历史 PoC 思路，不再作为当前主路径
 
 #### 可选 Redis
 
@@ -121,9 +121,7 @@ HEIGOOA/
 │  │  │  ├─ heigo_client.py
 │  │  │  ├─ onebot_client.py
 │  │  ├─ render/
-│  │  │  ├─ player_share_page.py
-│  │  │  ├─ playwright_renderer.py
-│  │  │  ├─ templates/
+│  │  │  ├─ svg_renderer.py
 │  │  ├─ schemas/
 │  │  │  ├─ onebot_events.py
 │  │  │  ├─ bot_commands.py
@@ -168,7 +166,7 @@ HEIGOOA/
 
 ### 6.2 对“球员分享卡”的复用策略
 
-当前“复制球员图”能力是浏览器侧 DOM 渲染，不是后端图片接口。
+当前“复制球员图”能力前端仍是浏览器侧 DOM 导出，但机器人发图链路已经切到后端 SVG。
 
 推荐分两步：
 
@@ -184,9 +182,9 @@ HEIGOOA/
 - 复用现有分享卡样式和结构
 - 输出一个无交互、固定主题、固定尺寸的渲染页面
 
-#### 阶段 B：由 bot 截图
+#### 阶段 B：由 bot 拉取 SVG 并转 PNG
 
-`qqbot-service` 通过 Playwright 访问内部页面并截图，得到 PNG 后上传回 QQ。
+`qqbot-service` 调用内部 SVG 接口，得到 SVG 后由 `CairoSVG` 转成 PNG，再上传回 QQ。
 
 这样做的优点：
 
@@ -220,7 +218,28 @@ HEIGOOA/
 
 - 当前建议使用 `X-Internal-Share-Token` 保护，并由 `qqbot-service` 渲染时自动携带
 - 不面向普通前台用户公开
-- 当前仓库已补首版路由骨架，可作为 Playwright 截图入口继续迭代
+- 当前用于人工查看、视觉对照和失败降级链接
+
+#### `GET /internal/render/player/{uid}.svg`
+
+用途：
+
+- 返回机器人渲染专用的球员卡 SVG
+
+请求参数：
+
+- `version`：球员属性版本，缺省时取默认版本
+- `step`：成长预览步数，默认 `0`
+- `theme`：支持 `dark` / `light`
+
+返回：
+
+- `image/svg+xml`
+
+说明：
+
+- 与内部 HTML 分享页共用同一份服务端 presenter 规则
+- 当前建议使用 `X-Internal-Share-Token` 保护，并由 `qqbot-service` 自动携带
 
 #### `GET /internal/share/roster/{team_name}`
 
@@ -271,11 +290,13 @@ HEIGOOA/
   "reply_mode":"onebot",
   "heigo_api":"ok",
   "onebot_api":"ok",
+  "image_rendering":"ok",
   "config":{
     "onebot_access_token_configured":true,
     "onebot_secret_configured":true,
     "onebot_self_id_configured":true,
-    "internal_share_token_configured":true
+    "internal_share_token_configured":true,
+    "image_renderer":"svg"
   }
 }
 ```
@@ -396,40 +417,39 @@ HEIGOOA/
 
 ## 9. 图片渲染方案
 
-### 9.1 MVP 方案：Playwright 截图
+### 9.1 当前主方案：SVG -> PNG
 
 流程：
 
-1. bot 调用 HEIGO 内部分享页 URL
-2. Playwright 打开页面
-3. 等待字体与卡片渲染完成
-4. 对指定节点截图
+1. bot 调用 HEIGO 内部 SVG URL
+2. 服务端返回球员卡 SVG
+3. `qqbot-service` 使用 `CairoSVG` 转成 PNG
+4. 命中缓存时直接复用 PNG
 5. 上传到 QQ 富媒体接口
 
 优点：
 
-- 复用现有分享卡最快
-- 前后端视觉一致
-- 当前仓库已补 Playwright 渲染器骨架与球员图自动回复链路
+- 主站默认部署不受 Chromium 下载影响
+- HTML 分享页和 SVG 渲染共用同一份服务端规则
+- 当前仓库已补 SVG 渲染器与球员图自动回复链路
 
 缺点：
 
-- 占用一定 CPU / 内存
-- 高并发下扩展性一般
+- 仍依赖额外图片转换步骤
+- 高并发下仍建议加缓存与并发限制
 
 ### 9.2 稳定化建议
 
-- 固定截图主题为深色主题
-- 固定 viewport 尺寸
-- 截图节点使用稳定 CSS 选择器
-- 浏览器上下文池化，避免每次新启 Chromium
+- 固定默认主题为深色主题
+- 固定 SVG 画布尺寸
 - 同一球员图在短时间内命中缓存时直接复用结果
 
-### 9.3 长期演进
+### 9.3 历史方案与长期演进
+
+Playwright 截图方案已不再作为当前主路径；如后续需要视觉逐像素还原或复杂前端复用，可重新评估是否保留浏览器渲染作为调试手段。
 
 若未来图片查询明显增多，可演进为：
 
-- 服务端 SVG 渲染
 - Pillow 合成静态模板图
 - 独立渲染 worker
 
@@ -463,7 +483,7 @@ HEIGOOA/
 ### 10.3 降级策略
 
 - OneBot 图片发送失败：退回文本
-- Playwright 渲染失败：退回文本
+- SVG 渲染失败：退回文本
 - HEIGO API 超时：提示稍后再试
 - 导入中或数据库锁等待明显：暂停图片请求，仅保留文本查询
 - 事件处理过程中出现异常时：优先 `ack` 当前事件并返回诊断信息，避免直接 500 导致重复上报
@@ -512,7 +532,7 @@ services:
       HEIGO_BACKUP_ROOT: /app/data/backups
       SESSION_COOKIE_SECURE: "true"
       HEIGO_BOOTSTRAP_ADMINS: "${HEIGO_BOOTSTRAP_ADMINS:-}"
-      INTERNAL_SHARE_TOKEN: "${INTERNAL_SHARE_TOKEN:?Set INTERNAL_SHARE_TOKEN in .env}"
+      INTERNAL_SHARE_TOKEN: "${INTERNAL_SHARE_TOKEN:-}"
     ports:
       - "${HEIGO_PORT_BIND:-127.0.0.1:8080:8080}"
     volumes:
@@ -530,6 +550,7 @@ services:
       - "6099"
     ports:
       - "${NAPCAT_WEBUI_BIND:-127.0.0.1:6099:6099}"
+    profiles: ["qqbot"]
 
   qqbot:
     build:
@@ -541,7 +562,7 @@ services:
       BOT_PORT: "8090"
       HEIGO_BASE_URL: "http://heigo:8080"
       BOT_RENDER_BASE_URL: "http://heigo:8080"
-      INTERNAL_SHARE_TOKEN: "${INTERNAL_SHARE_TOKEN:?Set INTERNAL_SHARE_TOKEN in .env}"
+      INTERNAL_SHARE_TOKEN: "${INTERNAL_SHARE_TOKEN:-}"
       ONEBOT_API_ROOT: "http://napcat:3000"
       ONEBOT_ACCESS_TOKEN: "${ONEBOT_ACCESS_TOKEN}"
       ONEBOT_SECRET: "${ONEBOT_SECRET}"
@@ -553,6 +574,7 @@ services:
     depends_on:
       - heigo
       - napcat
+    profiles: ["qqbot"]
 
   redis:
     image: redis:7-alpine
@@ -567,7 +589,7 @@ services:
 
 - `qqbot` 通过 `http://heigo:8080` 访问 HEIGO，不暴露给公网
 - `qqbot` 通过 `http://napcat:3000` 调用 OneBot HTTP API
-- `qqbot` 渲染内部分享页时，通过 `X-Internal-Share-Token` 访问 `/internal/share/player/{uid}`
+- `qqbot` 渲染球员图时，通过 `X-Internal-Share-Token` 访问 `/internal/render/player/{uid}.svg`
 - `qqbot` 不挂载 `./data`
 - `qqbot` 端口只绑定 `127.0.0.1`
 - `napcat` 默认只映射本地 WebUI 端口，OneBot API 通过 Compose 内网访问
@@ -604,7 +626,7 @@ location /qqbot/ {
 
 - `heigo`：现状维持
 - `qqbot-service`：256MB~512MB
-- Playwright：单并发时额外约 300MB~800MB 峰值
+- `CairoSVG` 转换开销明显低于完整浏览器截图，但仍建议限制并发
 - Redis：可选，约 50MB
 
 因此 4GB 内存下可跑，但要控制图片渲染并发。
@@ -638,8 +660,8 @@ location /qqbot/ {
 
 ### 阶段 2：分享图
 
-- HEIGO 新增内部分享页
-- bot 集成 Playwright
+- HEIGO 新增内部分享页与内部 SVG 接口
+- bot 集成 SVG -> PNG 渲染
 - 完成 `@机器人 球员图 xxx`
 
 ### 阶段 3：名单与缓存
@@ -662,7 +684,7 @@ location /qqbot/ {
 - 保留当前仓库中的独立 `bot/` 服务
 - 使用 **NapCat + OneBot** 作为 QQ 协议接入层
 - 机器人只调用 HEIGO 的只读 HTTP 接口
-- 通过 **内部分享页 + Playwright** 复用现有球员分享卡
+- 通过 **内部 HTML 分享页 + 内部 SVG 接口** 复用现有球员分享卡
 - 使用 Docker Compose 与 Nginx 在同一台服务器协同部署
 
 这条路线最符合当前项目的单实例、SQLite、导入驱动、强调可维护性的边界，也最适合作为首期实现方案。

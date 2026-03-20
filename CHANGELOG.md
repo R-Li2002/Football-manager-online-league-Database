@@ -31,16 +31,19 @@
 - 新增 `test_frontend_admin_entry.js`，覆盖 `heigomanage` 入口、维护中心登录页显示和未登录权限流
 - 新增 `scripts/run-core-regressions.ps1`，统一运行主应用安全边界、维护中心入口流和搜索一致性的核心回归集合
 - 新增 `scripts/pre-release-check.ps1`，串联文档自检与主应用核心回归，作为本地发布前检查入口
+- 新增 `/internal/render/player/{uid}.svg` 内部 SVG 渲染接口，供 `qqbot` 生图链路使用
+- 新增 `test_internal_render_svg.py`、`test_share_card_presenter.py` 与 `test_bot_svg_renderer.py`，覆盖服务端 presenter、SVG 路由与 bot 生图链路
 
 ### Changed
 
 - `README.md` 不再硬编码版本号，改为声明 `VERSION` 是唯一版本来源
 - 根目录 `docker-compose.yml` 正式接入 `napcat` 与 `qqbot` 服务，支持与主应用同机编排部署
-- `docker-compose.yml` 为 `qqbot` 补充 Playwright 渲染参数与输出目录配置
+- `docker-compose.yml` 将 `napcat` 与 `qqbot` 收敛为可选 `qqbot` profile，避免默认主站部署依赖机器人环境
 - `docker-compose.yml` 为 `qqbot` 改为通过 NapCat / OneBot 发送文本与图片，并补充 access token / secret 配置项
-- `docker-compose.yml` 收紧 `napcat` 宿主机暴露面，仅默认保留本地 WebUI 端口，并要求 `INTERNAL_SHARE_TOKEN` 显式配置
+- `docker-compose.yml` 收紧 `napcat` 宿主机暴露面，仅默认保留本地 WebUI 端口；主站侧 `INTERNAL_SHARE_TOKEN` 改为可选透传，机器人运行时再显式配置
 - `DEPLOY.md` 与 `docs/QQ_BOT_INTEGRATION_PLAN.md` 同步补充 `napcat`、`qqbot` 与内部分享页说明
 - 球员搜索与属性搜索同时使用基础归一化和宽松归一化，支持常见欧洲语种特殊字母、德语式 `ae/oe/ue` 输入以及希腊字母的拉丁替代搜索
+- `qqbot` 球员图链路从 Playwright/Chromium 截图切换为服务端 SVG + `CairoSVG` 转 PNG，`/health` 配置摘要同步改为 `image_renderer=svg`
 
 ### Fixed
 
@@ -61,6 +64,7 @@
 - 在 `docs/PROJECT_MANUAL.md` 中补充搜索能力与搜索约定，记录跨语言字符归一化增强的实际行为
 - 在 `docs/PROJECT_MANUAL.md` 中补充 `scripts/run-core-regressions.ps1` 的使用说明和覆盖范围
 - 在 `README.md`、`DEPLOY.md`、`DEPLOY_FIRST_RUN_CHECKLIST.md` 与 `docs/PROJECT_MANUAL.md` 中补充 `scripts/pre-release-check.ps1` 与部署前 CI 校验说明
+- 更新 `bot/README.md`、`DEPLOY.md` 与 `docs/QQ_BOT_INTEGRATION_PLAN.md`，明确 `qqbot` 为可选 profile、球员图当前主链路为 SVG -> PNG、内部渲染接口新增 `/internal/render/player/{uid}.svg`
 
 ## [0.1.0] - 2026-03-19
 

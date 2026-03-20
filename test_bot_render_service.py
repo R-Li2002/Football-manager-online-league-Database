@@ -11,7 +11,7 @@ if str(BOT_ROOT) not in sys.path:
     sys.path.insert(0, str(BOT_ROOT))
 
 from app.config import BotSettings  # noqa: E402
-from app.render.playwright_renderer import RenderedImage  # noqa: E402
+from app.render.svg_renderer import RenderedImage  # noqa: E402
 from app.services.render_service import PlayerShareRenderService  # noqa: E402
 
 
@@ -87,6 +87,7 @@ class BotRenderServiceTests(IsolatedAsyncioTestCase):
         await service.render_player_share(uid=24048100, player_name="Dani Olmo")
 
         renderer.render.assert_called_once()
+        self.assertIn("/internal/render/player/24048100.svg", renderer.render.call_args.kwargs["url"])
         self.assertEqual(
             renderer.render.call_args.kwargs["extra_headers"],
             {"X-Internal-Share-Token": "share-secret"},
