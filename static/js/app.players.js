@@ -172,7 +172,7 @@ function renderPlayers(players) {
 
             const nationalityCell = isAdmin
                 ? `<td class="nationality-cell" title="${player.nationality.replace(/"/g, '&quot;')}"><input type="text" class="editable-input" value="${player.nationality.replace(/"/g, '&quot;')}" onchange="updatePlayerField(${player.uid}, 'nationality', this.value)" style="background:rgba(0,0,0,0.2);border:1px solid rgba(0,217,255,0.3);padding:4px 8px;border-radius:4px;color:#fff;width:88px;"></td>`
-                : `<td class="nationality-cell" title="${player.nationality.replace(/"/g, '&quot;')}">${player.nationality}</td>`;
+                : `<td class="nationality-cell" title="${player.nationality.replace(/"/g, '&quot;')}">${escapeHtml(formatCompactNationality(player.nationality, {maxLength: 14}))}</td>`;
 
             const detailCell = isAdmin
                 ? `<td><button class="btn btn-secondary" style="padding:4px 8px;font-size:0.8rem;" onclick="togglePlayerDetail(${player.uid})">📊</button></td>`
@@ -277,7 +277,9 @@ async function searchPlayers(options = {}) {
     const playerName = document.getElementById('playerSearch').value.trim();
 
     if (playerName.toLowerCase() === 'heigomanage') {
-        document.getElementById('adminTab').classList.remove('hidden-tab');
+        if (typeof showAdminLoginPanel === 'function') {
+            showAdminLoginPanel({reveal: true, focusLogin: false});
+        }
         showTab('admin', null, {syncHistory: false});
         document.getElementById('playerSearch').value = '';
         if (shouldSyncHistory && typeof syncAppHistory === 'function') {

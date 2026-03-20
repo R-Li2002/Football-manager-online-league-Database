@@ -1,9 +1,44 @@
 ﻿let pendingUndoLogId = null;
 
+function syncAdminTabVisibility() {
+    const adminTab = document.getElementById('adminTab');
+    if (!adminTab) return;
+    adminTab.classList.toggle('hidden-tab', !(isAdmin || adminEntryUnlocked));
+}
+
+function syncAdminPanelVisibility(options = {}) {
+    const loginSection = document.getElementById('adminLogin');
+    const adminPanel = document.getElementById('adminPanel');
+    if (!loginSection || !adminPanel) return;
+
+    if (isAdmin) {
+        loginSection.style.display = 'none';
+        adminPanel.style.display = 'block';
+        return;
+    }
+
+    loginSection.style.display = 'block';
+    adminPanel.style.display = 'none';
+
+    if (options.focusLogin) {
+        window.setTimeout(() => {
+            document.getElementById('adminUsername')?.focus();
+        }, 0);
+    }
+}
+
+function showAdminLoginPanel(options = {}) {
+    if (options.reveal !== false) {
+        adminEntryUnlocked = true;
+    }
+    syncAdminTabVisibility();
+    syncAdminPanelVisibility({focusLogin: options.focusLogin !== false});
+}
+
 function showAdminTab() {
-    document.getElementById('adminTab').classList.remove('hidden-tab');
-    document.getElementById('adminLogin').style.display = 'none';
-    document.getElementById('adminPanel').style.display = 'block';
+    adminEntryUnlocked = true;
+    syncAdminTabVisibility();
+    syncAdminPanelVisibility();
     updateStats();
     renderFormalImportSummaryCard();
     renderSchemaBootstrapStatusCard();
@@ -249,6 +284,7 @@ async function adminLogin() {
         if (data.success) {
             isAdmin = true;
             showAdminTab();
+            showTab('admin', null, {syncHistory: false});
             renderTeamsTable();
             renderTeamStatSourceDebugView();
             renderPlayers(currentPlayers);
@@ -262,9 +298,8 @@ async function adminLogin() {
 async function adminLogout() {
     await fetch('/api/admin/logout', {method: 'POST'});
     isAdmin = false;
-    document.getElementById('adminTab').classList.add('hidden-tab');
-    document.getElementById('adminLogin').style.display = 'block';
-    document.getElementById('adminPanel').style.display = 'none';
+    syncAdminTabVisibility();
+    syncAdminPanelVisibility({focusLogin: false});
     hideTeamStatSourceDebugView();
     renderTeamsTable();
     renderPlayers(currentPlayers);
@@ -294,7 +329,7 @@ async function loadSeaPlayers() {
         document.getElementById('seaPlayersTable').innerHTML = '<div class="no-data">大海中没有球员</div>';
         return;
     }
-    const html = `<table><thead><tr><th>UID</th><th>姓名</th><th>年龄</th><th>CA</th><th>PA</th><th>位置</th><th>国籍</th></tr></thead><tbody>${players.map(p => `<tr><td>${p.uid}</td><td>${p.name}</td><td>${p.age}</td><td>${p.ca}</td><td>${p.pa}</td><td>${p.position}</td><td>${p.nationality}</td></tr>`).join('')}</tbody></table>`;
+    const html = `<table><thead><tr><th>UID</th><th>姓名</th><th>年龄</th><th>CA</th><th>PA</th><th>位置</th><th>国籍</th></tr></thead><tbody>${players.map(p => `<tr><td>${p.uid}</td><td>${p.name}</td><td>${p.age}</td><td>${p.ca}</td><td>${p.pa}</td><td>${p.position}</td><td title="${escapeHtml(p.nationality || '-')}">${escapeHtml(formatCompactNationality(p.nationality, {maxLength: 16}))}</td></tr>`).join('')}</tbody></table>`;
     document.getElementById('seaPlayersTable').innerHTML = html;
 }
 

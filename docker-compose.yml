@@ -11,6 +11,8 @@ services:
       HEIGO_IMPORT_ROOT: /app/imports
       HEIGO_BACKUP_ROOT: /app/data/backups
       SESSION_COOKIE_SECURE: "true"
+      HEIGO_BOOTSTRAP_ADMINS: "${HEIGO_BOOTSTRAP_ADMINS:-}"
+      INTERNAL_SHARE_TOKEN: "${INTERNAL_SHARE_TOKEN:?Set INTERNAL_SHARE_TOKEN in .env}"
     ports:
       - "${HEIGO_PORT_BIND:-127.0.0.1:8080:8080}"
     volumes:
@@ -22,6 +24,57 @@ services:
         - python
         - -c
         - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+  napcat:
+    image: mlikiowa/napcat-docker:latest
+    container_name: heigo-napcat
+    restart: unless-stopped
+    init: true
+    expose:
+      - "3000"
+      - "3001"
+      - "6099"
+    ports:
+      - "${NAPCAT_WEBUI_BIND:-127.0.0.1:6099:6099}"
+  qqbot:
+    build:
+      context: ./bot
+    container_name: heigo-qqbot
+    restart: unless-stopped
+    init: true
+    environment:
+      BOT_PORT: "8090"
+      HEIGO_BASE_URL: http://heigo:8080
+      BOT_RENDER_BASE_URL: http://heigo:8080
+      INTERNAL_SHARE_TOKEN: "${INTERNAL_SHARE_TOKEN:?Set INTERNAL_SHARE_TOKEN in .env}"
+      HEIGO_TIMEOUT_SECONDS: "10"
+      ONEBOT_API_ROOT: "${ONEBOT_API_ROOT:-http://napcat:3000}"
+      ONEBOT_ACCESS_TOKEN: "${ONEBOT_ACCESS_TOKEN:-}"
+      ONEBOT_SECRET: "${ONEBOT_SECRET:-}"
+      ONEBOT_SELF_ID: "${ONEBOT_SELF_ID:-}"
+      QQ_BOT_ALLOWED_GROUPS: "${QQ_BOT_ALLOWED_GROUPS:-}"
+      QQ_BOT_ALLOW_ALL_GROUPS: "${QQ_BOT_ALLOW_ALL_GROUPS:-false}"
+      BOT_REPLY_MODE: "${BOT_REPLY_MODE:-onebot}"
+      BOT_USER_COOLDOWN_SECONDS: "${BOT_USER_COOLDOWN_SECONDS:-5}"
+      BOT_GROUP_LIMIT_PER_MINUTE: "${BOT_GROUP_LIMIT_PER_MINUTE:-20}"
+      BOT_RENDER_TIMEOUT_SECONDS: "${BOT_RENDER_TIMEOUT_SECONDS:-20}"
+      BOT_RENDER_CACHE_TTL_SECONDS: "${BOT_RENDER_CACHE_TTL_SECONDS:-1800}"
+      BOT_PLAYWRIGHT_HEADLESS: "${BOT_PLAYWRIGHT_HEADLESS:-true}"
+      BOT_OUTPUT_ROOT: "${BOT_OUTPUT_ROOT:-output/qqbot}"
+    ports:
+      - "127.0.0.1:8090:8090"
+    depends_on:
+      - heigo
+      - napcat
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=5).read()"
       interval: 30s
       timeout: 5s
       retries: 3

@@ -11,7 +11,21 @@ const AppModules = {
         }
         if (typeof renderCompareDock === 'function') renderCompareDock();
     }},
-    admin: {onEnter: () => { if (isAdmin && typeof renderOperationsAuditCard === 'function') renderOperationsAuditCard(); }},
+    admin: {onEnter: () => {
+        if (typeof syncAdminTabVisibility === 'function') {
+            syncAdminTabVisibility();
+        }
+        if (isAdmin) {
+            if (typeof syncAdminPanelVisibility === 'function') {
+                syncAdminPanelVisibility();
+            }
+            if (typeof renderOperationsAuditCard === 'function') renderOperationsAuditCard();
+            return;
+        }
+        if (typeof showAdminLoginPanel === 'function') {
+            showAdminLoginPanel({reveal: false, focusLogin: true});
+        }
+    }},
 };
 
 const APP_HISTORY_MARKER = 'heigo-spa';
@@ -21,11 +35,7 @@ let appHistoryRestoring = false;
 let appHistoryIndex = 0;
 
 function normalizeAppTabName(tabName) {
-    const normalized = APP_TAB_NAMES.has(tabName) ? tabName : 'home';
-    if (normalized === 'admin' && !isAdmin) {
-        return 'home';
-    }
-    return normalized;
+    return APP_TAB_NAMES.has(tabName) ? tabName : 'home';
 }
 
 function getActiveTabName() {
@@ -308,6 +318,13 @@ async function init() {
 
         if (isAdmin) {
             showAdminTab();
+        } else {
+            if (typeof syncAdminTabVisibility === 'function') {
+                syncAdminTabVisibility();
+            }
+            if (typeof syncAdminPanelVisibility === 'function') {
+                syncAdminPanelVisibility({focusLogin: false});
+            }
         }
 
         await initializeAppHistory();

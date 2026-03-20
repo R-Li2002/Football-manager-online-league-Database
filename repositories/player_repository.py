@@ -1,8 +1,9 @@
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from models import Player, Team
 from repositories.team_repository import get_team_by_name
+from search_normalization import build_search_normalized_keys
 
 
 def get_player_by_uid(db: Session, uid: int) -> Player | None:
@@ -21,7 +22,16 @@ def list_players_excluding_team(db: Session, excluded_team_name: str | None = No
 
 
 def search_players_by_name(db: Session, player_name: str) -> list[Player]:
-    return db.query(Player).filter(Player.name.ilike(f"%{player_name}%")).all()
+    strict_keys, loose_keys = build_search_normalized_keys(player_name)
+    query = db.query(Player)
+    filters = []
+    for key in strict_keys:
+        filters.append(func.heigo_normalize(Player.name).contains(key))
+    for key in loose_keys:
+        filters.append(func.heigo_normalize_loose(Player.name).contains(key))
+    if filters:
+        return query.filter(or_(*filters)).all()
+    return query.filter(Player.name.ilike(f"%{player_name}%")).all()
 
 
 def map_player_uid_to_team_name(db: Session) -> dict[int, str]:

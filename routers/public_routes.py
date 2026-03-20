@@ -1,4 +1,3 @@
-from datetime import datetime
 import os
 from uuid import uuid4
 
@@ -9,7 +8,6 @@ from sqlalchemy.orm import Session
 from schemas_read import (
     AttributeSearchResponse,
     AttributeVersionsResponse,
-    HealthResponse,
     LeagueInfoResponse,
     PlayerReactionActionResponse,
     PlayerAttributeDetailResponse,
@@ -42,10 +40,6 @@ def build_public_router(get_db):
             path="/",
         )
         return generated_token
-
-    @router.get("/health", response_model=HealthResponse)
-    async def health_check():
-        return HealthResponse(status="healthy", timestamp=datetime.now().isoformat())
 
     @router.get("/api/league/info", response_model=list[LeagueInfoResponse])
     def get_league_info(db: Session = Depends(get_db)):

@@ -24,6 +24,7 @@ GitHub -> 云服务器 /srv/heigo -> Docker Compose -> Nginx -> 域名 / HTTPS
 - 数据库保存在服务器本地挂载目录
 - 导入文件保存在服务器本地挂载目录
 - 容器镜像不内置生产数据库
+- 如启用 QQ 群机器人，可在同一套 `docker-compose.yml` 中额外挂载 `napcat` 与 `qqbot` 服务
 
 ## 2. 服务器前置条件
 
@@ -140,6 +141,8 @@ curl http://127.0.0.1:8080/health
 - `HEIGO_IMPORT_ROOT=/app/imports`
 - `HEIGO_BACKUP_ROOT=/app/data/backups`
 - `SESSION_COOKIE_SECURE=true`
+- `HEIGO_BOOTSTRAP_ADMINS=`（仅首次初始化管理员时临时设置）
+- `INTERNAL_SHARE_TOKEN=...`
 
 当前 volume 映射是：
 
@@ -151,6 +154,40 @@ curl http://127.0.0.1:8080/health
 - 生产数据库持久化在宿主机 `data/`
 - 导入文件持久化在宿主机 `imports/`
 - 更新镜像不会覆盖这两类数据
+
+如果启用了 `qqbot` 服务，约定如下：
+
+- `qqbot` 通过 Docker 内网访问 `http://heigo:8080`
+- `qqbot` 通过 Docker 内网访问 `http://napcat:3000`
+- `qqbot` 默认仅绑定宿主机 `127.0.0.1:8090`
+- `qqbot` 访问内部分享页时会携带 `INTERNAL_SHARE_TOKEN` 请求头
+- `napcat` 默认仅对宿主机暴露本地 WebUI 端口 `6099`，OneBot API 通过 Docker 内网访问
+- `qqbot` 不直接挂载生产 SQLite 数据目录
+- 如需真实向 QQ 群发文本或图片，需在服务器 `.env` 中设置 `BOT_REPLY_MODE=onebot`
+- 需在服务器 `.env` 中配置 `ONEBOT_ACCESS_TOKEN`，并建议同步设置 `ONEBOT_SECRET`
+- 需在服务器 `.env` 中配置 `INTERNAL_SHARE_TOKEN`，用于保护 `/internal/share/player/{uid}`
+- `ONEBOT_API_ROOT` 默认可使用 `http://napcat:3000`
+- 球员图截图默认走文件缓存，可通过 `BOT_RENDER_CACHE_TTL_SECONDS` 调整缓存时长
+
+如果启用了 `napcat` 服务，建议额外约定如下：
+
+- 首次启动后先通过 NapCat WebUI 完成扫码登录
+- 在 NapCat 中启用 OneBot 11 HTTP API，并将 access token 配置为与 `.env` 一致
+- 在 NapCat 中启用 HTTP 上报，指向 `http://qqbot:8090/onebot/events`
+- 如配置了 `ONEBOT_SECRET`，需在 NapCat 上报配置中保持一致
+- 不要再把 `3000`、`3001` 直接映射到公网；除本机维护外也不要公开 `6099`
+
+如果需要首次初始化管理员，建议只在首启阶段临时设置：
+
+```text
+HEIGO_BOOTSTRAP_ADMINS=HEIGO01=StrongPassword1!;HEIGO02=StrongPassword2!
+```
+
+约定如下：
+
+- 该变量只用于“首次创建不存在的管理员”
+- 一旦管理员创建成功，建议立即从 `.env` 删除
+- 不要再使用仓库中的固定默认口令思路
 
 其中端口映射默认值为：
 
@@ -189,6 +226,13 @@ docker compose up -d --build
 - `imports/*`
 
 前提是不要把这些运行时文件提交到 GitHub。
+
+当前 GitHub Actions 在执行服务器部署前，会先在 CI 中运行以下检查：
+
+- `scripts/release-docs-check.ps1`
+- `scripts/run-core-regressions.ps1`
+
+只有文档自检与主应用核心回归都通过，才会继续执行生产部署。
 
 ## 8. 导入联赛数据
 

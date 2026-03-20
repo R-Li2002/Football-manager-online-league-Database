@@ -21,9 +21,12 @@ function clearHeroSearchResults() {
 }
 
 function isExactDatabaseMatch(player, query) {
-    const normalizedQuery = String(query || '').trim().toLowerCase();
-    if (!normalizedQuery) return false;
-    return String(player.name || '').trim().toLowerCase() === normalizedQuery;
+    const queryKeys = buildSearchNormalizedKeys(query);
+    const playerKeys = buildSearchNormalizedKeys(player.name || '');
+    const allQueryKeys = [...queryKeys.strictKeys, ...queryKeys.looseKeys];
+    const playerKeySet = new Set([...playerKeys.strictKeys, ...playerKeys.looseKeys]);
+    if (!allQueryKeys.length) return false;
+    return allQueryKeys.some(key => playerKeySet.has(key));
 }
 
 function renderHeroSearchResults(query, players) {

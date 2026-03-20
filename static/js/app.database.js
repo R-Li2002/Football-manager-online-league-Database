@@ -81,14 +81,35 @@ function getAttributeVersionLabel(version) {
     return version ? `${version} 版本` : '未命名版本';
 }
 
+function renderDatabaseSearchVersionPicker() {
+    const select = document.getElementById('dbAttributeVersionSelect');
+    if (!select) return;
+
+    const versionSource = (availableAttributeVersions && availableAttributeVersions.length)
+        ? availableAttributeVersions
+        : [getCurrentAttributeVersion()].filter(Boolean);
+    const activeVersion = getCurrentAttributeVersion() || versionSource[0] || '';
+
+    select.innerHTML = versionSource.length
+        ? versionSource.map(version => `<option value="${escapeHtml(version)}">${escapeHtml(version)}</option>`).join('')
+        : '<option value="">未加载</option>';
+    select.value = activeVersion;
+    select.disabled = versionSource.length <= 1;
+}
+
 function refreshAttributeVersionBanner() {
     const banner = document.getElementById('attributeVersionBanner');
+    renderDatabaseSearchVersionPicker();
     if (!banner) return;
     const version = getCurrentAttributeVersion();
     const available = Array.isArray(availableAttributeVersions) ? availableAttributeVersions.join(' / ') : '';
     banner.innerHTML = version
         ? `当前球员库版本：<strong>${escapeHtml(version)}</strong>${available ? `，可切换版本：${escapeHtml(available)}` : ''}`
         : '当前球员库版本尚未加载。';
+}
+
+async function handleDatabaseSearchVersionChange(version) {
+    await handleAttributeVersionChange(version);
 }
 
 function activateDatabaseView(viewName = 'list') {
@@ -177,7 +198,7 @@ function renderDbPlayers(players) {
                         <td class="numeric-cell">${escapeHtml(p.age ?? '-')}</td>
                         <td class="numeric-cell"><strong>${escapeHtml(p.ca ?? '-')}</strong></td>
                         <td class="numeric-cell">${escapeHtml(p.pa ?? '-')}</td>
-                        <td>${escapeHtml(p.nationality || '-')}</td>
+                        <td title="${escapeHtml(p.nationality || '-')}">${escapeHtml(formatCompactNationality(p.nationality, {maxLength: 16}))}</td>
                         <td class="${p.heigo_club !== '大海' ? 'heigo-club' : ''}">${escapeHtml(p.heigo_club || '-')}</td>
                         <td class="real-club">${escapeHtml(p.club || '-')}</td>
                     </tr>

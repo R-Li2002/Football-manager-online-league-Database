@@ -195,6 +195,14 @@
                             <label>搜索球员库 (34000+ 球员)</label>
                             <input type="text" id="dbPlayerSearch" placeholder="输入球员姓名或 UID 搜索...">
                         </div>
+                        <div class="form-group database-version-group">
+                            <label for="dbAttributeVersionSelect">版本</label>
+                            <div class="database-version-shell">
+                                <select id="dbAttributeVersionSelect" class="database-version-select" onchange="handleDatabaseSearchVersionChange(this.value)" aria-label="选择球员库版本">
+                                    <option value="">加载中...</option>
+                                </select>
+                            </div>
+                        </div>
                         <button class="btn btn-primary" onclick="searchDatabase()">搜索</button>
                     </div>
                 </div>

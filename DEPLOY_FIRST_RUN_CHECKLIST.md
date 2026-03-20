@@ -153,6 +153,7 @@ GitHub -> Actions -> Deploy Production -> Run workflow
 
 确认 workflow 能完成：
 
+- 发布前检查脚本通过（文档自检 + 主应用核心回归）
 - SSH 登录服务器
 - `git pull --ff-only origin main`
 - `docker compose up -d --build --remove-orphans`
@@ -223,6 +224,7 @@ curl -I https://example.com
 以后正常更新就是：
 
 1. 本地修改代码
-2. `git push origin main`
-3. GitHub Actions 自动部署
-4. 服务器继续保留原有 `data/` 和 `imports/`
+2. `powershell -ExecutionPolicy Bypass -File scripts\pre-release-check.ps1`
+3. `git push origin main`
+4. GitHub Actions 先运行发布前检查，再自动部署
+5. 服务器继续保留原有 `data/` 和 `imports/`

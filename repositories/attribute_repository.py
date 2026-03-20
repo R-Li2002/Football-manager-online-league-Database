@@ -1,9 +1,11 @@
 from collections.abc import Iterable
 
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from attribute_versions import DEFAULT_ATTRIBUTE_DATA_VERSION, normalize_attribute_data_version, pick_default_attribute_version, sort_attribute_versions
 from models import PlayerAttribute, PlayerAttributeVersion
+from search_normalization import build_search_normalized_keys
 
 
 def _list_versioned_attribute_versions(db: Session) -> list[str]:
@@ -53,14 +55,34 @@ def search_player_attributes_by_name(
 ) -> list[PlayerAttributeVersion | PlayerAttribute]:
     available_versions = _list_versioned_attribute_versions(db)
     resolved_version = resolve_attribute_version(db, data_version)
+    strict_keys, loose_keys = build_search_normalized_keys(player_name)
     if available_versions:
+        query = _query_versioned_attributes(db, resolved_version)
+        versioned_filters = []
+        for key in strict_keys:
+            versioned_filters.append(func.heigo_normalize(PlayerAttributeVersion.name).contains(key))
+        for key in loose_keys:
+            versioned_filters.append(func.heigo_normalize_loose(PlayerAttributeVersion.name).contains(key))
+        if versioned_filters:
+            query = query.filter(or_(*versioned_filters))
+        else:
+            query = query.filter(PlayerAttributeVersion.name.ilike(f"%{player_name}%"))
         return (
-            _query_versioned_attributes(db, resolved_version)
-            .filter(PlayerAttributeVersion.name.ilike(f"%{player_name}%"))
+            query
             .limit(limit)
             .all()
         )
-    return _query_legacy_attributes(db).filter(PlayerAttribute.name.ilike(f"%{player_name}%")).limit(limit).all()
+    legacy_query = _query_legacy_attributes(db)
+    legacy_filters = []
+    for key in strict_keys:
+        legacy_filters.append(func.heigo_normalize(PlayerAttribute.name).contains(key))
+    for key in loose_keys:
+        legacy_filters.append(func.heigo_normalize_loose(PlayerAttribute.name).contains(key))
+    if legacy_filters:
+        legacy_query = legacy_query.filter(or_(*legacy_filters))
+    else:
+        legacy_query = legacy_query.filter(PlayerAttribute.name.ilike(f"%{player_name}%"))
+    return legacy_query.limit(limit).all()
 
 
 def get_player_attribute_by_uid(

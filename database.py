@@ -17,6 +17,7 @@ except ImportError:  # pragma: no cover - optional fallback for legacy environme
 
 from migration_helpers import initialize_runtime_fallback_schema
 from operation_audit_store import persist_operation_audit
+from search_normalization import normalize_search_text, normalize_search_text_loose
 
 DATABASE_PATH = os.environ.get("DATABASE_PATH", "./fm_league.db")
 DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DATABASE_PATH}")
@@ -43,6 +44,8 @@ def _set_sqlite_pragma(dbapi_connection, _connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
+    dbapi_connection.create_function("heigo_normalize", 1, normalize_search_text)
+    dbapi_connection.create_function("heigo_normalize_loose", 1, normalize_search_text_loose)
 
 
 def _configure_engine(active_engine) -> None:

@@ -24,6 +24,9 @@ SESSION_MAX_AGE_SECONDS = 86400
 COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"}
 LOCAL_DEV_HOST = os.environ.get("LOCAL_HOST", "127.0.0.1")
 LOCAL_DEV_PORT = int(os.environ.get("LOCAL_PORT", "8001"))
+BOOTSTRAP_ADMINS_ENV = "HEIGO_BOOTSTRAP_ADMINS"
+INTERNAL_SHARE_TOKEN = os.environ.get("INTERNAL_SHARE_TOKEN", "").strip()
+INTERNAL_SHARE_HEADER_NAME = "X-Internal-Share-Token"
 
 
 def write_to_log(operation: str, details: str, operator: str):
@@ -33,29 +36,50 @@ def write_to_log(operation: str, details: str, operator: str):
         log_file.write(log_entry)
 
 
+def load_bootstrap_admin_accounts_from_env() -> list[tuple[str, str]]:
+    raw_accounts = os.environ.get(BOOTSTRAP_ADMINS_ENV, "").strip()
+    if not raw_accounts:
+        return []
+
+    accounts: list[tuple[str, str]] = []
+    for raw_entry in raw_accounts.split(";"):
+        entry = raw_entry.strip()
+        if not entry:
+            continue
+        username, separator, password = entry.partition("=")
+        username = username.strip()
+        password = password.strip()
+        if not separator or not username or not password:
+            raise RuntimeError(
+                f"Invalid {BOOTSTRAP_ADMINS_ENV} entry: {entry!r}. Expected format: username=password;username2=password2"
+            )
+        accounts.append((username, hash_password(password)))
+    return accounts
+
+
 def initialize_app_state():
     init_database()
     db = SessionLocal()
     try:
-        admin_accounts = [
-            ("HEIGO01", hash_password("HEIGOLeverkusen85")),
-            ("HEIGO02", hash_password("HEIGOLeicester85")),
-            ("HEIGO03", hash_password("HEIGOBournemouth85")),
-            ("HEIGO04", hash_password("HEIGOSporting85")),
-            ("HEIGO05", hash_password("HEIGOManUtd85")),
-            ("HEIGO06", hash_password("HEIGOBarcelona85")),
-            ("HEIGO07", hash_password("HEIGOTottenham85")),
-        ]
-        auth_service.seed_default_admins(db, admin_accounts)
+        admin_accounts = load_bootstrap_admin_accounts_from_env()
+        if admin_accounts:
+            auth_service.seed_default_admins(db, admin_accounts)
     finally:
         db.close()
     import_legacy_admin_log_to_operation_audits(engine, LOG_FILE)
 
 
+def shutdown_app_state():
+    engine.dispose()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     initialize_app_state()
-    yield
+    try:
+        yield
+    finally:
+        shutdown_app_state()
 
 
 app = FastAPI(title="HEIGO联机联赛数据库", lifespan=lifespan)
@@ -124,7 +148,13 @@ app.include_router(
         write_to_log=write_to_log,
     )
 )
-app.include_router(build_frontend_router())
+app.include_router(
+    build_frontend_router(
+        get_db,
+        internal_share_token=INTERNAL_SHARE_TOKEN,
+        internal_share_header_name=INTERNAL_SHARE_HEADER_NAME,
+    )
+)
 
 
 def calculate_player_wage_payload(initial_ca: int, current_ca: int, pa: int, age: int, position: str, db: Session):

@@ -544,6 +544,54 @@ class SimulationTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_search_supports_ascii_queries_for_diacritic_names(self):
+        db = self.SessionLocal()
+        try:
+            alpha = db.query(self.models.Team).filter(self.models.Team.name == "Alpha FC").first()
+            self.assertIsNotNone(alpha)
+
+            player = self.models.Player(
+                uid=1999,
+                name="João Félix",
+                age=24,
+                initial_ca=120,
+                ca=121,
+                pa=140,
+                position="AMC",
+                nationality="Portugal",
+                team_id=alpha.id,
+                team_name=alpha.name,
+                wage=0,
+                slot_type="",
+            )
+            self.main1.refresh_player_financials(player, db)
+            db.add(player)
+            db.add(
+                self.models.PlayerAttribute(
+                    uid=1999,
+                    name="João Félix",
+                    position="AMC",
+                    age=24,
+                    ca=121,
+                    pa=140,
+                    nationality="Portugal",
+                    club="Legacy Club",
+                    pos_amc=20,
+                    passing=15,
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        player_search = self.request("GET", "/api/players/search/Joao")
+        self.assertEqual(player_search.status_code, 200, player_search.text)
+        self.assertTrue(any(item["uid"] == 1999 for item in player_search.json()))
+
+        attribute_search = self.request("GET", "/api/attributes/search/Joao")
+        self.assertEqual(attribute_search.status_code, 200, attribute_search.text)
+        self.assertTrue(any(item["uid"] == 1999 for item in attribute_search.json()))
+
     def test_batch_flow_and_rename_safe_undo(self):
         self.login()
 
