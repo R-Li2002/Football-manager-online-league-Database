@@ -63,10 +63,11 @@ function renderHeroSearchResults(query, players) {
     `;
 }
 
-async function runHeroSearch() {
+async function runHeroSearch(options = {}) {
     const heroSearch = document.getElementById('heroPlayerSearch');
     const query = heroSearch ? heroSearch.value.trim() : '';
-    const resultContainer = document.getElementById('heroSearchResults');
+    const shouldSyncHistory = options.pushHistory !== false;
+    const historyMode = options.historyMode || 'push';
 
     if (!query) {
         clearHeroSearchResults();
@@ -74,6 +75,24 @@ async function runHeroSearch() {
         return;
     }
 
+    if (isAdminEntryQuery(query)) {
+        clearHeroSearchResults();
+        if (heroSearch) {
+            heroSearch.value = '';
+        }
+        if (typeof openAdminEntry === 'function') {
+            openAdminEntry();
+        } else {
+            showAdminLoginPanel({reveal: true, focusLogin: false});
+            showTab('admin', null, {syncHistory: false});
+        }
+        if (shouldSyncHistory && typeof syncAppHistory === 'function') {
+            syncAppHistory(historyMode);
+        }
+        return;
+    }
+
+    const resultContainer = document.getElementById('heroSearchResults');
     if (resultContainer) {
         resultContainer.innerHTML = '<div class="home-search-empty">搜索中...</div>';
     }

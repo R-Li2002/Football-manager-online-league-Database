@@ -12,6 +12,7 @@ var currentAttributeVersion = localStorage.getItem('attributeDataVersion') || ''
 var isAdmin = false;
 var adminEntryUnlocked = false;
 var isDarkMode = false;
+const ADMIN_ENTRY_QUERY = 'heigomanage';
 var currentDetailPlayer = null;
 var currentGrowthPreviewStep = 0;
 var currentSelectedRosterUid = null;
@@ -58,6 +59,10 @@ function syncThemeToggleState() {
         themeIcon.textContent = '🌙';
         themeText.textContent = '切换夜间';
     }
+}
+
+function isAdminEntryQuery(value) {
+    return String(value || '').trim().toLowerCase() === ADMIN_ENTRY_QUERY;
 }
 
 function normalizeAttributeVersion(version) {

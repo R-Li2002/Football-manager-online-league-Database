@@ -52,6 +52,7 @@
 - 主应用启动时不再硬编码播种固定管理员密码，改为仅在配置 `HEIGO_BOOTSTRAP_ADMINS` 时显式初始化账号
 - `/internal/share/player/{uid}` 支持 `X-Internal-Share-Token` 校验，机器人截图链路同步自动携带该 header
 - `heigomanage` 入口不再被未登录状态强制重定向回首页，改为显示维护中心入口并进入管理员登录页
+- `heigomanage` 入口补齐首页 Hero 搜索链路，避免只显示维护中心 UI 外壳而无法进入管理员登录态
 - 前端 Hero 搜索的归一化和精确命中判断已与后端搜索键规则对齐，支持 `guendogan`、`alexandros`、`Joao` 等输入直达详情
 - 机器人 `/health` 会在关键依赖离线时返回 503，并附带配置摘要；OneBot 发送或业务处理异常时改为优先 ack 并尝试文本降级
 - 核心回归测试补充 SQLite engine 释放逻辑，清理合并运行时的 `ResourceWarning: unclosed database`

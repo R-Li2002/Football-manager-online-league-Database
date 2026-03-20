@@ -35,6 +35,13 @@ function showAdminLoginPanel(options = {}) {
     syncAdminPanelVisibility({focusLogin: options.focusLogin !== false});
 }
 
+function openAdminEntry() {
+    showAdminLoginPanel({reveal: true, focusLogin: false});
+    if (typeof showTab === 'function') {
+        showTab('admin', null, {syncHistory: false});
+    }
+}
+
 function showAdminTab() {
     adminEntryUnlocked = true;
     syncAdminTabVisibility();

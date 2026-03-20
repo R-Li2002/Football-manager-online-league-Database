@@ -276,11 +276,15 @@ async function searchPlayers(options = {}) {
     const teamName = document.getElementById('teamSelect').value;
     const playerName = document.getElementById('playerSearch').value.trim();
 
-    if (playerName.toLowerCase() === 'heigomanage') {
-        if (typeof showAdminLoginPanel === 'function') {
-            showAdminLoginPanel({reveal: true, focusLogin: false});
+    if (isAdminEntryQuery(playerName)) {
+        if (typeof openAdminEntry === 'function') {
+            openAdminEntry();
+        } else {
+            if (typeof showAdminLoginPanel === 'function') {
+                showAdminLoginPanel({reveal: true, focusLogin: false});
+            }
+            showTab('admin', null, {syncHistory: false});
         }
-        showTab('admin', null, {syncHistory: false});
         document.getElementById('playerSearch').value = '';
         if (shouldSyncHistory && typeof syncAppHistory === 'function') {
             syncAppHistory(historyMode);

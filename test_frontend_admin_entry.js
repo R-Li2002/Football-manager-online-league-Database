@@ -5,6 +5,7 @@ const vm = require('node:vm');
 
 const workspaceRoot = __dirname;
 const coreCode = fs.readFileSync(path.join(workspaceRoot, 'static/js/app.core.js'), 'utf8');
+const homeCode = fs.readFileSync(path.join(workspaceRoot, 'static/js/app.home.js'), 'utf8');
 const adminCode = fs.readFileSync(path.join(workspaceRoot, 'static/js/app.admin.js'), 'utf8');
 const playersCode = fs.readFileSync(path.join(workspaceRoot, 'static/js/app.players.js'), 'utf8');
 const appCode = fs
@@ -84,6 +85,8 @@ const adminTab = registerElement(createElement('adminTab', ['nav-tab', 'hidden-t
 adminTab.dataset.tab = 'admin';
 navTabs.push(adminTab);
 
+const heroPlayerSearch = registerElement(createElement('heroPlayerSearch'));
+const heroSearchResults = registerElement(createElement('heroSearchResults'));
 const playerSearch = registerElement(createElement('playerSearch'));
 const teamSelect = registerElement(createElement('teamSelect'));
 const tableTitle = registerElement(createElement('tableTitle'));
@@ -174,22 +177,37 @@ const context = {
 
 vm.createContext(context);
 vm.runInContext(coreCode, context, {filename: 'app.core.js'});
+vm.runInContext(homeCode, context, {filename: 'app.home.js'});
 vm.runInContext(adminCode, context, {filename: 'app.admin.js'});
 vm.runInContext(playersCode, context, {filename: 'app.players.js'});
 vm.runInContext(appCode, context, {filename: 'app.js'});
 
 assert.equal(context.normalizeAppTabName('admin'), 'admin');
+assert.equal(context.isAdminEntryQuery(' heigomanage '), true);
 
-context.showAdminLoginPanel({reveal: true, focusLogin: false});
-assert.equal(context.adminEntryUnlocked, true);
-assert.equal(adminTab.classList.contains('hidden-tab'), false);
-assert.equal(adminLogin.style.display, 'block');
-assert.equal(adminPanel.style.display, 'none');
+function resetAdminState() {
+    context.isAdmin = false;
+    context.adminEntryUnlocked = false;
+    document.body.dataset.activeTab = 'home';
+    tabContents.forEach(tab => {
+        tab.classList.toggle('active', tab.id === 'home');
+    });
+    navTabs.forEach(tab => tab.classList.remove('active'));
+    navTabs.find(tab => tab.dataset.tab === 'home')?.classList.add('active');
+    adminTab.classList.add('hidden-tab');
+    adminLogin.style.display = 'none';
+    adminPanel.style.display = 'block';
+    adminUsername.focused = false;
+    heroPlayerSearch.value = '';
+    heroSearchResults.innerHTML = '';
+    playerSearch.value = '';
+    teamSelect.value = '';
+    tableTitle.textContent = '';
+}
 
-playerSearch.value = 'heigomanage';
-teamSelect.value = '';
-
-(async () => {
+async function assertAdminEntryFromPlayerSearch() {
+    resetAdminState();
+    playerSearch.value = 'heigomanage';
     await context.searchPlayers({pushHistory: false});
 
     assert.equal(playerSearch.value, '');
@@ -203,6 +221,31 @@ teamSelect.value = '';
     assert.equal(adminUsername.focused, true);
     assert.equal(context.adminEntryUnlocked, true);
     assert.equal(tableTitle.textContent, '');
+}
+
+async function assertAdminEntryFromHeroSearch() {
+    resetAdminState();
+    heroPlayerSearch.value = 'heigomanage';
+    heroSearchResults.innerHTML = 'stale';
+    await context.runHeroSearch({pushHistory: false});
+
+    assert.equal(heroPlayerSearch.value, '');
+    assert.equal(heroSearchResults.innerHTML, '');
+    assert.equal(document.body.dataset.activeTab, 'admin');
+    assert.equal(adminTab.classList.contains('active'), true);
+    assert.equal(adminTab.classList.contains('hidden-tab'), false);
+    assert.equal(adminLogin.style.display, 'block');
+    assert.equal(adminPanel.style.display, 'none');
+    assert.equal(tabContents.find(tab => tab.id === 'admin').classList.contains('active'), true);
+    assert.equal(tabContents.find(tab => tab.id === 'home').classList.contains('active'), false);
+    assert.equal(adminUsername.focused, true);
+    assert.equal(context.adminEntryUnlocked, true);
+    assert.equal(tableTitle.textContent, '');
+}
+
+(async () => {
+    await assertAdminEntryFromPlayerSearch();
+    await assertAdminEntryFromHeroSearch();
 })().catch(error => {
     console.error(error);
     process.exitCode = 1;
