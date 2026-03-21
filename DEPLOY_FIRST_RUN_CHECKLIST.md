@@ -82,7 +82,7 @@ sudo mkdir -p /srv/heigo
 sudo chown -R $USER:$USER /srv/heigo
 cd /srv/heigo
 git clone https://github.com/R-Li2002/Football-manager-online-league-Database.git .
-mkdir -p data data/backups imports
+mkdir -p data data/backups imports data/napcat/qq data/napcat/config data/qqbot-output
 ```
 
 ## 6. 上传数据库
@@ -95,7 +95,35 @@ scp -i ~/.ssh/heigo_github_actions /path/to/fm_league.db deploy@your-server-ip:/
 
 如果暂时没有现成数据库，可以跳过这一步，后面通过正式导入初始化。
 
-## 7. 首次手动启动容器
+## 7. 准备机器人运行参数（如需启用）
+
+如果你准备在这台服务器上同时跑 QQ 机器人，先额外确认：
+
+- 你手上有一枚 **专用闲置 QQ 号**
+- 该 QQ 号能正常登录并可加入你的联赛群
+- 你有手机可用于 NapCat 首次扫码登录
+
+然后在服务器执行：
+
+```bash
+cd /srv/heigo
+cp deploy/heigo.qqbot.env.example .env
+nano .env
+```
+
+首轮建议至少先填：
+
+- `INTERNAL_SHARE_TOKEN`
+- `ONEBOT_ACCESS_TOKEN`
+- `ONEBOT_SECRET`
+- `BOT_REPLY_MODE=onebot`
+
+以下两项可以在 NapCat 首次登录后再补：
+
+- `ONEBOT_SELF_ID`
+- `QQ_BOT_ALLOWED_GROUPS`
+
+## 8. 首次手动启动容器
 
 在服务器上执行：
 
@@ -114,7 +142,7 @@ curl http://127.0.0.1:8080/health
 {"status":"ok","database":"ok"}
 ```
 
-## 8. 配置 GitHub Secrets
+## 9. 配置 GitHub Secrets
 
 打开仓库：
 
@@ -145,7 +173,7 @@ deploy
 - 必须从 `-----BEGIN OPENSSH PRIVATE KEY-----` 复制到 `-----END OPENSSH PRIVATE KEY-----`
 - 不要填 `.pub`
 
-## 9. 首次手动触发 GitHub Actions
+## 10. 首次手动触发 GitHub Actions
 
 进入：
 
@@ -161,7 +189,7 @@ GitHub -> Actions -> Deploy Production -> Run workflow
 - `docker compose up -d --build --remove-orphans`
 - `/health` 校验通过
 
-## 10. 安装 Nginx
+## 11. 安装 Nginx
 
 在服务器执行：
 
@@ -170,7 +198,7 @@ sudo apt update
 sudo apt install -y nginx certbot
 ```
 
-## 11. 申请 HTTPS 证书
+## 12. 申请 HTTPS 证书
 
 先停止可能占用 80 端口的服务：
 
@@ -186,7 +214,7 @@ sudo certbot certonly --standalone -d example.com -d www.example.com
 
 把 `example.com` 替换成真实域名。
 
-## 12. 启用 Nginx 配置
+## 13. 启用 Nginx 配置
 
 复制模板：
 
@@ -205,7 +233,7 @@ sudo systemctl start nginx
 sudo systemctl reload nginx
 ```
 
-## 13. 最终验证
+## 14. 最终验证
 
 检查：
 
@@ -221,7 +249,7 @@ curl -I https://example.com
 - 管理员登录正常
 - `git push origin main` 后自动部署可用
 
-## 14. 日常更新流程
+## 15. 日常更新流程
 
 以后正常更新就是：
 
@@ -235,4 +263,6 @@ curl -I https://example.com
 
 - `/srv/heigo/.env` 中已配置 `INTERNAL_SHARE_TOKEN`
 - NapCat 已登录并开放 OneBot HTTP API
+- NapCat WebUI 仅通过本地 `6099` 或 SSH 隧道访问，不直接对公网开放
+- 专用机器人 QQ 号已进入目标联赛群
 - 使用 `docker compose --profile qqbot up -d --build` 启动机器人相关服务

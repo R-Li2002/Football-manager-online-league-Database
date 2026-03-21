@@ -688,3 +688,12 @@ location /qqbot/ {
 - 使用 Docker Compose 与 Nginx 在同一台服务器协同部署
 
 这条路线最符合当前项目的单实例、SQLite、导入驱动、强调可维护性的边界，也最适合作为首期实现方案。
+
+### 16.1 当前仓库额外部署约定
+
+- 建议先复制 `deploy/heigo.qqbot.env.example` 到服务器 `.env`，再填写 `INTERNAL_SHARE_TOKEN`、`ONEBOT_ACCESS_TOKEN`、`ONEBOT_SECRET`
+- `ONEBOT_SELF_ID` 可在 NapCat 首次登录成功后回填
+- `QQ_BOT_ALLOWED_GROUPS` 可在测试群联调完成后再补正式群号
+- `data/napcat/qq` 与 `data/napcat/config` 用于持久化 NapCat 登录态和配置
+- `data/qqbot-output` 用于持久化球员图 PNG 缓存
+- 建议使用专用闲置 QQ 号，只先加入测试群，不直接用日常主号上线

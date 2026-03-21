@@ -84,7 +84,7 @@ git clone https://github.com/R-Li2002/Football-manager-online-league-Database.gi
 ### 4.2 创建运行时目录
 
 ```bash
-mkdir -p data data/backups imports
+mkdir -p data data/backups imports data/napcat/qq data/napcat/config data/qqbot-output
 ```
 
 ### 4.3 准备数据库
@@ -102,6 +102,29 @@ mkdir -p data data/backups imports
 #### 方案 B：先启动空库，再导入
 
 如果还没有正式数据库，也可以先直接启动，再通过后台“正式导入”写入初始数据。
+
+### 4.4 准备 `.env`
+
+如果后续要启用 QQ 机器人，建议直接从仓库模板复制：
+
+```bash
+cd /srv/heigo
+cp deploy/heigo.qqbot.env.example .env
+nano .env
+```
+
+首次至少需要确认：
+
+- `INTERNAL_SHARE_TOKEN`
+- `ONEBOT_ACCESS_TOKEN`
+- `ONEBOT_SECRET`
+- `BOT_REPLY_MODE=onebot`
+
+其中：
+
+- `ONEBOT_SELF_ID` 可在 NapCat 首次登录成功后再回填
+- `QQ_BOT_ALLOWED_GROUPS` 可在拿到测试群号后再补
+- 如果你暂时不启用机器人，也可以先不创建 `.env`
 
 ## 5. Docker 启动
 
@@ -155,11 +178,16 @@ curl http://127.0.0.1:8080/health
 
 - `./data:/app/data`
 - `./imports:/app/imports`
+- `./data/napcat/qq:/app/.config/QQ`
+- `./data/napcat/config:/app/napcat/config`
+- `./data/qqbot-output:/app/output/qqbot`
 
 这意味着：
 
 - 生产数据库持久化在宿主机 `data/`
 - 导入文件持久化在宿主机 `imports/`
+- NapCat 登录态与配置持久化在宿主机 `data/napcat/*`
+- `qqbot` 渲染出的球员图缓存持久化在宿主机 `data/qqbot-output`
 - 更新镜像不会覆盖这两类数据
 
 如果启用了 `qqbot` 服务，约定如下：
@@ -183,7 +211,20 @@ curl http://127.0.0.1:8080/health
 - 在 NapCat 中启用 OneBot 11 HTTP API，并将 access token 配置为与 `.env` 一致
 - 在 NapCat 中启用 HTTP 上报，指向 `http://qqbot:8090/onebot/events`
 - 如配置了 `ONEBOT_SECRET`，需在 NapCat 上报配置中保持一致
+- 建议使用一枚专用闲置 QQ 号，不要直接复用你的日常主号
 - 不要再把 `3000`、`3001` 直接映射到公网；除本机维护外也不要公开 `6099`
+
+如果服务器只开放了 SSH，而 `6099` 仍保持本地绑定，可在本地建立隧道后访问 NapCat WebUI：
+
+```bash
+ssh -L 6099:127.0.0.1:6099 deploy@your-server-ip
+```
+
+然后在本机浏览器打开：
+
+```text
+http://127.0.0.1:6099
+```
 
 如果需要首次初始化管理员，建议只在首启阶段临时设置：
 

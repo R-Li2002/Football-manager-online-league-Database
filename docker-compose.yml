@@ -34,6 +34,9 @@ services:
     restart: unless-stopped
     init: true
     profiles: ["qqbot"]
+    volumes:
+      - ./data/napcat/qq:/app/.config/QQ
+      - ./data/napcat/config:/app/napcat/config
     expose:
       - "3000"
       - "3001"
@@ -67,6 +70,8 @@ services:
       BOT_OUTPUT_ROOT: "${BOT_OUTPUT_ROOT:-output/qqbot}"
     ports:
       - "127.0.0.1:8090:8090"
+    volumes:
+      - ./data/qqbot-output:/app/output/qqbot
     depends_on:
       - heigo
       - napcat

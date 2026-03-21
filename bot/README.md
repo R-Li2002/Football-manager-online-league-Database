@@ -63,3 +63,10 @@
 - `INTERNAL_SHARE_TOKEN` 应与主应用保持一致，用于访问 `/internal/share/player/{uid}` 与 `/internal/render/player/{uid}.svg`
 - `ONEBOT_ACCESS_TOKEN` 与 `ONEBOT_SECRET` 不应留空用于生产环境
 - NapCat WebUI 建议只绑定到 `127.0.0.1`
+
+部署补充约定：
+- 建议先复制 `deploy/heigo.qqbot.env.example` 到服务器 `/srv/heigo/.env`
+- NapCat 登录态与配置持久化在宿主机 `data/napcat/qq` 和 `data/napcat/config`
+- `qqbot` 的 PNG 缓存持久化在宿主机 `data/qqbot-output`
+- 建议使用专用闲置 QQ 号登录 NapCat，而不是日常主号
+- 如 `6099` 只绑定 `127.0.0.1`，可通过 `ssh -L 6099:127.0.0.1:6099 deploy@your-server-ip` 访问 WebUI
