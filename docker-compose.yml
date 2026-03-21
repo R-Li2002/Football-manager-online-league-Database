@@ -37,6 +37,7 @@ services:
     volumes:
       - ./data/napcat/qq:/app/.config/QQ
       - ./data/napcat/config:/app/napcat/config
+      - ./data/qqbot-output:/app/output/qqbot
     expose:
       - "3000"
       - "3001"

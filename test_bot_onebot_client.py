@@ -16,6 +16,26 @@ from app.schemas.bot_commands import PreparedReply  # noqa: E402
 
 
 class BotOneBotClientTests(IsolatedAsyncioTestCase):
+    async def test_build_image_message_uses_absolute_file_uri(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "player.png"
+            image_path.write_bytes(b"png")
+            client = OneBotClient(BotSettings(bot_reply_mode="onebot"))
+
+            try:
+                message = client._build_image_message(
+                    PreparedReply(reply_type="image", text="hello", meta={"image_path": str(image_path)}),
+                    reply_to="101",
+                )
+            finally:
+                await client.aclose()
+
+            self.assertEqual(message[0]["type"], "reply")
+            self.assertEqual(message[1]["type"], "text")
+            self.assertEqual(message[2]["type"], "image")
+            self.assertTrue(message[2]["data"]["file"].startswith("file:///"))
+            self.assertTrue(message[2]["data"]["file"].endswith("/player.png"))
+
     async def test_get_status_accepts_retcode_zero(self):
         client = OneBotClient(BotSettings(bot_reply_mode="onebot"))
         seen_actions: list[str] = []

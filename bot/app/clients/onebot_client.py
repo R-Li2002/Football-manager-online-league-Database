@@ -66,6 +66,10 @@ class OneBotClient:
         segments.append({"type": "text", "data": {"text": text or " "}})
         return segments
 
+    def _resolve_onebot_file_uri(self, image_path: Path) -> str:
+        resolved = image_path.resolve()
+        return resolved.as_uri()
+
     def _build_image_message(self, reply: PreparedReply, reply_to: str | None = None) -> list[dict[str, Any]]:
         image_path = Path(str(reply.meta.get("image_path") or ""))
         if not image_path.exists():
@@ -76,7 +80,7 @@ class OneBotClient:
             segments.append({"type": "reply", "data": {"id": reply_to}})
         if reply.text:
             segments.append({"type": "text", "data": {"text": reply.text}})
-        segments.append({"type": "image", "data": {"file": str(image_path)}})
+        segments.append({"type": "image", "data": {"file": self._resolve_onebot_file_uri(image_path)}})
         return segments
 
     async def _send_group_message(
