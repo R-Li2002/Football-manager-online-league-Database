@@ -1,4 +1,103 @@
-﻿let pendingUndoLogId = null;
+let pendingUndoLogId = null;
+const ADMIN_UNAUTHORIZED_ERROR = 'ADMIN_UNAUTHORIZED';
+let lastAdminUnauthorizedNoticeAt = 0;
+
+function isAdminUnauthorizedError(error) {
+    return error?.code === ADMIN_UNAUTHORIZED_ERROR || error?.message === ADMIN_UNAUTHORIZED_ERROR;
+}
+
+function enterAdminLoggedOutState(options = {}) {
+    isAdmin = false;
+    if (options.reveal !== false) {
+        adminEntryUnlocked = true;
+    }
+    syncAdminTabVisibility();
+    syncAdminPanelVisibility({focusLogin: options.focusLogin !== false});
+    if (typeof hideTeamStatSourceDebugView === 'function') {
+        hideTeamStatSourceDebugView();
+    }
+    if (typeof renderTeamsTable === 'function') {
+        renderTeamsTable();
+    }
+    if (typeof renderPlayers === 'function') {
+        renderPlayers(Array.isArray(currentPlayers) ? currentPlayers : []);
+    }
+    if (typeof updateStats === 'function') {
+        updateStats();
+    }
+    if (options.activateAdminTab !== false && typeof showTab === 'function') {
+        showTab('admin', null, {syncHistory: false});
+    }
+}
+
+function notifyAdminUnauthorized(message = '管理员登录已失效，请重新验证管理员账户。') {
+    const now = Date.now();
+    if (now - lastAdminUnauthorizedNoticeAt < 1000) return;
+    lastAdminUnauthorizedNoticeAt = now;
+    showModal('未授权', message);
+}
+
+function handleAdminUnauthorized(message = '管理员登录已失效，请重新验证管理员账户。', options = {}) {
+    enterAdminLoggedOutState({
+        focusLogin: options.focusLogin !== false,
+        activateAdminTab: options.activateAdminTab !== false,
+    });
+    if (!options.silent) {
+        notifyAdminUnauthorized(message);
+    }
+}
+
+async function adminFetch(url, options = {}) {
+    const {
+        silentUnauthorized = false,
+        unauthorizedMessage = '管理员登录已失效，请重新验证管理员账户。',
+        focusLoginOnUnauthorized = true,
+        activateAdminTabOnUnauthorized = true,
+        ...fetchOptions
+    } = options;
+    const response = await fetch(url, {
+        credentials: 'same-origin',
+        ...fetchOptions,
+    });
+    if (response.status === 401) {
+        handleAdminUnauthorized(unauthorizedMessage, {
+            silent: silentUnauthorized,
+            focusLogin: focusLoginOnUnauthorized,
+            activateAdminTab: activateAdminTabOnUnauthorized,
+        });
+        const error = new Error(ADMIN_UNAUTHORIZED_ERROR);
+        error.code = ADMIN_UNAUTHORIZED_ERROR;
+        throw error;
+    }
+    return response;
+}
+
+async function adminJsonRequest(url, options = {}) {
+    try {
+        const response = await adminFetch(url, options);
+        const data = await response.json();
+        return {response, data};
+    } catch (error) {
+        if (isAdminUnauthorizedError(error)) {
+            return null;
+        }
+        throw error;
+    }
+}
+
+async function syncAdminAuthStatus(options = {}) {
+    const response = await fetch('/api/admin/check', {credentials: 'same-origin'});
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    isAdmin = Boolean(data.authenticated);
+    syncAdminTabVisibility();
+    syncAdminPanelVisibility({
+        focusLogin: options.focusLogin !== false && !isAdmin,
+    });
+    return data;
+}
 
 function syncAdminTabVisibility() {
     const adminTab = document.getElementById('adminTab');
@@ -133,9 +232,11 @@ function renderSchemaBootstrapStatusCard() {
 
 async function loadSchemaBootstrapStatus() {
     try {
-        const res = await fetch('/api/admin/schema-bootstrap-status');
+        const result = await adminJsonRequest('/api/admin/schema-bootstrap-status', {silentUnauthorized: true});
+        if (!result) return;
+        const {response: res, data} = result;
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        lastSchemaBootstrapStatus = await res.json();
+        lastSchemaBootstrapStatus = data;
     } catch (error) {
         lastSchemaBootstrapStatus = null;
     }
@@ -194,9 +295,11 @@ function renderOperationsAuditCard() {
 
 async function loadLatestFormalImportSummary() {
     try {
-        const res = await fetch('/api/admin/import/latest');
+        const result = await adminJsonRequest('/api/admin/import/latest', {silentUnauthorized: true});
+        if (!result) return;
+        const {response: res, data} = result;
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        lastFormalImportSummary = await res.json();
+        lastFormalImportSummary = data;
     } catch (error) {
         if (!lastFormalImportSummary) lastFormalImportSummary = null;
     }
@@ -208,9 +311,11 @@ async function loadOperationsAudit() {
     try {
         const params = new URLSearchParams({limit: '12'});
         if (currentOperationAuditCategory) params.set('category', currentOperationAuditCategory);
-        const res = await fetch(`/api/admin/operations-audit?${params.toString()}`);
+        const result = await adminJsonRequest(`/api/admin/operations-audit?${params.toString()}`, {silentUnauthorized: true});
+        if (!result) return;
+        const {response: res, data} = result;
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        recentOperationAudits = await res.json();
+        recentOperationAudits = data;
     } catch (error) {
         recentOperationAudits = [];
     }
@@ -222,7 +327,7 @@ async function exportOperationAudits() {
     try {
         const params = new URLSearchParams();
         if (currentOperationAuditCategory) params.set('category', currentOperationAuditCategory);
-        const response = await fetch(`/api/admin/operations-audit/export?${params.toString()}`);
+        const response = await adminFetch(`/api/admin/operations-audit/export?${params.toString()}`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -280,16 +385,21 @@ async function adminLogin() {
         const res = await fetch('/api/admin/login', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
             body: JSON.stringify({username, password}),
         });
+        const data = await res.json();
         if (!res.ok) {
-            const data = await res.json();
             showModal('错误', data.detail || '验证失败');
             return;
         }
-        const data = await res.json();
         if (data.success) {
-            isAdmin = true;
+            const authStatus = await syncAdminAuthStatus({focusLogin: false});
+            if (!authStatus.authenticated) {
+                enterAdminLoggedOutState({focusLogin: true, activateAdminTab: true});
+                showModal('错误', '登录态未生效，请检查 HTTPS / Session Cookie 配置后重试。');
+                return;
+            }
             showAdminTab();
             showTab('admin', null, {syncHistory: false});
             renderTeamsTable();
@@ -298,19 +408,19 @@ async function adminLogin() {
             showModal('成功', `欢迎，${data.username}！`);
         }
     } catch (e) {
+        if (isAdminUnauthorizedError(e)) return;
         console.error('登录错误:', e);
+        showModal('错误', '登录请求失败');
     }
 }
 
 async function adminLogout() {
-    await fetch('/api/admin/logout', {method: 'POST'});
-    isAdmin = false;
-    syncAdminTabVisibility();
-    syncAdminPanelVisibility({focusLogin: false});
-    hideTeamStatSourceDebugView();
-    renderTeamsTable();
-    renderPlayers(currentPlayers);
-    updateStats();
+    try {
+        await fetch('/api/admin/logout', {method: 'POST', credentials: 'same-origin'});
+    } catch (e) {
+        console.error('登出错误:', e);
+    }
+    enterAdminLoggedOutState({focusLogin: false, activateAdminTab: false});
     showTab('players');
 }
 
@@ -330,8 +440,9 @@ function populateAdminSelects() {
 }
 
 async function loadSeaPlayers() {
-    const res = await fetch('/api/admin/sea-players');
-    const players = await res.json();
+    const result = await adminJsonRequest('/api/admin/sea-players', {silentUnauthorized: true});
+    if (!result) return;
+    const {data: players} = result;
     if (players.length === 0) {
         document.getElementById('seaPlayersTable').innerHTML = '<div class="no-data">大海中没有球员</div>';
         return;
@@ -341,8 +452,9 @@ async function loadSeaPlayers() {
 }
 
 async function loadTransferLogs() {
-    const res = await fetch('/api/admin/transfer-logs');
-    const logs = await res.json();
+    const result = await adminJsonRequest('/api/admin/transfer-logs', {silentUnauthorized: true});
+    if (!result) return;
+    const {data: logs} = result;
     if (logs.length === 0) {
         document.getElementById('logsTable').innerHTML = '<div class="no-data">暂无操作日志</div>';
         return;
@@ -365,8 +477,9 @@ async function confirmUndo() {
     if (!pendingUndoLogId) return;
     closeModal();
     try {
-        const res = await fetch(`/api/admin/undo/${pendingUndoLogId}`, {method: 'POST'});
-        const data = await res.json();
+        const result = await adminJsonRequest(`/api/admin/undo/${pendingUndoLogId}`, {method: 'POST'});
+        if (!result) return;
+        const {data} = result;
         if (data.success) {
             showModal('成功', data.message);
             await refreshPlayerDataset();
@@ -384,8 +497,9 @@ async function confirmUndo() {
 }
 
 async function loadLogFile() {
-    const res = await fetch('/api/admin/logs');
-    const data = await res.json();
+    const result = await adminJsonRequest('/api/admin/logs', {silentUnauthorized: true});
+    if (!result) return;
+    const {data} = result;
     document.getElementById('logFileContent').textContent = data.logs || '暂无日志记录';
 }
 
@@ -405,13 +519,18 @@ async function transferPlayer() {
     const team = document.getElementById('transferTeam').value;
     const notes = document.getElementById('transferNotes').value;
     if (!uid || !team) { showModal('错误', '请填写球员UID和目标球队'); return; }
-    const res = await fetch('/api/admin/transfer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({player_uid: uid, to_team: team, notes})});
-    const data = await res.json();
-    showModal(data.success ? '成功' : '错误', data.message || data.detail);
-    if (data.success) {
-        document.getElementById('transferUid').value = '';
-        document.getElementById('transferNotes').value = '';
-        await refreshAdminAfterMutation();
+    try {
+        const result = await adminJsonRequest('/api/admin/transfer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({player_uid: uid, to_team: team, notes})});
+        if (!result) return;
+        const {data} = result;
+        showModal(data.success ? '成功' : '错误', data.message || data.detail);
+        if (data.success) {
+            document.getElementById('transferUid').value = '';
+            document.getElementById('transferNotes').value = '';
+            await refreshAdminAfterMutation();
+        }
+    } catch (e) {
+        showModal('错误', '交易请求失败');
     }
 }
 
@@ -419,13 +538,18 @@ async function releasePlayer() {
     const uid = parseInt(document.getElementById('releaseUid').value);
     const notes = document.getElementById('releaseNotes').value;
     if (!uid) { showModal('错误', '请填写球员UID'); return; }
-    const res = await fetch('/api/admin/release', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({player_uid: uid, to_team: '85大海', notes})});
-    const data = await res.json();
-    showModal(data.success ? '成功' : '错误', data.message || data.detail);
-    if (data.success) {
-        document.getElementById('releaseUid').value = '';
-        document.getElementById('releaseNotes').value = '';
-        await refreshAdminAfterMutation();
+    try {
+        const result = await adminJsonRequest('/api/admin/release', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({player_uid: uid, to_team: '85大海', notes})});
+        if (!result) return;
+        const {data} = result;
+        showModal(data.success ? '成功' : '错误', data.message || data.detail);
+        if (data.success) {
+            document.getElementById('releaseUid').value = '';
+            document.getElementById('releaseNotes').value = '';
+            await refreshAdminAfterMutation();
+        }
+    } catch (e) {
+        showModal('错误', '解约请求失败');
     }
 }
 
@@ -435,14 +559,19 @@ async function consumePlayer() {
     const paChange = parseInt(document.getElementById('consumePa').value) || 0;
     if (!uid) { showModal('错误', '请填写球员UID'); return; }
     if (caChange === 0 && paChange === 0) { showModal('错误', '请填写CA或PA的变化值'); return; }
-    const res = await fetch('/api/admin/consume', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({player_uid: uid, ca_change: caChange, pa_change: paChange})});
-    const data = await res.json();
-    showModal(data.success ? '成功' : '错误', data.message || data.detail);
-    if (data.success) {
-        document.getElementById('consumeUid').value = '';
-        document.getElementById('consumeCa').value = '';
-        document.getElementById('consumePa').value = '';
-        await refreshAdminAfterMutation();
+    try {
+        const result = await adminJsonRequest('/api/admin/consume', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({player_uid: uid, ca_change: caChange, pa_change: paChange})});
+        if (!result) return;
+        const {data} = result;
+        showModal(data.success ? '成功' : '错误', data.message || data.detail);
+        if (data.success) {
+            document.getElementById('consumeUid').value = '';
+            document.getElementById('consumeCa').value = '';
+            document.getElementById('consumePa').value = '';
+            await refreshAdminAfterMutation();
+        }
+    } catch (e) {
+        showModal('错误', '消费请求失败');
     }
 }
 
@@ -459,10 +588,15 @@ async function batchTransfer() {
         return {uid: parseInt(parts[0]), to_team: parts[1], notes: parts[2] || ''};
     });
     if (!items.length) { showModal('错误', '没有有效的数据行'); return; }
-    const res = await fetch('/api/admin/batch-transfer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({items})});
-    const result = await res.json();
-    document.getElementById('batchTransferResult').innerHTML = `<div class="batch-result ${result.success ? 'success' : 'error'}">成功: ${result.success_count}/${items.length}</div>`;
-    if (result.success_count > 0) await refreshAdminAfterMutation();
+    try {
+        const response = await adminJsonRequest('/api/admin/batch-transfer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({items})});
+        if (!response) return;
+        const {data: result} = response;
+        document.getElementById('batchTransferResult').innerHTML = `<div class="batch-result ${result.success ? 'success' : 'error'}">成功: ${result.success_count}/${items.length}</div>`;
+        if (result.success_count > 0) await refreshAdminAfterMutation();
+    } catch (e) {
+        showModal('错误', '批量交易请求失败');
+    }
 }
 
 async function batchRelease() {
@@ -474,10 +608,15 @@ async function batchRelease() {
         return {uid: parseInt(parts[0]), notes: parts[1] || ''};
     });
     if (!items.length) { showModal('错误', '没有有效的数据行'); return; }
-    const res = await fetch('/api/admin/batch-release', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({items})});
-    const result = await res.json();
-    document.getElementById('batchReleaseResult').innerHTML = `<div class="batch-result ${result.success ? 'success' : 'error'}">成功: ${result.success_count}/${items.length}</div>`;
-    if (result.success_count > 0) await refreshAdminAfterMutation();
+    try {
+        const response = await adminJsonRequest('/api/admin/batch-release', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({items})});
+        if (!response) return;
+        const {data: result} = response;
+        document.getElementById('batchReleaseResult').innerHTML = `<div class="batch-result ${result.success ? 'success' : 'error'}">成功: ${result.success_count}/${items.length}</div>`;
+        if (result.success_count > 0) await refreshAdminAfterMutation();
+    } catch (e) {
+        showModal('错误', '批量解约请求失败');
+    }
 }
 
 async function batchConsume() {
@@ -489,18 +628,24 @@ async function batchConsume() {
         return {uid: parseInt(parts[0]), ca_change: parseInt(parts[1]) || 0, pa_change: parseInt(parts[2]) || 0, notes: parts[3] || ''};
     });
     if (!items.length) { showModal('错误', '没有有效的数据行'); return; }
-    const res = await fetch('/api/admin/batch-consume', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({items})});
-    const result = await res.json();
-    document.getElementById('batchConsumeResult').innerHTML = `<div class="batch-result ${result.success ? 'success' : 'error'}">成功: ${result.success_count}/${items.length}</div>`;
-    if (result.success_count > 0) await refreshAdminAfterMutation();
+    try {
+        const response = await adminJsonRequest('/api/admin/batch-consume', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({items})});
+        if (!response) return;
+        const {data: result} = response;
+        document.getElementById('batchConsumeResult').innerHTML = `<div class="batch-result ${result.success ? 'success' : 'error'}">成功: ${result.success_count}/${items.length}</div>`;
+        if (result.success_count > 0) await refreshAdminAfterMutation();
+    } catch (e) {
+        showModal('错误', '批量消费请求失败');
+    }
 }
 
 async function runFormalImport() {
     const confirmed = confirm('确定要执行正式导入吗？\n\n这会按严格模式读取最新的 HEIGO Excel 和球员属性 CSV/XLSX，先自动备份当前数据库，再正式写入联赛规则、球队、球员和属性库。球员属性会按版本并存。');
     if (!confirmed) return;
     try {
-        const res = await fetch('/api/admin/import/formal', {method: 'POST'});
-        const data = await res.json();
+        const result = await adminJsonRequest('/api/admin/import/formal', {method: 'POST'});
+        if (!result) return;
+        const {data} = result;
         lastFormalImportSummary = data;
         renderFormalImportSummaryCard();
         showModal(data.success ? '导入完成' : '导入未提交', formatFormalImportResult(data));
@@ -529,8 +674,9 @@ async function rebuildTeamStatCaches() {
     const confirmed = confirm('确定要安全全量重算所有可见球队的缓存统计吗？');
     if (!confirmed) return;
     try {
-        const res = await fetch('/api/admin/team-stats/rebuild-cache', {method: 'POST'});
-        const data = await res.json();
+        const result = await adminJsonRequest('/api/admin/team-stats/rebuild-cache', {method: 'POST'});
+        if (!result) return;
+        const {data} = result;
         showModal(data.success ? '成功' : '错误', data.message || data.detail);
         if (data.success) {
             await refreshTeamDataset();
@@ -547,8 +693,9 @@ async function recalculateWages() {
     const confirmed = confirm('确定要执行全量工资重算吗？');
     if (!confirmed) return;
     try {
-        const res = await fetch('/api/admin/recalculate-wages', {method: 'POST'});
-        const data = await res.json();
+        const result = await adminJsonRequest('/api/admin/recalculate-wages', {method: 'POST'});
+        if (!result) return;
+        const {data} = result;
         showModal(data.success ? '成功' : '错误', data.message || data.detail);
         if (data.success) {
             await refreshPlayerDataset();
@@ -563,14 +710,14 @@ async function recalculateWages() {
 }
 
 async function editTeam(teamName) {
-    const adminRes = await fetch('/api/admin/check');
-    const adminData = await adminRes.json();
+    const adminData = await syncAdminAuthStatus({focusLogin: false});
     if (!adminData.authenticated) {
         showModal('提示', '请先登录管理员账户才能编辑球队信息');
         return;
     }
-    const res = await fetch(`/api/admin/team/${encodeURIComponent(teamName)}`);
-    const team = await res.json();
+    const result = await adminJsonRequest(`/api/admin/team/${encodeURIComponent(teamName)}`);
+    if (!result) return;
+    const {data: team} = result;
     if (team.detail) {
         showModal('错误', team.detail);
         return;
@@ -589,18 +736,23 @@ async function saveTeamInfo(originalName) {
     const manager = document.getElementById('editTeamManager').value.trim();
     const notes = document.getElementById('editTeamNotes').value.trim();
     if (!newName) { showModal('错误', '球队名不能为空'); return; }
-    const res = await fetch('/api/admin/team/update', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({team_name: originalName, name: newName !== originalName ? newName : null, manager, notes}),
-    });
-    const data = await res.json();
-    if (data.success) {
-        closeModal();
-        showModal('成功', data.message);
-        await refreshTeamDataset();
-    } else {
-        showModal('错误', data.detail || '保存失败');
+    try {
+        const result = await adminJsonRequest('/api/admin/team/update', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({team_name: originalName, name: newName !== originalName ? newName : null, manager, notes}),
+        });
+        if (!result) return;
+        const {data} = result;
+        if (data.success) {
+            closeModal();
+            showModal('成功', data.message);
+            await refreshTeamDataset();
+        } else {
+            showModal('错误', data.detail || '保存失败');
+        }
+    } catch (e) {
+        showModal('错误', '保存请求失败');
     }
 }
 
@@ -610,8 +762,9 @@ async function updateTeamField(originalName, field, value) {
     if (field === 'manager') requestBody.manager = value;
     if (field === 'level') requestBody.level = value;
     try {
-        const res = await fetch('/api/admin/team/update', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(requestBody)});
-        const data = await res.json();
+        const result = await adminJsonRequest('/api/admin/team/update', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(requestBody)});
+        if (!result) return;
+        const {data} = result;
         if (data.success) {
             await refreshTeamDataset();
         } else {
@@ -629,8 +782,9 @@ async function updatePlayerField(uid, field, value) {
     if (field === 'nationality') requestBody.nationality = value;
     if (field === 'age') requestBody.age = parseInt(value);
     try {
-        const res = await fetch('/api/admin/player/update', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(requestBody)});
-        const data = await res.json();
+        const result = await adminJsonRequest('/api/admin/player/update', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(requestBody)});
+        if (!result) return;
+        const {data} = result;
         if (data.success) {
             await refreshPlayerDataset();
             await refreshTeamDataset();
@@ -655,8 +809,9 @@ async function updatePlayerUidConfirm(oldUid, newUid, inputElement) {
 async function updatePlayerUid(oldUid, newUid) {
     if (oldUid == newUid) return;
     try {
-        const res = await fetch('/api/admin/player/update-uid', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({old_uid: parseInt(oldUid), new_uid: parseInt(newUid)})});
-        const data = await res.json();
+        const result = await adminJsonRequest('/api/admin/player/update-uid', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({old_uid: parseInt(oldUid), new_uid: parseInt(newUid)})});
+        if (!result) return;
+        const {data} = result;
         if (data.success) {
             await refreshPlayerDataset();
             showModal('成功', `UID 已从 ${oldUid} 更新为 ${newUid}`);

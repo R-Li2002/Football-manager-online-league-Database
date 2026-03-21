@@ -147,7 +147,7 @@ curl http://127.0.0.1:8080/health
 - `DATABASE_PATH=/app/data/fm_league.db`
 - `HEIGO_IMPORT_ROOT=/app/imports`
 - `HEIGO_BACKUP_ROOT=/app/data/backups`
-- `SESSION_COOKIE_SECURE=true`
+- `SESSION_COOKIE_SECURE=auto`
 - `HEIGO_BOOTSTRAP_ADMINS=`（仅首次初始化管理员时临时设置）
 - `INTERNAL_SHARE_TOKEN=...`（仅启用内部分享页 / SVG 渲染 / qqbot 时需要）
 
@@ -207,6 +207,12 @@ HEIGO_BOOTSTRAP_ADMINS=HEIGO01=StrongPassword1!;HEIGO02=StrongPassword2!
 
 ```text
 HEIGO_PORT_BIND=8080:8080
+```
+
+当前默认 `SESSION_COOKIE_SECURE=auto`，HTTP 直连 `:8080` 时会自动发送非 `Secure` 管理员会话 cookie；如果你确认只会通过域名 / HTTPS 访问，也可以显式写成：
+
+```text
+SESSION_COOKIE_SECURE=true
 ```
 
 `.env` 默认不纳入 Git 管理，这样后续 `git pull --ff-only` 和 GitHub Actions 自动部署都不会再因为 `docker-compose.yml` 本地脏改动而卡住。
@@ -329,6 +335,18 @@ docker compose restart heigo
 ```text
 HEIGO_PORT_BIND=8080:8080
 ```
+
+如需强制覆盖管理员会话 cookie 策略，可额外设置：
+
+```text
+SESSION_COOKIE_SECURE=auto
+```
+
+其中：
+
+- `auto`：HTTP 直连时自动关闭 `Secure`，HTTPS / 反代带 `X-Forwarded-Proto: https` 时自动启用
+- `true`：只适合始终通过 HTTPS 访问维护中心
+- `false`：仅建议临时内网 / 调试环境使用
 
 Nginx 模板文件：
 

@@ -255,6 +255,7 @@ HEIGOOA/
 
 - 生产环境不再自动播种固定默认管理员口令
 - 如需首启创建管理员，应显式配置 `HEIGO_BOOTSTRAP_ADMINS`
+- 管理员会话 cookie 的 `Secure` 策略默认使用 `SESSION_COOKIE_SECURE=auto`，按 HTTP 直连或 HTTPS / 反代请求自动匹配
 - `/internal/share/player/{uid}` 与 `/internal/render/player/{uid}.svg` 在部署场景中应通过 `INTERNAL_SHARE_TOKEN` 保护
 - `napcat` 的 OneBot API 走 Docker 内网访问，宿主机默认仅保留本地 WebUI 入口
 - `qqbot` 与 `napcat` 通过 Compose `qqbot` profile 可选启用，不应阻塞主站默认部署
@@ -438,6 +439,7 @@ HEIGOOA/
 - `/internal/share/player/{uid}` 的内部 token 保护
 - `/internal/render/player/{uid}.svg` 的内部 token 保护与返回契约
 - `heigomanage` 入口与维护中心登录页切换
+- 维护中心登录后会话校验与 `401` 未授权回退登录页
 - 后端搜索归一化与前端 Hero 精确命中一致性
 
 当前 GitHub Actions 部署流程也会在真正部署前先执行 `scripts/pre-release-check.ps1`，用于阻断未通过主应用核心回归或文档自检的变更直接进入生产部署。

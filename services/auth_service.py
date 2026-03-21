@@ -1,4 +1,4 @@
-from fastapi import HTTPException, Response
+from fastapi import HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from auth_utils import cleanup_expired_sessions, create_session, delete_session, get_session_username, verify_password_and_upgrade
@@ -59,6 +59,7 @@ def login_admin(
     db: Session,
     username: str,
     password: str,
+    request: Request,
     response: Response,
     *,
     set_session_cookie,
@@ -81,7 +82,7 @@ def login_admin(
     cleanup_expired_sessions(db)
     session_token = create_session(db, admin.username)
     db.commit()
-    set_session_cookie(response, session_token)
+    set_session_cookie(response, session_token, request=request)
     write_to_log("登录", "管理员登录成功", admin.username)
     payload = LoginResponse(success=True, username=admin.username)
     _persist_auth_audit(
@@ -99,6 +100,7 @@ def login_admin(
 
 def logout_admin(
     db: Session,
+    request: Request,
     response: Response,
     session_token: str | None,
     *,
@@ -108,7 +110,7 @@ def logout_admin(
     username = get_session_username(db, session_token) or "unknown"
     delete_session(db, session_token)
     db.commit()
-    clear_session_cookie(response)
+    clear_session_cookie(response, request=request)
     write_to_log("登出", "管理员登出", username)
     payload = LogoutResponse(success=True)
     _persist_auth_audit(

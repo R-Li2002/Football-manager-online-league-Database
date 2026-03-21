@@ -10,7 +10,7 @@ services:
       DATABASE_PATH: /app/data/fm_league.db
       HEIGO_IMPORT_ROOT: /app/imports
       HEIGO_BACKUP_ROOT: /app/data/backups
-      SESSION_COOKIE_SECURE: "true"
+      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-auto}"
       HEIGO_BOOTSTRAP_ADMINS: "${HEIGO_BOOTSTRAP_ADMINS:-}"
       INTERNAL_SHARE_TOKEN: "${INTERNAL_SHARE_TOKEN:-}"
     ports:

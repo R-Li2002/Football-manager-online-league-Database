@@ -9,6 +9,7 @@ try {
     & $python -m unittest `
         test_health_contract.py `
         test_admin_bootstrap_config.py `
+        test_admin_session_cookie.py `
         test_internal_share_page.py `
         test_internal_render_svg.py `
         test_share_card_presenter.py `
@@ -16,6 +17,7 @@ try {
 
     & node test_frontend_search_normalization.js
     & node test_frontend_admin_entry.js
+    & node test_frontend_admin_auth.js
 } finally {
     Pop-Location
 }

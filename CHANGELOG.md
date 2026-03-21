@@ -53,6 +53,8 @@
 - `/internal/share/player/{uid}` 支持 `X-Internal-Share-Token` 校验，机器人截图链路同步自动携带该 header
 - `heigomanage` 入口不再被未登录状态强制重定向回首页，改为显示维护中心入口并进入管理员登录页
 - `heigomanage` 入口补齐首页 Hero 搜索链路，避免只显示维护中心 UI 外壳而无法进入管理员登录态
+- 维护中心登录成功后改为再次校验 `/api/admin/check` 会话状态，并在管理员接口返回 `401` 时统一回退登录页，避免前端假登录态继续执行未授权操作
+- `SESSION_COOKIE_SECURE` 默认策略改为 `auto`，在 HTTP 直连与经 Nginx/HTTPS 反代两种场景下自动匹配管理员会话 cookie 的 `Secure` 行为
 - 前端 Hero 搜索的归一化和精确命中判断已与后端搜索键规则对齐，支持 `guendogan`、`alexandros`、`Joao` 等输入直达详情
 - 机器人 `/health` 会在关键依赖离线时返回 503，并附带配置摘要；OneBot 发送或业务处理异常时改为优先 ack 并尝试文本降级
 - 核心回归测试补充 SQLite engine 释放逻辑，清理合并运行时的 `ResourceWarning: unclosed database`

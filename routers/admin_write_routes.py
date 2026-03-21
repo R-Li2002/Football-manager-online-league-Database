@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Cookie, Depends, Response
+from fastapi import APIRouter, Cookie, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from schemas_write import (
@@ -34,11 +34,12 @@ def build_admin_write_router(
     router = APIRouter()
 
     @router.post("/api/admin/login", response_model=LoginResponse)
-    def admin_login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
+    def admin_login(request: LoginRequest, http_request: Request, response: Response, db: Session = Depends(get_db)):
         return auth_service.login_admin(
             db,
             request.username,
             request.password,
+            http_request,
             response,
             set_session_cookie=set_session_cookie,
             write_to_log=write_to_log,
@@ -46,12 +47,14 @@ def build_admin_write_router(
 
     @router.post("/api/admin/logout", response_model=LogoutResponse)
     def admin_logout(
+        http_request: Request,
         response: Response,
         session_token: Optional[str] = Cookie(None),
         db: Session = Depends(get_db),
     ):
         return auth_service.logout_admin(
             db,
+            http_request,
             response,
             session_token,
             clear_session_cookie=clear_session_cookie,
