@@ -36,7 +36,8 @@ class OneBotClient:
         )
         response.raise_for_status()
         payload = response.json()
-        if str(payload.get("status") or "").lower() != "ok" or int(payload.get("retcode") or -1) != 0:
+        retcode = payload.get("retcode", -1)
+        if str(payload.get("status") or "").lower() != "ok" or int(retcode) != 0:
             raise RuntimeError(f"OneBot action failed: {action}")
         return payload
 

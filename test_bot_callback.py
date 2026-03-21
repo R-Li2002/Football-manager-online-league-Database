@@ -41,6 +41,30 @@ class BotCallbackRouteTests(unittest.TestCase):
         self.assertTrue(payload["ack"])
         self.assertTrue(payload["handled"])
 
+    def test_callback_returns_204_in_onebot_mode(self):
+        settings = BotSettings(
+            heigo_base_url="http://heigo.test",
+            onebot_self_id="10001",
+            qq_bot_allow_all_groups=True,
+            bot_reply_mode="onebot",
+        )
+        app = create_app(settings)
+        client = TestClient(app)
+        response = client.post(
+            "/onebot/events",
+            json={
+                "post_type": "message",
+                "message_type": "group",
+                "message_id": 104,
+                "group_id": 20001,
+                "user_id": 30001,
+                "raw_message": "[CQ:at,qq=10001] 帮助",
+            },
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.text, "")
+
     def test_callback_rejects_non_whitelisted_group(self):
         settings = BotSettings(
             heigo_base_url="http://heigo.test",

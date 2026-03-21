@@ -5,6 +5,7 @@ import hmac
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import Response
 
 from app.clients.heigo_client import HeigoClient
 from app.clients.onebot_client import OneBotClient
@@ -51,6 +52,11 @@ def build_onebot_router(
     render_service: PlayerShareRenderService,
 ) -> APIRouter:
     router = APIRouter()
+
+    def _onebot_http_response(payload: dict) -> dict | Response:
+        if settings.bot_reply_mode == "onebot":
+            return Response(status_code=204)
+        return payload
 
     @router.get("/health")
     async def health():
@@ -108,21 +114,21 @@ def build_onebot_router(
             request.headers.get("X-Signature"),
             raw_body,
         ):
-            return {"ack": False, "ignored": True, "reason": "invalid_signature"}
+            return _onebot_http_response({"ack": False, "ignored": True, "reason": "invalid_signature"})
 
         payload = await request.json() if raw_body else {}
         if not isinstance(payload, dict):
-            return {"ack": False, "ignored": True, "reason": "invalid_payload"}
+            return _onebot_http_response({"ack": False, "ignored": True, "reason": "invalid_payload"})
 
         event = normalize_onebot_message_event(payload, configured_self_id=settings.onebot_self_id)
         if not event:
-            return {"ack": True, "ignored": True, "reason": "unsupported_event"}
+            return _onebot_http_response({"ack": True, "ignored": True, "reason": "unsupported_event"})
 
         if event.message_type == "group" and not event.mentions_robot:
-            return {"ack": True, "ignored": True, "reason": "robot_not_mentioned"}
+            return _onebot_http_response({"ack": True, "ignored": True, "reason": "robot_not_mentioned"})
 
         if event.message_type == "group" and not is_group_allowed(settings, event.group_id, event.group_id):
-            return {"ack": True, "ignored": True, "reason": "group_not_allowed"}
+            return _onebot_http_response({"ack": True, "ignored": True, "reason": "group_not_allowed"})
 
         if event.user_id:
             allowed, retry_after = rate_limit_service.check_user_cooldown(
@@ -130,7 +136,9 @@ def build_onebot_router(
                 settings.bot_user_cooldown_seconds,
             )
             if not allowed:
-                return {"ack": True, "ignored": True, "reason": "user_cooldown", "retry_after": retry_after}
+                return _onebot_http_response(
+                    {"ack": True, "ignored": True, "reason": "user_cooldown", "retry_after": retry_after}
+                )
 
         if event.message_type == "group":
             group_key = event.group_id or "unknown"
@@ -139,7 +147,9 @@ def build_onebot_router(
                 settings.bot_group_limit_per_minute,
             )
             if not allowed:
-                return {"ack": True, "ignored": True, "reason": "group_rate_limited", "retry_after": retry_after}
+                return _onebot_http_response(
+                    {"ack": True, "ignored": True, "reason": "group_rate_limited", "retry_after": retry_after}
+                )
 
         command = None
         try:
@@ -171,16 +181,18 @@ def build_onebot_router(
                 message_id=event.message_id,
                 reply=reply,
             )
-            return {
-                "ack": True,
-                "handled": False,
-                "reason": error_reason,
-                "error": type(exc).__name__,
-                "event": event.model_dump(),
-                "command": command.model_dump() if command else None,
-                "reply": reply.model_dump(),
-                "dispatch": dispatch_result,
-            }
+            return _onebot_http_response(
+                {
+                    "ack": True,
+                    "handled": False,
+                    "reason": error_reason,
+                    "error": type(exc).__name__,
+                    "event": event.model_dump(),
+                    "command": command.model_dump() if command else None,
+                    "reply": reply.model_dump(),
+                    "dispatch": dispatch_result,
+                }
+            )
 
         logger.info(
             "Handled OneBot event type=%s command=%s target=%s",
@@ -188,13 +200,15 @@ def build_onebot_router(
             command.command_type,
             event.group_id or event.user_id,
         )
-        return {
-            "ack": True,
-            "handled": True,
-            "event": event.model_dump(),
-            "command": command.model_dump(),
-            "reply": reply.model_dump(),
-            "dispatch": dispatch_result,
-        }
+        return _onebot_http_response(
+            {
+                "ack": True,
+                "handled": True,
+                "event": event.model_dump(),
+                "command": command.model_dump(),
+                "reply": reply.model_dump(),
+                "dispatch": dispatch_result,
+            }
+        )
 
     return router

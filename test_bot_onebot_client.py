@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock
+from types import MethodType
 
 
 BOT_ROOT = Path(__file__).resolve().parent / "bot"
@@ -15,6 +16,30 @@ from app.schemas.bot_commands import PreparedReply  # noqa: E402
 
 
 class BotOneBotClientTests(IsolatedAsyncioTestCase):
+    async def test_get_status_accepts_retcode_zero(self):
+        client = OneBotClient(BotSettings(bot_reply_mode="onebot"))
+        seen_actions: list[str] = []
+
+        async def fake_post_action(self, action, params=None):
+            seen_actions.append(action)
+            return {
+                "status": "ok",
+                "retcode": 0,
+                "data": {"online": True, "good": True},
+            }
+
+        client._post_action = MethodType(fake_post_action, client)
+
+        try:
+            result = await client.get_status()
+        finally:
+            await client.aclose()
+
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(result["online"])
+        self.assertTrue(result["good"])
+        self.assertEqual(seen_actions, ["get_status"])
+
     async def test_dispatch_reply_degrades_image_to_text_when_image_send_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             image_path = Path(temp_dir) / "player.png"
