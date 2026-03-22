@@ -1,0 +1,53 @@
+﻿services:
+  napcat:
+    image: mlikiowa/napcat-docker:latest
+    container_name: heigo-napcat
+    restart: unless-stopped
+    init: true
+    volumes:
+      - ./data/napcat/qq:/app/.config/QQ
+      - ./data/napcat/config:/app/napcat/config
+    expose:
+      - "3000"
+      - "3001"
+      - "6099"
+    ports:
+      - "${NAPCAT_WEBUI_BIND:-127.0.0.1:6099:6099}"
+
+  bot-nonebot:
+    build:
+      context: ./bot_nonebot
+    container_name: heigo-bot-nonebot
+    restart: unless-stopped
+    init: true
+    environment:
+      DRIVER: "~fastapi"
+      HOST: "0.0.0.0"
+      PORT: "8090"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      ONEBOT_ACCESS_TOKEN: "${ONEBOT_ACCESS_TOKEN:-}"
+      HEIGO_BASE_URL: "${HEIGO_BASE_URL:-http://heigo:8080}"
+      HEIGO_RENDER_BASE_URL: "${HEIGO_RENDER_BASE_URL:-http://heigo:8080}"
+      INTERNAL_RENDER_SIGNING_KEY: "${INTERNAL_RENDER_SIGNING_KEY:-}"
+      HEIGO_RENDER_TTL_SECONDS: "${HEIGO_RENDER_TTL_SECONDS:-90}"
+      BOT_DEFAULT_THEME: "${BOT_DEFAULT_THEME:-dark}"
+      BOT_ROSTER_PAGE_SIZE: "${BOT_ROSTER_PAGE_SIZE:-16}"
+      QQ_BOT_ALLOWED_GROUPS: "${QQ_BOT_ALLOWED_GROUPS:-}"
+      QQ_BOT_ALLOW_ALL_GROUPS: "${QQ_BOT_ALLOW_ALL_GROUPS:-false}"
+      BOT_USER_COOLDOWN_SECONDS: "${BOT_USER_COOLDOWN_SECONDS:-5}"
+      BOT_GROUP_LIMIT_PER_MINUTE: "${BOT_GROUP_LIMIT_PER_MINUTE:-20}"
+    ports:
+      - "127.0.0.1:8090:8090"
+    depends_on:
+      - heigo
+      - napcat
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=5).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

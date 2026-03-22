@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
@@ -9,13 +9,9 @@ try {
     $venvPython = Join-Path $repoRoot '.venv\Scripts\python.exe'
     $python = if (Test-Path $venvPython) { $venvPython } else { 'python' }
     & $python -m unittest `
-        test_bot_callback.py `
-        test_bot_command_service.py `
-        test_bot_health.py `
-        test_bot_player_image_reply.py `
-        test_bot_render_service.py `
-        test_bot_signature_service.py `
-        test_bot_svg_renderer.py
+        test_bot_nonebot_parser.py `
+        test_bot_nonebot_service.py
+    & $python -m compileall bot_nonebot
 } finally {
     Pop-Location
 }

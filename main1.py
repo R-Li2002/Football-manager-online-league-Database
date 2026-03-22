@@ -29,6 +29,9 @@ LOCAL_DEV_PORT = int(os.environ.get("LOCAL_PORT", "8001"))
 BOOTSTRAP_ADMINS_ENV = "HEIGO_BOOTSTRAP_ADMINS"
 INTERNAL_SHARE_TOKEN = os.environ.get("INTERNAL_SHARE_TOKEN", "").strip()
 INTERNAL_SHARE_HEADER_NAME = "X-Internal-Share-Token"
+INTERNAL_RENDER_SIGNING_KEY = os.environ.get("INTERNAL_RENDER_SIGNING_KEY", "").strip()
+SHARE_CACHE_ROOT = os.environ.get("HEIGO_SHARE_CACHE_ROOT", "data/share-cache").strip() or "data/share-cache"
+SHARE_TEMPLATE_VERSION = int(os.environ.get("HEIGO_SHARE_TEMPLATE_VERSION", "2"))
 
 
 def write_to_log(operation: str, details: str, operator: str):
@@ -188,6 +191,9 @@ app.include_router(
         get_db,
         internal_share_token=INTERNAL_SHARE_TOKEN,
         internal_share_header_name=INTERNAL_SHARE_HEADER_NAME,
+        internal_render_signing_key=INTERNAL_RENDER_SIGNING_KEY,
+        share_cache_root=SHARE_CACHE_ROOT,
+        share_template_version=SHARE_TEMPLATE_VERSION,
     )
 )
 

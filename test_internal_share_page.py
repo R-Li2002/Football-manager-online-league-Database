@@ -1,11 +1,11 @@
-import unittest
+﻿import unittest
 from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from routers.frontend_routes import build_frontend_router
-from schemas_read import PlayerAttributeDetailResponse
+from schemas_read import PlayerAttributeDetailResponse, PlayerResponse, TeamInfoResponse, WageDetailResponse
 
 
 def _dummy_db():
@@ -39,7 +39,7 @@ def _sample_player_detail() -> PlayerAttributeDetailResponse:
         birth_date="1998-05-07",
         national_caps=0,
         national_goals=0,
-        player_habits="喜欢回撤接球",
+        player_habits="Drops deep to receive the ball",
         player_habits_raw_code=None,
         player_habits_high_bits=None,
         corner=12,
@@ -121,6 +121,42 @@ def _sample_player_detail() -> PlayerAttributeDetailResponse:
     )
 
 
+def _sample_wage_detail() -> WageDetailResponse:
+    return WageDetailResponse(
+        initial_value=7.0,
+        current_value=7.0,
+        potential_value=7.0,
+        final_value=7.0,
+        initial_field=7.0,
+        slot_type="7M",
+        coefficient=0.13,
+        wage=0.91,
+    )
+
+
+def _sample_team_players() -> list[PlayerResponse]:
+    return [
+        PlayerResponse(
+            uid=24048100 + idx,
+            name=f"Barcelona Player {idx + 1}",
+            age=20 + idx,
+            initial_ca=120 + idx,
+            ca=140 + idx,
+            pa=155 + idx,
+            position="MC" if idx % 3 else "GK",
+            nationality="Spain",
+            team_name="Barcelona",
+            wage=0.5 + idx * 0.01,
+            slot_type="8M" if idx == 0 else "",
+        )
+        for idx in range(6)
+    ]
+
+
+def _sample_team_info() -> TeamInfoResponse:
+    return TeamInfoResponse(id=1, name="Barcelona", manager="Xavi", level="Super", wage=8.4, notes=None)
+
+
 class InternalSharePageTests(unittest.TestCase):
     def test_internal_share_page_renders_html(self):
         app = FastAPI()
@@ -134,9 +170,10 @@ class InternalSharePageTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("HEIGO 球员详情图", response.text)
+        self.assertIn("HEIGO PLAYER SHARE", response.text)
         self.assertIn("Dani Olmo", response.text)
-        self.assertIn("成长预览 +2", response.text)
+        self.assertIn("Growth Preview +2", response.text)
+        self.assertIn("Noto Sans CJK SC", response.text)
 
     def test_internal_share_page_returns_404_when_missing(self):
         app = FastAPI()
@@ -168,17 +205,3 @@ class InternalSharePageTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["detail"], "internal_share_not_configured")
-
-    def test_internal_share_page_accepts_valid_token_when_configured(self):
-        app = FastAPI()
-        app.include_router(build_frontend_router(_dummy_db, internal_share_token="share-secret"))
-        client = TestClient(app)
-
-        with patch("routers.frontend_routes.read_service.get_player_attribute_detail", return_value=_sample_player_detail()):
-            response = client.get(
-                "/internal/share/player/24048100?version=2026-03&step=2",
-                headers={"X-Internal-Share-Token": "share-secret"},
-            )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("Dani Olmo", response.text)

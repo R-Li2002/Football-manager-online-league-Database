@@ -1,34 +1,36 @@
-# HEIGO Football Manager Online League Database
+﻿# HEIGO Football Manager Online League Database
 
-![HEIGO Admin Dashboard](docs/admin-dashboard.png)
+HEIGO 是一个面向 Football Manager 联机联赛运营的单体式数据平台。
 
-HEIGO 是一套面向 Football Manager 联机联赛的单体式数据平台，覆盖联赛名单管理、球员属性查询、管理员维护、正式导入、操作审计与线上部署。
+当前仓库状态已经收口到这套架构：
+
+- 主站：FastAPI + SQLite
+- 分享图：由主站统一渲染 `球员图 / 工资图 / 名单图`
+- 机器人：`NapCat + NoneBot2 + OneBot v11`
+- 部署：
+  - `docker-compose.yml` 只负责主站
+  - `docker-compose.bot.yml` 负责 `napcat + bot-nonebot`
 
 ## 当前版本
 
-- 当前版本号以根目录 `VERSION` 文件为唯一来源
-- 查看当前版本可直接读取 `VERSION`
-  - PowerShell：`Get-Content .\VERSION`
-  - Bash：`cat ./VERSION`
-- 详细变更历史见 `CHANGELOG.md`
+当前版本号以根目录 `VERSION` 为唯一来源。
+
+查看方式：
+
+```powershell
+Get-Content .\VERSION
+```
 
 ## 快速启动
 
-### 安装依赖
+安装主站依赖：
 
 ```powershell
 cd D:\HEIGOOA
 python -m pip install -r requirements.txt
 ```
 
-### 启动服务
-
-```powershell
-cd D:\HEIGOOA
-.\start_local.ps1
-```
-
-或：
+本地启动主站：
 
 ```powershell
 cd D:\HEIGOOA
@@ -39,41 +41,50 @@ python main1.py
 
 - [http://127.0.0.1:8001](http://127.0.0.1:8001)
 
-### 健康检查
+健康检查：
 
 ```powershell
 curl http://127.0.0.1:8001/health
 ```
 
-预期返回：
+## 部署入口
 
-```json
-{"status":"ok","database":"ok"}
-```
-
-## 核心文档
-
-- 完整技术文档：`docs/PROJECT_MANUAL.md`
-- 更新记录：`CHANGELOG.md`
-- Agent 工作准则：`AGENTS.md`
-- 导入模板说明：`docs/IMPORT_TEMPLATE_GUIDE.md`
-- 部署手册：`DEPLOY.md`
+- 主部署手册：`DEPLOY.md`
 - 首次上线清单：`DEPLOY_FIRST_RUN_CHECKLIST.md`
+- 完整技术手册：`docs/PROJECT_MANUAL.md`
+- 机器人部署与命令说明：`bot_nonebot/README.md`
+- 更新记录：`CHANGELOG.md`
+- Agent 约束：`AGENTS.md`
 
-## 项目定位
+## 当前分享与机器人链路
 
-- 面向玩家的联赛数据工作台
-- 面向管理员的维护与导入后台
-- 基于 SQLite 的单实例联赛运营系统
+主站当前内置图片接口：
 
-当前重点是可维护性、导入可靠性和联赛内数据查询体验；它不是多租户 SaaS，也不是高并发公网服务。
+- `/internal/render/player/{uid}.png`
+- `/internal/render/wage/{uid}.png`
+- `/internal/render/roster.png?team=...&page=...`
 
-## 开发与维护约定
+机器人当前只负责：
 
-- 文档统一使用 UTF-8 保存
-- 生产数据库不要提交到 GitHub
-- `data/` 和 `imports/` 属于运行时目录
-- 更新联赛数据优先走“正式导入”流程
-- 每次准备推送前，按需同步更新 `VERSION`、`CHANGELOG.md`、`docs/PROJECT_MANUAL.md` 和相关专题文档
-- 推送前可执行 `scripts/release-docs-check.ps1` 做文档同步自检
-- 推送前也可执行 `scripts/pre-release-check.ps1`，一次性跑完文档自检和主应用核心回归
+- 接收群消息
+- 调用主站读接口查询球员 / 球队
+- 生成主站 PNG 签名 URL
+- 通过 OneBot 发图
+
+机器人不再负责：
+
+- 本地 SVG -> PNG 转换
+- 本地图片缓存
+- 直接读取主站数据库
+
+## 生产部署现状
+
+当前你提供的公网入口是：
+
+- `81.70.199.249`
+
+因此当前推荐做法是：
+
+- 主站通过 Nginx 或直接端口映射对外提供 `http://81.70.199.249`
+- `bot-nonebot` 和 NapCat 不对公网开放
+- 等未来有真实域名后，再补 HTTPS 证书和 443 配置

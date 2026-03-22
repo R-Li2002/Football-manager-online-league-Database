@@ -1,0 +1,8 @@
+﻿[project]
+name = "heigo-bot-nonebot"
+version = "0.1.0"
+description = "HEIGO image-first QQ bot based on NoneBot2 and OneBot v11"
+requires-python = ">=3.12"
+
+[tool.black]
+line-length = 120

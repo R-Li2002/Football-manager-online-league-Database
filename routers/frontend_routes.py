@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from sqlalchemy.orm import Session
 
-from services import read_service, share_page_service
+from services import read_service, share_page_service, share_png_service, share_signature_service, share_svg_renderer
 
 
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
@@ -30,13 +30,41 @@ def _verify_internal_share_access(
     raise HTTPException(status_code=403, detail="internal_share_token_required")
 
 
+def _raise_signature_error(detail: str) -> None:
+    if detail == "render_url_expired":
+        raise HTTPException(status_code=410, detail=detail)
+    if detail == "internal_render_not_configured":
+        raise HTTPException(status_code=503, detail=detail)
+    raise HTTPException(status_code=403, detail=detail)
+
+
+def _build_png_file_response(rendered: share_png_service.RenderedSharePng) -> FileResponse:
+    return FileResponse(
+        rendered.file_path,
+        media_type="image/png",
+        filename=rendered.file_name,
+        headers={
+            "Cache-Control": "private, max-age=60",
+            "ETag": rendered.etag,
+            "X-Render-Cache": rendered.cache_status,
+        },
+    )
+
+
 def build_frontend_router(
     get_db,
     *,
     internal_share_token: str = "",
     internal_share_header_name: str = "X-Internal-Share-Token",
+    internal_render_signing_key: str = "",
+    share_cache_root: str | Path = Path("data/share-cache"),
+    share_template_version: int = 2,
 ):
     router = APIRouter()
+    png_renderer = share_png_service.SharePngRenderer(
+        share_cache_root,
+        template_version=share_template_version,
+    )
 
     @router.get("/", response_class=FileResponse)
     def read_root():
@@ -111,5 +139,160 @@ def build_frontend_router(
             theme=theme,
         )
         return Response(content=svg, media_type="image/svg+xml")
+
+    @router.get("/internal/render/player/{uid}.png", response_class=FileResponse)
+    def read_internal_player_share_png(
+        uid: int,
+        version: str | None = Query(default=None),
+        step: int = Query(default=0, ge=0, le=5),
+        theme: str = Query(default="dark", pattern="^(dark|light)$"),
+        exp: int = Query(...),
+        sig: str = Query(...),
+        db: Session = Depends(get_db),
+    ):
+        validation = share_signature_service.validate_player_render_signature(
+            internal_render_signing_key,
+            uid=uid,
+            version=version,
+            step=step,
+            theme=theme,
+            exp=exp,
+            provided_signature=sig,
+        )
+        if not validation.ok:
+            _raise_signature_error(validation.detail)
+
+        player = read_service.get_player_attribute_detail(db, uid, data_version=version)
+        if not player:
+            raise HTTPException(status_code=404, detail="player_not_found")
+
+        try:
+            rendered = png_renderer.render_player_png(
+                player,
+                version=version or player.data_version,
+                step=step,
+                theme=theme,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"player_render_failed:{type(exc).__name__}") from exc
+
+        return _build_png_file_response(rendered)
+
+    @router.get("/internal/render/wage/{uid}.svg")
+    def read_internal_wage_share_svg(
+        request: Request,
+        uid: int,
+        theme: str = Query(default="dark", pattern="^(dark|light)$"),
+        db: Session = Depends(get_db),
+    ):
+        _verify_internal_share_access(
+            request,
+            expected_token=internal_share_token,
+            header_name=internal_share_header_name,
+        )
+
+        player = read_service.get_player_attribute_detail(db, uid)
+        if not player:
+            raise HTTPException(status_code=404, detail="player_not_found")
+        wage_detail = read_service.get_player_wage_detail(db, uid)
+        svg = share_svg_renderer.build_wage_share_svg(player, wage_detail, theme=theme)
+        return Response(content=svg, media_type="image/svg+xml")
+
+    @router.get("/internal/render/wage/{uid}.png", response_class=FileResponse)
+    def read_internal_wage_share_png(
+        uid: int,
+        theme: str = Query(default="dark", pattern="^(dark|light)$"),
+        exp: int = Query(...),
+        sig: str = Query(...),
+        db: Session = Depends(get_db),
+    ):
+        validation = share_signature_service.validate_wage_render_signature(
+            internal_render_signing_key,
+            uid=uid,
+            theme=theme,
+            exp=exp,
+            provided_signature=sig,
+        )
+        if not validation.ok:
+            _raise_signature_error(validation.detail)
+
+        player = read_service.get_player_attribute_detail(db, uid)
+        if not player:
+            raise HTTPException(status_code=404, detail="player_not_found")
+        wage_detail = read_service.get_player_wage_detail(db, uid)
+        try:
+            rendered = png_renderer.render_wage_png(player, wage_detail, theme=theme)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"wage_render_failed:{type(exc).__name__}") from exc
+        return _build_png_file_response(rendered)
+
+    @router.get("/internal/render/roster.svg")
+    def read_internal_roster_share_svg(
+        request: Request,
+        team: str = Query(..., min_length=1),
+        page: int = Query(default=1, ge=1, le=20),
+        theme: str = Query(default="dark", pattern="^(dark|light)$"),
+        db: Session = Depends(get_db),
+    ):
+        _verify_internal_share_access(
+            request,
+            expected_token=internal_share_token,
+            header_name=internal_share_header_name,
+        )
+
+        players = read_service.get_players_by_team(db, team)
+        if not players:
+            raise HTTPException(status_code=404, detail="team_not_found")
+        try:
+            team_info = read_service.get_team_info(db, team)
+        except HTTPException:
+            team_info = None
+        svg = share_svg_renderer.build_roster_share_svg(
+            team,
+            players,
+            team_info=team_info,
+            page=page,
+            theme=theme,
+        )
+        return Response(content=svg, media_type="image/svg+xml")
+
+    @router.get("/internal/render/roster.png", response_class=FileResponse)
+    def read_internal_roster_share_png(
+        team: str = Query(..., min_length=1),
+        page: int = Query(default=1, ge=1, le=20),
+        theme: str = Query(default="dark", pattern="^(dark|light)$"),
+        exp: int = Query(...),
+        sig: str = Query(...),
+        db: Session = Depends(get_db),
+    ):
+        validation = share_signature_service.validate_roster_render_signature(
+            internal_render_signing_key,
+            team_name=team,
+            page=page,
+            theme=theme,
+            exp=exp,
+            provided_signature=sig,
+        )
+        if not validation.ok:
+            _raise_signature_error(validation.detail)
+
+        players = read_service.get_players_by_team(db, team)
+        if not players:
+            raise HTTPException(status_code=404, detail="team_not_found")
+        try:
+            team_info = read_service.get_team_info(db, team)
+        except HTTPException:
+            team_info = None
+        try:
+            rendered = png_renderer.render_roster_png(
+                team,
+                players,
+                team_info=team_info,
+                page=page,
+                theme=theme,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"roster_render_failed:{type(exc).__name__}") from exc
+        return _build_png_file_response(rendered)
 
     return router

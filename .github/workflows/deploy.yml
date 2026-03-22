@@ -1,4 +1,4 @@
-name: Deploy Production
+﻿name: Deploy Production
 
 on:
   push:
@@ -26,7 +26,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -37,7 +37,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r bot/requirements.txt
+          pip install -r bot_nonebot/requirements.txt
 
       - name: Run pre-release checks
         shell: pwsh
@@ -61,15 +61,17 @@ jobs:
             git fetch origin main
             git checkout main
             git pull --ff-only origin main
-            docker compose up -d --build --remove-orphans
+            docker compose -f docker-compose.yml -f docker-compose.bot.yml up -d --build --remove-orphans
 
             for attempt in $(seq 1 20); do
-              if docker compose exec -T heigo python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5).read()" >/dev/null 2>&1; then
-                docker compose ps
+              if docker compose -f docker-compose.yml -f docker-compose.bot.yml exec -T heigo python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5).read()" >/dev/null 2>&1 \
+                && docker compose -f docker-compose.yml -f docker-compose.bot.yml exec -T bot-nonebot python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=5).read()" >/dev/null 2>&1; then
+                docker compose -f docker-compose.yml -f docker-compose.bot.yml ps
                 exit 0
               fi
               sleep 3
             done
 
-            docker compose logs --tail=200 heigo
+            docker compose -f docker-compose.yml -f docker-compose.bot.yml logs --tail=200 heigo
+            docker compose -f docker-compose.yml -f docker-compose.bot.yml logs --tail=200 bot-nonebot
             exit 1

@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $venvPython = Join-Path $repoRoot '.venv\Scripts\python.exe'
@@ -12,7 +12,10 @@ try {
         test_admin_session_cookie.py `
         test_internal_share_page.py `
         test_internal_render_svg.py `
+        test_internal_render_png.py `
         test_share_card_presenter.py `
+        test_share_signature_service.py `
+        test_share_png_renderer.py `
         test_search_normalization.py
 
     & node test_frontend_search_normalization.js

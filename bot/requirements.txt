@@ -1,4 +1,0 @@
-fastapi==0.133.0
-uvicorn==0.41.0
-httpx==0.28.1
-cairosvg==2.8.2
