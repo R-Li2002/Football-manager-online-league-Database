@@ -8,9 +8,9 @@ from services.share_card_model_service import (
     RosterPlayerRow,
     RosterShareCardModel,
     SHARE_FONT_FAMILY,
-    ShareChip,
     ShareGroup,
     ShareMetric,
+    SharePositionMarker,
     WageShareCardModel,
     build_player_share_card_model,
     build_roster_share_card_model,
@@ -21,29 +21,98 @@ from services.share_card_model_service import (
 def _theme_tokens(theme: str) -> dict[str, str]:
     if theme == "light":
         return {
-            "bg": "#eef4fb",
-            "bg_2": "#f7fbff",
-            "panel": "rgba(255,255,255,0.96)",
-            "panel_soft": "rgba(247,250,253,0.98)",
-            "line": "rgba(100,116,139,0.16)",
-            "text": "#172033",
-            "muted": "#5f6c84",
-            "accent": "#2563eb",
-            "accent_2": "#16a34a",
-            "accent_soft": "rgba(37,99,235,0.10)",
+            "bg": "#edf2fb",
+            "bg_2": "#f8fbff",
+            "panel": "rgba(255,255,255,0.98)",
+            "panel_soft": "rgba(255,255,255,0.94)",
+            "line": "rgba(76,79,105,0.10)",
+            "line_soft": "rgba(76,79,105,0.08)",
+            "text": "#2c3650",
+            "muted": "#6c6f85",
+            "accent": "#1e66f5",
+            "accent_2": "#27ae60",
+            "accent_soft": "rgba(30,102,245,0.08)",
+            "real_club": "#2980b9",
+            "heigo_club": "#27ae60",
+            "pitch_top": "rgba(166,196,183,0.92)",
+            "pitch_bottom": "rgba(129,170,153,0.95)",
+            "pitch_line": "rgba(255,255,255,0.42)",
+            "shadow": "rgba(76,79,105,0.14)",
         }
     return {
-        "bg": "#0b1220",
-        "bg_2": "#111b30",
-        "panel": "rgba(15,23,42,0.92)",
-        "panel_soft": "rgba(30,41,59,0.82)",
-        "line": "rgba(148,163,184,0.18)",
-        "text": "#ecf3ff",
-        "muted": "#94a3b8",
-        "accent": "#38bdf8",
-        "accent_2": "#22c55e",
-        "accent_soft": "rgba(56,189,248,0.14)",
+        "bg": "#141822",
+        "bg_2": "#0c1019",
+        "panel": "rgba(16,22,34,0.998)",
+        "panel_soft": "rgba(34,40,58,0.84)",
+        "line": "rgba(192,202,245,0.10)",
+        "line_soft": "rgba(192,202,245,0.07)",
+        "text": "#d9e3ff",
+        "muted": "#a6b2d2",
+        "accent": "#7aa2f7",
+        "accent_2": "#34d399",
+        "accent_soft": "rgba(122,162,247,0.12)",
+        "real_club": "#1fd1ff",
+        "heigo_club": "#22dd88",
+        "pitch_top": "rgba(36,90,72,0.90)",
+        "pitch_bottom": "rgba(18,55,47,0.94)",
+        "pitch_line": "rgba(255,255,255,0.24)",
+        "shadow": "rgba(4,8,16,0.36)",
     }
+
+
+def _tier_palette(value: float, *, theme: str) -> tuple[str, str]:
+    numeric = max(1, min(20, int(value or 0)))
+    if theme == "light":
+        palettes = [
+            (4, "#5C4B51", "#5C4B51"),
+            (8, "#5f978a", "#5f978a"),
+            (12, "#9c8f4f", "#9c8f4f"),
+            (16, "#c7802e", "#c7802e"),
+            (20, "#d94f4f", "#d94f4f"),
+        ]
+    else:
+        palettes = [
+            (4, "#5C4B51", "#c5aeb4"),
+            (8, "#8CBEB2", "#8CBEB2"),
+            (12, "#F2EBBF", "#F2EBBF"),
+            (16, "#F3B562", "#F3B562"),
+            (20, "#F06060", "#F06060"),
+        ]
+    for limit, accent, value_fill in palettes:
+        if numeric <= limit:
+            return accent, value_fill
+    return palettes[-1][1], palettes[-1][2]
+
+
+def _position_marker_fill(score: int) -> str:
+    if score <= 1:
+        return "#8f96a3"
+    if score <= 9:
+        return "#F06060"
+    if score <= 14:
+        return "#F3B562"
+    return "#34c759"
+
+
+def _wrap_text(value: str, max_units: int) -> list[str]:
+    text = (value or "").strip()
+    if not text:
+        return []
+    lines: list[str] = []
+    current = ""
+    current_units = 0
+    for ch in text:
+        units = 1 if ord(ch) < 128 else 2
+        if current and current_units + units > max_units:
+            lines.append(current)
+            current = ch
+            current_units = units
+            continue
+        current += ch
+        current_units += units
+    if current:
+        lines.append(current)
+    return lines
 
 
 def _radar_polygon_points(metrics: tuple[ShareMetric, ...], *, center_x: float, center_y: float, radius: float) -> str:
@@ -68,30 +137,209 @@ def _radar_axis_points(count: int, *, center_x: float, center_y: float, radius: 
     return points
 
 
-def _render_svg_group(
+def _render_reaction_pills(*, x: int, y: int, model, theme: str) -> str:
+    if model.reaction_flower_count <= 0 and model.reaction_egg_count <= 0:
+        return ""
+    flower_bg = "rgba(249,168,212,0.16)" if theme == "dark" else "rgba(255,236,244,0.96)"
+    egg_bg = "rgba(251,191,36,0.14)" if theme == "dark" else "rgba(255,247,220,0.98)"
+    flower_border = "rgba(244,114,182,0.26)"
+    egg_border = "rgba(245,158,11,0.24)"
+    text_fill = "#f4f7fb" if theme == "dark" else "#4c4f69"
+    count_bg = "rgba(255,255,255,0.14)" if theme == "dark" else "rgba(76,79,105,0.08)"
+    return (
+        f'<rect x="{x}" y="{y}" width="74" height="34" rx="17" fill="{flower_bg}" stroke="{flower_border}" />'
+        f'<circle cx="{x + 20}" cy="{y + 17}" r="7" fill="#ff9fbe" />'
+        f'<circle cx="{x + 20}" cy="{y + 10}" r="4" fill="#ff9fbe" />'
+        f'<circle cx="{x + 27}" cy="{y + 17}" r="4" fill="#ff9fbe" />'
+        f'<circle cx="{x + 20}" cy="{y + 24}" r="4" fill="#ff9fbe" />'
+        f'<circle cx="{x + 13}" cy="{y + 17}" r="4" fill="#ff9fbe" />'
+        f'<circle cx="{x + 20}" cy="{y + 17}" r="3" fill="#8fe388" />'
+        f'<rect x="{x + 40}" y="{y + 8}" width="22" height="18" rx="9" fill="{count_bg}" />'
+        f'<text x="{x + 51}" y="{y + 21}" font-size="12" font-weight="700" fill="{text_fill}" text-anchor="middle">{model.reaction_flower_count}</text>'
+        f'<rect x="{x + 84}" y="{y}" width="74" height="34" rx="17" fill="{egg_bg}" stroke="{egg_border}" />'
+        f'<ellipse cx="{x + 104}" cy="{y + 17}" rx="7" ry="9" fill="#ffe8ae" stroke="rgba(223,142,29,0.4)" />'
+        f'<rect x="{x + 124}" y="{y + 8}" width="22" height="18" rx="9" fill="{count_bg}" />'
+        f'<text x="{x + 135}" y="{y + 21}" font-size="12" font-weight="700" fill="{text_fill}" text-anchor="middle">{model.reaction_egg_count}</text>'
+    )
+
+
+def _render_player_info_rows(*, model, x: int, y: int, width: int, tokens: dict[str, str]) -> str:
+    rows: list[str] = []
+    current_y = y
+    for row in model.info_rows:
+        value_fill = tokens["text"]
+        if row.label == "HEIGO俱乐部" and row.value != "大海":
+            value_fill = tokens["heigo_club"]
+        elif row.label == "现实俱乐部":
+            value_fill = tokens["real_club"]
+        rows.append(
+            f'<text x="{x}" y="{current_y}" font-size="12.5" fill="{tokens["muted"]}">{escape(row.label)}</text>'
+            f'<text x="{x + width}" y="{current_y}" font-size="14.5" font-weight="700" fill="{value_fill}" text-anchor="end">{escape(row.value)}</text>'
+            f'<line x1="{x}" y1="{current_y + 12}" x2="{x + width}" y2="{current_y + 12}" stroke="{tokens["line"]}" />'
+        )
+        current_y += 38
+    return "".join(rows)
+
+
+def _render_position_map(*, x: int, y: int, width: int, markers: tuple[SharePositionMarker, ...], tokens: dict[str, str]) -> str:
+    board_x = x
+    board_y = y + 18
+    board_w = width
+    board_h = 244
+    field_x = board_x + 10
+    field_y = board_y + 10
+    field_w = board_w - 20
+    field_h = board_h - 20
+    parts = [
+        f'<text x="{x}" y="{y}" font-size="12.5" font-weight="700" fill="{tokens["muted"]}" letter-spacing="1">位置熟练度图</text>',
+        f'<rect x="{board_x}" y="{board_y}" width="{board_w}" height="{board_h}" rx="12" fill="rgba(255,255,255,0.04)" stroke="{tokens["line_soft"]}" />',
+        f'<defs><linearGradient id="pitch-gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="{tokens["pitch_top"]}" /><stop offset="100%" stop-color="{tokens["pitch_bottom"]}" /></linearGradient></defs>',
+        f'<rect x="{field_x}" y="{field_y}" width="{field_w}" height="{field_h}" rx="10" fill="url(#pitch-gradient)" stroke="{tokens["line_soft"]}" />',
+    ]
+    stripe_h = field_h / 8.0
+    for idx in range(8):
+        if idx % 2 == 0:
+            parts.append(
+                f'<rect x="{field_x}" y="{field_y + idx * stripe_h:.1f}" width="{field_w}" height="{stripe_h:.1f}" fill="rgba(255,255,255,0.03)" />'
+            )
+    parts.extend(
+        [
+            f'<line x1="{field_x}" y1="{field_y + field_h / 2:.1f}" x2="{field_x + field_w}" y2="{field_y + field_h / 2:.1f}" stroke="{tokens["pitch_line"]}" />',
+            f'<circle cx="{field_x + field_w / 2:.1f}" cy="{field_y + field_h / 2:.1f}" r="34" fill="none" stroke="{tokens["pitch_line"]}" />',
+            f'<circle cx="{field_x + field_w / 2:.1f}" cy="{field_y + field_h / 2:.1f}" r="2.5" fill="{tokens["pitch_line"]}" />',
+            f'<path d="M {field_x + field_w * 0.19:.1f} {field_y} H {field_x + field_w * 0.81:.1f} V {field_y + 58:.1f} Q {field_x + field_w * 0.81:.1f} {field_y + 76:.1f} {field_x + field_w * 0.76:.1f} {field_y + 76:.1f} H {field_x + field_w * 0.24:.1f} Q {field_x + field_w * 0.19:.1f} {field_y + 76:.1f} {field_x + field_w * 0.19:.1f} {field_y + 58:.1f} Z" fill="none" stroke="{tokens["pitch_line"]}" />',
+            f'<path d="M {field_x + field_w * 0.34:.1f} {field_y} H {field_x + field_w * 0.66:.1f} V {field_y + 26:.1f} Q {field_x + field_w * 0.66:.1f} {field_y + 38:.1f} {field_x + field_w * 0.62:.1f} {field_y + 38:.1f} H {field_x + field_w * 0.38:.1f} Q {field_x + field_w * 0.34:.1f} {field_y + 38:.1f} {field_x + field_w * 0.34:.1f} {field_y + 26:.1f} Z" fill="none" stroke="{tokens["pitch_line"]}" />',
+            f'<path d="M {field_x + field_w * 0.19:.1f} {field_y + field_h:.1f} H {field_x + field_w * 0.81:.1f} V {field_y + field_h - 58:.1f} Q {field_x + field_w * 0.81:.1f} {field_y + field_h - 76:.1f} {field_x + field_w * 0.76:.1f} {field_y + field_h - 76:.1f} H {field_x + field_w * 0.24:.1f} Q {field_x + field_w * 0.19:.1f} {field_y + field_h - 76:.1f} {field_x + field_w * 0.19:.1f} {field_y + field_h - 58:.1f} Z" fill="none" stroke="{tokens["pitch_line"]}" />',
+            f'<path d="M {field_x + field_w * 0.34:.1f} {field_y + field_h:.1f} H {field_x + field_w * 0.66:.1f} V {field_y + field_h - 26:.1f} Q {field_x + field_w * 0.66:.1f} {field_y + field_h - 38:.1f} {field_x + field_w * 0.62:.1f} {field_y + field_h - 38:.1f} H {field_x + field_w * 0.38:.1f} Q {field_x + field_w * 0.34:.1f} {field_y + field_h - 38:.1f} {field_x + field_w * 0.34:.1f} {field_y + field_h - 26:.1f} Z" fill="none" stroke="{tokens["pitch_line"]}" />',
+        ]
+    )
+    for marker in markers:
+        marker_x = field_x + field_w * marker.x_percent / 100.0
+        marker_y = field_y + field_h * marker.y_percent / 100.0
+        parts.extend(
+            [
+                f'<circle cx="{marker_x:.1f}" cy="{marker_y:.1f}" r="12" fill="{_position_marker_fill(marker.score)}" stroke="rgba(255,255,255,0.18)" />',
+                f'<text x="{marker_x:.1f}" y="{marker_y + 4:.1f}" font-size="9.5" font-weight="800" fill="#ffffff" text-anchor="middle">{escape(marker.label)}</text>',
+            ]
+        )
+    return "".join(parts)
+
+
+def _render_radar(*, metrics: tuple[ShareMetric, ...], x: int, y: int, size: int, tokens: dict[str, str]) -> str:
+    center_x = x + size / 2.0
+    center_y = y + size / 2.0
+    radius = size * 0.28
+    label_radius = size * 0.36
+    axis_points = _radar_axis_points(len(metrics), center_x=center_x, center_y=center_y, radius=radius)
+    rings: list[str] = []
+    for scale in (0.2, 0.4, 0.6, 0.8, 1.0):
+        ring_points = []
+        for point_x, point_y in axis_points:
+            ring_points.append(f"{center_x + (point_x - center_x) * scale:.1f},{center_y + (point_y - center_y) * scale:.1f}")
+        rings.append(f'<polygon points="{" ".join(ring_points)}" fill="none" stroke="{tokens["line_soft"]}" stroke-width="1" />')
+    axes: list[str] = []
+    labels: list[str] = []
+    points: list[str] = []
+    point_marks: list[str] = []
+    for index, metric in enumerate(metrics):
+        edge_x, edge_y = axis_points[index]
+        axes.append(f'<line x1="{center_x:.1f}" y1="{center_y:.1f}" x2="{edge_x:.1f}" y2="{edge_y:.1f}" stroke="{tokens["line_soft"]}" />')
+        label_x = center_x + (edge_x - center_x) * (label_radius / radius)
+        label_y = center_y + (edge_y - center_y) * (label_radius / radius)
+        anchor = "middle"
+        if label_x < center_x - 12:
+            anchor = "end"
+        elif label_x > center_x + 12:
+            anchor = "start"
+        labels.append(
+            f'<text x="{label_x:.1f}" y="{label_y + (10 if label_y > center_y else -4):.1f}" font-size="10" font-weight="600" fill="{tokens["muted"]}" text-anchor="{anchor}">{escape(metric.label)}</text>'
+        )
+        scale = max(0.0, min(1.0, metric.value / 20.0))
+        px = center_x + cos((-pi / 2) + (2 * pi * index / len(metrics))) * radius * scale
+        py = center_y + sin((-pi / 2) + (2 * pi * index / len(metrics))) * radius * scale
+        points.append(f"{px:.1f},{py:.1f}")
+        point_marks.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="4" fill="#f8fafc" stroke="{tokens["accent"]}" stroke-width="1.35" />')
+    return "".join(
+        [
+            *rings,
+            *axes,
+            f'<polygon points="{" ".join(points)}" fill="rgba(122,162,247,0.18)" stroke="rgba(122,162,247,0.94)" stroke-width="1.8" />',
+            *point_marks,
+            *labels,
+        ]
+    )
+
+
+def _render_attribute_group(
     group: ShareGroup,
     *,
     x: int,
     y: int,
     width: int,
-    text_fill: str,
-    muted_fill: str,
-    line_fill: str,
-    bar_fill: str,
+    height: int,
+    tokens: dict[str, str],
+    theme: str,
+    include_radar: bool = False,
+    radar_metrics: tuple[ShareMetric, ...] = (),
 ) -> str:
-    row_y = y + 44
-    rows: list[str] = [
-        f'<text x="{x + 18}" y="{y + 28}" font-size="14" font-weight="700" fill="{muted_fill}" letter-spacing="1.5">{escape(group.title)}</text>'
+    parts = [
+        f'<rect x="{x}" y="{y}" width="{width}" height="{height}" rx="16" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />',
+        f'<text x="{x + 16}" y="{y + 26}" font-size="13" font-weight="700" fill="{tokens["muted"]}">{escape(group.title)}</text>',
     ]
+    row_y = y + 58
+    row_height = 30
+    content_limit_y = (y + 392) if include_radar else (y + height - 14)
     for item in group.items:
-        rows.append(
-            f'<text x="{x + 18}" y="{row_y}" font-size="13" fill="{text_fill}">{escape(item.label)}</text>'
-            f'<text x="{x + 120}" y="{row_y}" font-size="13" font-weight="700" fill="{text_fill}" text-anchor="end">{int(round(item.value))}</text>'
-            f'<rect x="{x + 134}" y="{row_y - 10}" width="{width - 152}" height="10" rx="5" fill="{line_fill}" />'
-            f'<rect x="{x + 134}" y="{row_y - 10}" width="{((width - 152) * item.percent / 100):.1f}" height="10" rx="5" fill="{bar_fill}" />'
+        accent, value_fill = _tier_palette(item.value, theme=theme)
+        parts.extend(
+            [
+                f'<rect x="{x + 12}" y="{row_y - 16}" width="{width - 24}" height="24" rx="6" fill="rgba(255,255,255,0.03)" stroke="{tokens["line_soft"]}" />',
+                f'<rect x="{x + 12}" y="{row_y - 16}" width="2.5" height="24" rx="1.25" fill="{accent}" />',
+                f'<text x="{x + 22}" y="{row_y}" font-size="11.5" font-weight="700" fill="{tokens["text"]}">{escape(item.label)}</text>',
+                f'<text x="{x + width - 18}" y="{row_y}" font-size="12.5" font-weight="800" fill="{value_fill}" text-anchor="end">{int(round(item.value))}</text>',
+            ]
         )
-        row_y += 28
-    return "".join(rows)
+        row_y += row_height
+        if row_y > content_limit_y:
+            break
+    if include_radar and radar_metrics:
+        divider_y = y + 344
+        radar_size = width - 120
+        radar_x = x + (width - radar_size) / 2
+        radar_y = divider_y + 18
+        parts.extend(
+            [
+                f'<line x1="{x + 16}" y1="{divider_y}" x2="{x + width - 16}" y2="{divider_y}" stroke="{tokens["line"]}" />',
+                f'<text x="{x + 16}" y="{divider_y + 20}" font-size="12" font-weight="700" fill="{tokens["muted"]}">能力雷达</text>',
+                _render_radar(metrics=radar_metrics, x=radar_x, y=radar_y, size=radar_size, tokens=tokens),
+            ]
+        )
+    return "".join(parts)
+
+
+def _render_hidden_group(group: ShareGroup, *, x: int, y: int, width: int, height: int, tokens: dict[str, str], theme: str) -> str:
+    parts = [
+        f'<rect x="{x}" y="{y}" width="{width}" height="{height}" rx="16" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />',
+        f'<text x="{x + 16}" y="{y + 26}" font-size="13" font-weight="700" fill="{tokens["muted"]}">{escape(group.title)}</text>',
+    ]
+    columns = 3
+    col_width = (width - 48) / columns
+    row_height = 36
+    for index, item in enumerate(group.items):
+        col = index % columns
+        row = index // columns
+        item_x = x + 16 + col * col_width
+        item_y = y + 50 + row * row_height
+        accent, value_fill = _tier_palette(item.value, theme=theme)
+        parts.extend(
+            [
+                f'<rect x="{item_x:.1f}" y="{item_y - 16:.1f}" width="{col_width - 10:.1f}" height="24" rx="6" fill="rgba(255,255,255,0.03)" stroke="{tokens["line_soft"]}" />',
+                f'<rect x="{item_x:.1f}" y="{item_y - 16:.1f}" width="2.5" height="24" rx="1.25" fill="{accent}" />',
+                f'<text x="{item_x + 10:.1f}" y="{item_y:.1f}" font-size="11.5" font-weight="700" fill="{tokens["text"]}">{escape(item.label)}</text>',
+                f'<text x="{item_x + col_width - 18:.1f}" y="{item_y:.1f}" font-size="12.5" font-weight="800" fill="{value_fill}" text-anchor="end">{int(round(item.value))}</text>',
+            ]
+        )
+    return "".join(parts)
 
 
 def build_player_share_svg(
@@ -105,136 +353,51 @@ def build_player_share_svg(
     tokens = _theme_tokens(model.theme)
     width = model.canvas_width
     height = model.canvas_height
-    version_suffix = f" | {model.version_label}" if model.version_label else ""
-    preview_suffix = f" | {model.weak_foot_label}" if model.weak_foot_label else ""
-
-    info_rows = []
-    info_y = 180
-    for row in model.info_rows:
-        info_rows.append(
-            f'<text x="78" y="{info_y}" font-size="13" fill="{tokens["muted"]}">{escape(row.label)}</text>'
-            f'<text x="378" y="{info_y}" font-size="15" font-weight="700" fill="{tokens["text"]}" text-anchor="end">{escape(row.value)}</text>'
-            f'<line x1="78" y1="{info_y + 14}" x2="378" y2="{info_y + 14}" stroke="{tokens["line"]}" />'
-        )
-        info_y += 36
-
-    position_chips = []
-    chip_x = 78
-    chip_y = 544
-    for chip in model.position_chips or (ShareChip("NONE", "No data"),):
-        chip_width = max(76, 22 + len(chip.label) * 9 + len(chip.value) * 7)
-        position_chips.append(
-            f'<rect x="{chip_x}" y="{chip_y}" width="{chip_width}" height="30" rx="15" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />'
-            f'<text x="{chip_x + 16}" y="{chip_y + 20}" font-size="12" font-weight="700" fill="{tokens["text"]}">{escape(chip.label)}</text>'
-            f'<text x="{chip_x + chip_width - 14}" y="{chip_y + 20}" font-size="12" fill="{tokens["muted"]}" text-anchor="end">{escape(chip.value)}</text>'
-        )
-        chip_x += chip_width + 10
-        if chip_x > 330:
-            chip_x = 78
-            chip_y += 40
-
-    top_position_chips = []
-    top_chip_x = 78
-    top_chip_y = chip_y + 72
-    for chip in model.top_position_chips or (ShareChip("NONE", "No data"),):
-        chip_width = max(92, 20 + len(chip.label) * 9 + len(chip.value) * 7)
-        top_position_chips.append(
-            f'<rect x="{top_chip_x}" y="{top_chip_y}" width="{chip_width}" height="30" rx="15" fill="{tokens["accent_soft"]}" stroke="{tokens["line"]}" />'
-            f'<text x="{top_chip_x + 16}" y="{top_chip_y + 20}" font-size="12" font-weight="700" fill="{tokens["accent"]}">{escape(chip.label)}</text>'
-            f'<text x="{top_chip_x + chip_width - 14}" y="{top_chip_y + 20}" font-size="12" fill="{tokens["text"]}" text-anchor="end">{escape(chip.value)}</text>'
-        )
-        top_chip_x += chip_width + 10
-        if top_chip_x > 330:
-            top_chip_x = 78
-            top_chip_y += 40
-
-    radar_center_x = 1180
-    radar_center_y = 890
-    radar_radius = 150
-    axis_points = _radar_axis_points(len(model.radar_metrics), center_x=radar_center_x, center_y=radar_center_y, radius=radar_radius)
-    grid_rings = []
-    for scale in (0.25, 0.5, 0.75, 1.0):
-        ring_points = []
-        for point_x, point_y in axis_points:
-            ring_points.append(f"{radar_center_x + (point_x - radar_center_x) * scale:.1f},{radar_center_y + (point_y - radar_center_y) * scale:.1f}")
-        grid_rings.append(f'<polygon points="{" ".join(ring_points)}" fill="none" stroke="{tokens["line"]}" stroke-width="1" />')
-
-    radar_axes = []
-    radar_labels = []
-    radar_rows = []
-    for index, metric in enumerate(model.radar_metrics):
-        point_x, point_y = axis_points[index]
-        radar_axes.append(
-            f'<line x1="{radar_center_x}" y1="{radar_center_y}" x2="{point_x:.1f}" y2="{point_y:.1f}" stroke="{tokens["line"]}" stroke-width="1" />'
-        )
-        label_x = radar_center_x + (point_x - radar_center_x) * 1.12
-        label_y = radar_center_y + (point_y - radar_center_y) * 1.12
-        radar_labels.append(
-            f'<text x="{label_x:.1f}" y="{label_y:.1f}" font-size="12" fill="{tokens["muted"]}" text-anchor="middle">{escape(metric.label)}</text>'
-        )
-        radar_rows.append(
-            f'<text x="1024" y="{748 + index * 24}" font-size="13" fill="{tokens["text"]}">{escape(metric.label)}</text>'
-            f'<text x="1124" y="{748 + index * 24}" font-size="13" font-weight="700" fill="{tokens["text"]}" text-anchor="end">{metric.value:.1f}</text>'
-        )
-
-    radar_polygon = _radar_polygon_points(model.radar_metrics, center_x=radar_center_x, center_y=radar_center_y, radius=radar_radius)
-    habits_block = ""
-    if model.habit_text:
-        block_y = min(height - 170, top_chip_y + 74)
-        habits_block = (
-            f'<rect x="60" y="{block_y}" width="360" height="110" rx="18" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />'
-            f'<text x="78" y="{block_y + 28}" font-size="14" font-weight="700" fill="{tokens["muted"]}" letter-spacing="1.5">Player Traits</text>'
-            f'<text x="78" y="{block_y + 60}" font-size="14" fill="{tokens["text"]}">{escape(model.habit_text)}</text>'
-        )
-
+    preview_copy = model.preview_label + (f" · {model.weak_foot_label}" if model.weak_foot_label else "")
+    version_copy = f" · {model.version_label}" if model.version_label else ""
+    habits = _wrap_text(model.habit_text, 34)
+    left_x = 54
+    left_y = 104
+    left_w = 360
+    left_h = height - 152
+    group_y = 104
+    group_w = 308
+    group_h = 560
+    hidden_y = 680
+    hidden_h = height - hidden_y - 48
+    reactions_svg = _render_reaction_pills(x=left_x + 20, y=left_y + 96, model=model, theme=model.theme)
+    has_reactions = bool(reactions_svg)
+    info_y = left_y + (154 if has_reactions else 124)
+    position_map_y = left_y + (512 if has_reactions else 482)
+    habit_y = position_map_y + 286
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
   <defs>
-    <linearGradient id="bg-gradient" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="page-bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="{tokens["bg"]}" />
       <stop offset="100%" stop-color="{tokens["bg_2"]}" />
     </linearGradient>
-    <linearGradient id="bar-gradient" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="{tokens["accent"]}" />
-      <stop offset="100%" stop-color="{tokens["accent_2"]}" />
-    </linearGradient>
     <style>
-      text {{
-        font-family: {SHARE_FONT_FAMILY};
-      }}
+      text {{ font-family: {SHARE_FONT_FAMILY}; dominant-baseline: alphabetic; }}
     </style>
   </defs>
-  <rect width="{width}" height="{height}" fill="url(#bg-gradient)" />
-  <rect x="30" y="28" width="{width - 60}" height="{height - 56}" rx="26" fill="{tokens["panel"]}" stroke="{tokens["line"]}" />
-  <rect x="60" y="60" width="160" height="32" rx="16" fill="{tokens["accent_soft"]}" />
-  <text x="140" y="81" font-size="12" font-weight="800" fill="{tokens["accent"]}" text-anchor="middle" letter-spacing="1.6">HEIGO PLAYER SHARE</text>
-  <text x="{width - 66}" y="82" font-size="13" font-weight="700" fill="{tokens["muted"]}" text-anchor="end">{escape(model.preview_label + preview_suffix + version_suffix)}</text>
-  <rect x="60" y="118" width="360" height="{height - 178}" rx="22" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />
-  <text x="78" y="166" font-size="42" font-weight="800" fill="{tokens["text"]}">{escape(model.player_name)}</text>
-  <text x="78" y="194" font-size="13" fill="{tokens["muted"]}" letter-spacing="1.2">UID: {model.uid}{escape(version_suffix)}</text>
-  {"".join(info_rows)}
-  <text x="78" y="528" font-size="14" font-weight="700" fill="{tokens["muted"]}" letter-spacing="1.5">Position Scores</text>
-  {"".join(position_chips)}
-  <text x="78" y="{top_chip_y - 18}" font-size="14" font-weight="700" fill="{tokens["muted"]}" letter-spacing="1.5">Top Positions</text>
-  {"".join(top_position_chips)}
-  {habits_block}
-  <rect x="444" y="118" width="302" height="438" rx="22" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />
-  <rect x="764" y="118" width="302" height="438" rx="22" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />
-  <rect x="1084" y="118" width="302" height="438" rx="22" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />
-  {_render_svg_group(model.attribute_groups[0], x=444, y=118, width=302, text_fill=tokens["text"], muted_fill=tokens["muted"], line_fill=tokens["line"], bar_fill="url(#bar-gradient)")}
-  {_render_svg_group(model.attribute_groups[1], x=764, y=118, width=302, text_fill=tokens["text"], muted_fill=tokens["muted"], line_fill=tokens["line"], bar_fill="url(#bar-gradient)")}
-  {_render_svg_group(model.attribute_groups[2], x=1084, y=118, width=302, text_fill=tokens["text"], muted_fill=tokens["muted"], line_fill=tokens["line"], bar_fill="url(#bar-gradient)")}
-  <rect x="444" y="578" width="542" height="620" rx="22" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />
-  <rect x="1006" y="578" width="380" height="620" rx="22" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />
-  {_render_svg_group(model.attribute_groups[3], x=444, y=578, width=542, text_fill=tokens["text"], muted_fill=tokens["muted"], line_fill=tokens["line"], bar_fill="url(#bar-gradient)")}
-  <text x="1024" y="614" font-size="14" font-weight="700" fill="{tokens["muted"]}" letter-spacing="1.5">Radar Summary</text>
-  {"".join(radar_rows)}
-  {"".join(grid_rings)}
-  {"".join(radar_axes)}
-  {"".join(radar_labels)}
-  <polygon points="{radar_polygon}" fill="rgba(96,165,250,0.30)" stroke="#60a5fa" stroke-width="2" />
+  <rect width="{width}" height="{height}" fill="url(#page-bg)" />
+  <circle cx="148" cy="90" r="180" fill="rgba(122,162,247,0.16)" />
+  <circle cx="1286" cy="78" r="150" fill="rgba(52,211,153,0.10)" />
+  <rect x="24" y="24" width="{width - 48}" height="{height - 48}" rx="30" fill="rgba(255,255,255,0.02)" />
+  <text x="54" y="66" font-size="12" font-weight="700" fill="{tokens["muted"]}">HEIGO 球员详情图</text>
+  <text x="{width - 54}" y="66" font-size="12" font-weight="700" fill="{tokens["muted"]}" text-anchor="end">{escape(preview_copy + version_copy)}</text>
+  <rect x="{left_x}" y="{left_y}" width="{left_w}" height="{left_h}" rx="18" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />
+  <text x="{left_x + 20}" y="{left_y + 46}" font-size="28" font-weight="800" fill="{tokens["text"]}">{escape(model.player_name)}</text>
+  <text x="{left_x + 20}" y="{left_y + 76}" font-size="14" fill="{tokens["muted"]}">UID: {model.uid}{escape(version_copy)}</text>
+  {reactions_svg}
+  {_render_player_info_rows(model=model, x=left_x + 20, y=info_y, width=left_w - 40, tokens=tokens)}
+  {_render_position_map(x=left_x + 20, y=position_map_y, width=left_w - 40, markers=model.position_markers, tokens=tokens)}
+  {''.join(f'<text x="{left_x + 20}" y="{habit_y + index * 22}" font-size="12.5" fill="{tokens["muted"] if index == 0 else tokens["text"]}">{escape(line)}</text>' for index, line in enumerate((["球员习惯"] + habits[:2]) if habits else []))}
+  {_render_attribute_group(model.attribute_groups[0], x=430, y=group_y, width=group_w, height=group_h, tokens=tokens, theme=model.theme)}
+  {_render_attribute_group(model.attribute_groups[1], x=754, y=group_y, width=group_w, height=group_h, tokens=tokens, theme=model.theme)}
+  {_render_attribute_group(model.attribute_groups[2], x=1078, y=group_y, width=group_w, height=group_h, tokens=tokens, theme=model.theme, include_radar=True, radar_metrics=model.radar_metrics)}
+  {_render_hidden_group(model.attribute_groups[3], x=430, y=hidden_y, width=956, height=hidden_h, tokens=tokens, theme=model.theme)}
 </svg>"""
-
-
 def _render_info_rows(rows, *, x: int, start_y: int, label_fill: str, value_fill: str, line_fill: str, width: int, row_height: int = 38) -> str:
     parts: list[str] = []
     current_y = start_y
@@ -287,8 +450,6 @@ def build_wage_share_svg(player: PlayerAttributeDetailResponse, wage_detail: Wag
   <rect x="520" y="236" width="820" height="1" fill="{tokens["line"]}" />
   {formula_rows}
 </svg>"""
-
-
 def _render_roster_table_rows(rows: tuple[RosterPlayerRow, ...], *, x: int, start_y: int, width: int, tokens: dict[str, str]) -> str:
     rendered: list[str] = []
     row_height = 48

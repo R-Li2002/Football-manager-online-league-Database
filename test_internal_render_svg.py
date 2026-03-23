@@ -25,7 +25,9 @@ class InternalRenderSvgTests(unittest.TestCase):
         self.assertIn("<svg", response.text)
         self.assertIn("Dani Olmo", response.text)
         self.assertIn("Noto Sans CJK SC", response.text)
-        self.assertIn("HEIGO PLAYER SHARE", response.text)
+        self.assertIn("HEIGO 球员详情图", response.text)
+        self.assertIn("位置熟练度图", response.text)
+        self.assertNotIn("#ff9fbe", response.text)
 
     def test_internal_render_svg_requires_token(self):
         app = FastAPI()

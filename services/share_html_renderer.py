@@ -88,13 +88,14 @@ def build_player_share_page_html(
 ) -> str:
     model = build_player_share_card_model(player, version=version, step=step, theme=theme)
     tokens = _theme_tokens(model.theme)
-    version_suffix = f" | {escape(model.version_label)}" if model.version_label else ""
-    weak_foot_copy = f" | {escape(model.weak_foot_label)}" if model.weak_foot_label else ""
+    version_suffix = f" · {model.version_label}" if model.version_label else ""
+    weak_foot_copy = f" · {model.weak_foot_label}" if model.weak_foot_label else ""
+    preview_copy = escape(model.preview_label + weak_foot_copy + version_suffix)
     habits_block = ""
     if model.habit_text:
         habits_block = f"""
         <section class="info-card">
-            <h3>Player Traits</h3>
+            <h3>球员习惯</h3>
             <p class="habit-copy">{escape(model.habit_text)}</p>
         </section>
         """
@@ -110,7 +111,7 @@ def build_player_share_page_html(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{escape(model.player_name)} - HEIGO Share</title>
+    <title>{escape(model.player_name)} - HEIGO 球员详情图</title>
     <style>
         :root {{
             color-scheme: {"light" if model.theme == "light" else "dark"};
@@ -198,23 +199,23 @@ def build_player_share_page_html(
     <main class="page">
         <section class="card">
             <div class="topbar">
-                <div><span class="eyebrow">HEIGO PLAYER SHARE</span></div>
-                <div class="preview">{escape(model.preview_label)}{weak_foot_copy}{version_suffix}</div>
+                <div><span class="eyebrow">HEIGO 球员详情图</span></div>
+                <div class="preview">{preview_copy}</div>
             </div>
             <div class="layout">
                 <aside>
                     <section class="info-card identity">
                         <h1>{escape(model.player_name)}</h1>
-                        <div class="uid">UID: {model.uid}{version_suffix}</div>
+                        <div class="uid">UID: {model.uid}{escape(version_suffix)}</div>
                         <div class="info-list">{info_rows_markup}</div>
                     </section>
                     <section class="info-card">
-                        <h3>Position Scores</h3>
-                        <div class="chip-wrap">{_render_html_chips(model.position_chips, "No position data")}</div>
+                        <h3>位置评分</h3>
+                        <div class="chip-wrap">{_render_html_chips(model.position_chips, "暂无位置数据")}</div>
                     </section>
                     <section class="info-card">
-                        <h3>Top Positions</h3>
-                        <div class="chip-wrap">{_render_html_chips(model.top_position_chips, "No top position data")}</div>
+                        <h3>优势位置</h3>
+                        <div class="chip-wrap">{_render_html_chips(model.top_position_chips, "暂无优势位置数据")}</div>
                     </section>
                     {habits_block}
                 </aside>
@@ -224,7 +225,7 @@ def build_player_share_page_html(
                     <div class="main-grid" style="grid-template-columns: minmax(0, 1fr) 320px;">
                         {hidden_group}
                         <section class="metric-card">
-                            <h3>Radar Summary</h3>
+                            <h3>能力雷达</h3>
                             {_render_html_radar_metrics(model)}
                         </section>
                     </div>

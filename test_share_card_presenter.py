@@ -27,10 +27,13 @@ class ShareCardPresenterTests(unittest.TestCase):
 
         self.assertFalse(model.is_goalkeeper)
         self.assertEqual(model.version_label, "2026-03")
-        self.assertEqual(model.preview_label, "Growth Preview +2")
-        self.assertEqual([group.title for group in model.attribute_groups], ["Technical", "Mental", "Physical", "Hidden"])
+        self.assertEqual(model.preview_label, "成长预览 +2")
+        self.assertEqual(model.reaction_flower_count, 0)
+        self.assertEqual(model.reaction_egg_count, 0)
+        self.assertEqual([group.title for group in model.attribute_groups], ["技术", "精神", "身体", "隐藏"])
         self.assertEqual(len(model.radar_metrics), 8)
         self.assertTrue(any(chip.label == "AMC" for chip in model.position_chips))
+        self.assertTrue(any(marker.label == "AMC" for marker in model.position_markers))
 
     def test_card_model_builds_goalkeeper_technical_group(self):
         player = _sample_player_detail()
@@ -43,5 +46,5 @@ class ShareCardPresenterTests(unittest.TestCase):
 
         self.assertTrue(model.is_goalkeeper)
         technical_labels = [item.label for item in model.attribute_groups[0].items]
-        self.assertIn("Reflexes", technical_labels)
-        self.assertIn("Handling", technical_labels)
+        self.assertIn("反应", technical_labels)
+        self.assertIn("手控球", technical_labels)

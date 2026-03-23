@@ -76,74 +76,74 @@ DETAIL_PREVIEW_KEYS = [
 ]
 
 GOALKEEPER_TECHNICAL_FIELDS = [
-    ("reflexes", "Reflexes"),
-    ("aerial_ability", "Aerial"),
-    ("kicking", "Kicking"),
-    ("handling", "Handling"),
-    ("command_of_area", "Command"),
-    ("throwing", "Throwing"),
-    ("one_on_ones", "1v1"),
-    ("communication", "Comms"),
-    ("tendency_to_punch", "Punching"),
-    ("rushing_out", "Rush Out"),
-    ("eccentricity", "Eccentric"),
+    ("reflexes", "反应"),
+    ("aerial_ability", "制空能力"),
+    ("kicking", "大脚开球"),
+    ("handling", "手控球"),
+    ("command_of_area", "拦截传中"),
+    ("throwing", "手抛球"),
+    ("one_on_ones", "一对一"),
+    ("communication", "指挥防守"),
+    ("tendency_to_punch", "击球倾向"),
+    ("rushing_out", "出击"),
+    ("eccentricity", "神经指数"),
 ]
 OUTFIELD_TECHNICAL_FIELDS = [
-    ("passing", "Passing"),
-    ("crossing", "Crossing"),
-    ("marking", "Marking"),
-    ("technique", "Technique"),
-    ("dribbling", "Dribbling"),
-    ("tackling", "Tackling"),
-    ("finishing", "Finishing"),
-    ("first_touch", "First Touch"),
-    ("heading", "Heading"),
-    ("long_shots", "Long Shots"),
+    ("passing", "传球"),
+    ("crossing", "传中"),
+    ("marking", "盯人"),
+    ("technique", "技术"),
+    ("dribbling", "盘带"),
+    ("tackling", "抢断"),
+    ("finishing", "射门"),
+    ("first_touch", "停球"),
+    ("heading", "头球"),
+    ("long_shots", "远射"),
 ]
 SET_PIECE_FIELDS = [
-    ("penalty", "Penalty"),
-    ("corner", "Corner"),
-    ("long_throws", "Long Throws"),
-    ("free_kick", "Free Kick"),
+    ("penalty", "罚点球"),
+    ("corner", "角球"),
+    ("long_throws", "界外球"),
+    ("free_kick", "任意球"),
 ]
 MENTAL_FIELDS = [
-    ("flair", "Flair"),
-    ("positioning", "Positioning"),
-    ("work_rate", "Work Rate"),
-    ("concentration", "Concentration"),
-    ("decisions", "Decisions"),
-    ("leadership", "Leadership"),
-    ("aggression", "Aggression"),
-    ("vision", "Vision"),
-    ("teamwork", "Teamwork"),
-    ("off_the_ball", "Off Ball"),
-    ("determination", "Determination"),
-    ("bravery", "Bravery"),
-    ("anticipation", "Anticipation"),
-    ("composure", "Composure"),
+    ("flair", "想象力"),
+    ("positioning", "防守站位"),
+    ("work_rate", "工作投入"),
+    ("concentration", "集中"),
+    ("decisions", "决断"),
+    ("leadership", "领导力"),
+    ("aggression", "侵略性"),
+    ("vision", "视野"),
+    ("teamwork", "团队合作"),
+    ("off_the_ball", "无球跑动"),
+    ("determination", "意志力"),
+    ("bravery", "勇敢"),
+    ("anticipation", "预判"),
+    ("composure", "镇定"),
 ]
 PHYSICAL_FIELDS = [
-    ("acceleration", "Acceleration"),
-    ("jumping", "Jumping"),
-    ("agility", "Agility"),
-    ("stamina", "Stamina"),
-    ("balance", "Balance"),
-    ("strength", "Strength"),
-    ("pace", "Pace"),
-    ("natural_fitness", "Natural Fit"),
+    ("acceleration", "爆发力"),
+    ("jumping", "弹跳"),
+    ("agility", "灵活"),
+    ("stamina", "耐力"),
+    ("balance", "平衡"),
+    ("strength", "强壮"),
+    ("pace", "速度"),
+    ("natural_fitness", "体质"),
 ]
 HIDDEN_FIELDS = [
-    ("consistency", "Consistency"),
-    ("adaptability", "Adaptability"),
-    ("pressure", "Pressure"),
-    ("ambition", "Ambition"),
-    ("professionalism", "Professionalism"),
-    ("important_matches", "Big Matches"),
-    ("injury_proneness", "Injury"),
-    ("versatility", "Versatility"),
-    ("sportsmanship", "Sportsmanship"),
-    ("temperament", "Temperament"),
-    ("loyalty", "Loyalty"),
+    ("consistency", "稳定性"),
+    ("adaptability", "适应性"),
+    ("pressure", "抗压能力"),
+    ("ambition", "野心"),
+    ("professionalism", "职业素养"),
+    ("important_matches", "大赛发挥"),
+    ("injury_proneness", "受伤倾向"),
+    ("versatility", "多样性"),
+    ("sportsmanship", "体育精神"),
+    ("temperament", "情绪控制"),
+    ("loyalty", "忠诚"),
 ]
 POSITION_FIELDS = [
     ("pos_st", "ST"),
@@ -162,6 +162,23 @@ POSITION_FIELDS = [
     ("pos_gk", "GK"),
 ]
 
+POSITION_MARKERS = [
+    ("pos_st", "ST", 50.0, 12.0),
+    ("pos_aml", "AML", 10.5, 24.0),
+    ("pos_amc", "AMC", 50.0, 24.0),
+    ("pos_amr", "AMR", 89.5, 24.0),
+    ("pos_ml", "ML", 10.5, 42.0),
+    ("pos_mc", "MC", 50.0, 42.0),
+    ("pos_mr", "MR", 89.5, 42.0),
+    ("pos_dm", "DM", 50.0, 62.0),
+    ("pos_wbl", "WBL", 10.5, 62.0),
+    ("pos_wbr", "WBR", 89.5, 62.0),
+    ("pos_dl", "DL", 10.5, 82.0),
+    ("pos_dc", "DC", 50.0, 82.0),
+    ("pos_dr", "DR", 89.5, 82.0),
+    ("pos_gk", "GK", 50.0, 94.0),
+]
+
 
 @dataclass(frozen=True)
 class ShareInfoRow:
@@ -173,6 +190,15 @@ class ShareInfoRow:
 class ShareChip:
     label: str
     value: str
+
+
+@dataclass(frozen=True)
+class SharePositionMarker:
+    key: str
+    label: str
+    score: int
+    x_percent: float
+    y_percent: float
 
 
 @dataclass(frozen=True)
@@ -199,6 +225,9 @@ class ShareCardModel:
     theme: str
     is_goalkeeper: bool
     info_rows: tuple[ShareInfoRow, ...]
+    reaction_flower_count: int
+    reaction_egg_count: int
+    position_markers: tuple[SharePositionMarker, ...]
     position_chips: tuple[ShareChip, ...]
     top_position_chips: tuple[ShareChip, ...]
     attribute_groups: tuple[ShareGroup, ...]
@@ -274,7 +303,7 @@ def _weak_foot_preview(player: PlayerAttributeDetailResponse, step: int) -> tupl
     right = int(player.right_foot or 0)
     if not left or not right or left == right:
         return None
-    return ("Left Foot", min(20, left + 1)) if left < right else ("Right Foot", min(20, right + 1))
+    return ("左脚", min(20, left + 1)) if left < right else ("右脚", min(20, right + 1))
 
 
 def build_preview_player(player: PlayerAttributeDetailResponse, step: int) -> dict:
@@ -294,7 +323,7 @@ def build_preview_player(player: PlayerAttributeDetailResponse, step: int) -> di
     weak_foot = _weak_foot_preview(player, preview_step)
     if weak_foot:
         foot_label, foot_value = weak_foot
-        if foot_label == "Left Foot":
+        if foot_label == "左脚":
             payload["left_foot"] = foot_value
         else:
             payload["right_foot"] = foot_value
@@ -316,24 +345,24 @@ def _build_radar_metrics(preview_player: dict) -> list[tuple[str, float]]:
     is_goalkeeper = int(preview_player.get("pos_gk") or 0) >= 15
     if is_goalkeeper:
         return [
-            ("Shot Stop", _average_values([preview_player.get("one_on_ones"), preview_player.get("reflexes")])) ,
-            ("Physical", _average_values([preview_player.get("agility"), preview_player.get("balance"), preview_player.get("stamina"), preview_player.get("strength")])) ,
-            ("Speed", _average_values([preview_player.get("acceleration"), preview_player.get("pace")])) ,
-            ("Mental", _average_values([preview_player.get("anticipation"), preview_player.get("bravery"), preview_player.get("concentration"), preview_player.get("decisions"), preview_player.get("determination"), preview_player.get("teamwork")])) ,
-            ("Command", _average_values([preview_player.get("command_of_area"), preview_player.get("communication")])) ,
-            ("Eccentric", float(preview_player.get("eccentricity") or 0)),
-            ("Aerial", _average_values([preview_player.get("aerial_ability"), preview_player.get("handling")])) ,
-            ("Kicking", _average_values([preview_player.get("kicking"), preview_player.get("throwing")])) ,
+            ("拦截射门", _average_values([preview_player.get("one_on_ones"), preview_player.get("reflexes")])) ,
+            ("身体", _average_values([preview_player.get("agility"), preview_player.get("balance"), preview_player.get("stamina"), preview_player.get("strength")])) ,
+            ("速度", _average_values([preview_player.get("acceleration"), preview_player.get("pace")])) ,
+            ("精神", _average_values([preview_player.get("anticipation"), preview_player.get("bravery"), preview_player.get("concentration"), preview_player.get("decisions"), preview_player.get("determination"), preview_player.get("teamwork")])) ,
+            ("指挥防守", _average_values([preview_player.get("command_of_area"), preview_player.get("communication")])) ,
+            ("意外性", float(preview_player.get("eccentricity") or 0)),
+            ("制空", _average_values([preview_player.get("aerial_ability"), preview_player.get("handling")])) ,
+            ("大脚", _average_values([preview_player.get("kicking"), preview_player.get("throwing")])) ,
         ]
     return [
-        ("Defense", _average_values([preview_player.get("marking"), preview_player.get("tackling"), preview_player.get("positioning")])) ,
-        ("Physical", _average_values([preview_player.get("agility"), preview_player.get("balance"), preview_player.get("stamina"), preview_player.get("strength")])) ,
-        ("Speed", _average_values([preview_player.get("acceleration"), preview_player.get("pace")])) ,
-        ("Creation", _average_values([preview_player.get("passing"), preview_player.get("flair"), preview_player.get("vision")])) ,
-        ("Attack", _average_values([preview_player.get("finishing"), preview_player.get("composure"), preview_player.get("off_the_ball")])) ,
-        ("Technique", _average_values([preview_player.get("dribbling"), preview_player.get("first_touch"), preview_player.get("technique")])) ,
-        ("Aerial", _average_values([preview_player.get("heading"), preview_player.get("jumping")])) ,
-        ("Mental", _average_values([preview_player.get("anticipation"), preview_player.get("bravery"), preview_player.get("concentration"), preview_player.get("decisions"), preview_player.get("determination"), preview_player.get("teamwork")])) ,
+        ("防守", _average_values([preview_player.get("marking"), preview_player.get("tackling"), preview_player.get("positioning")])) ,
+        ("身体", _average_values([preview_player.get("agility"), preview_player.get("balance"), preview_player.get("stamina"), preview_player.get("strength")])) ,
+        ("速度", _average_values([preview_player.get("acceleration"), preview_player.get("pace")])) ,
+        ("创造", _average_values([preview_player.get("passing"), preview_player.get("flair"), preview_player.get("vision")])) ,
+        ("进攻", _average_values([preview_player.get("finishing"), preview_player.get("composure"), preview_player.get("off_the_ball")])) ,
+        ("技术", _average_values([preview_player.get("dribbling"), preview_player.get("first_touch"), preview_player.get("technique")])) ,
+        ("制空", _average_values([preview_player.get("heading"), preview_player.get("jumping")])) ,
+        ("精神", _average_values([preview_player.get("anticipation"), preview_player.get("bravery"), preview_player.get("concentration"), preview_player.get("decisions"), preview_player.get("determination"), preview_player.get("teamwork")])) ,
     ]
 
 
@@ -378,21 +407,39 @@ def _build_position_chips(preview_player: dict) -> tuple[ShareChip, ...]:
     return tuple(chips)
 
 
+def _build_position_markers(preview_player: dict) -> tuple[SharePositionMarker, ...]:
+    markers: list[SharePositionMarker] = []
+    for key, label, x_percent, y_percent in POSITION_MARKERS:
+        score = int(preview_player.get(key) or 0)
+        if score <= 1:
+            continue
+        markers.append(
+            SharePositionMarker(
+                key=key,
+                label=label,
+                score=score,
+                x_percent=x_percent,
+                y_percent=y_percent,
+            )
+        )
+    return tuple(markers)
+
+
 def _build_top_position_chips(player: PlayerAttributeDetailResponse) -> tuple[ShareChip, ...]:
     return tuple(ShareChip(label=item.position, value=str(int(item.score))) for item in player.top_positions)
 
 
 def _build_info_rows(player: PlayerAttributeDetailResponse, preview_player: dict) -> tuple[ShareInfoRow, ...]:
     return (
-        ShareInfoRow("Nationality", player.nationality or "-"),
-        ShareInfoRow("Age", str(player.age or "-")),
-        ShareInfoRow("Birth", player.birth_date or "Unknown"),
-        ShareInfoRow("Position", player.position or "-"),
+        ShareInfoRow("国籍", player.nationality or "-"),
+        ShareInfoRow("年龄", str(player.age or "-")),
+        ShareInfoRow("生日", player.birth_date or "未知"),
+        ShareInfoRow("位置", player.position or "-"),
         ShareInfoRow("CA / PA", f"{int(preview_player.get('preview_ca') or player.ca or 0)} / {int(player.pa or 0)}"),
-        ShareInfoRow("Left / Right", f"{preview_player.get('left_foot', '-')} / {preview_player.get('right_foot', '-')}"),
-        ShareInfoRow("Height", _format_height(player.height)),
-        ShareInfoRow("HEIGO Club", player.heigo_club or "-"),
-        ShareInfoRow("Club", player.club or "-"),
+        ShareInfoRow("左脚 / 右脚", f"{preview_player.get('left_foot', '-')} / {preview_player.get('right_foot', '-')}"),
+        ShareInfoRow("身高", _format_height(player.height)),
+        ShareInfoRow("HEIGO俱乐部", player.heigo_club or "-"),
+        ShareInfoRow("现实俱乐部", player.club or "-"),
     )
 
 
@@ -421,23 +468,26 @@ def build_player_share_card_model(
         player_name=player.name,
         uid=player.uid,
         version_label=version or player.data_version or "",
-        preview_label=f"Growth Preview +{_clamp_growth_preview_step(step)}" if _clamp_growth_preview_step(step) > 0 else "Current Attributes",
+        preview_label=f"成长预览 +{_clamp_growth_preview_step(step)}" if _clamp_growth_preview_step(step) > 0 else "当前属性",
         weak_foot_label=weak_foot_label,
         theme=_normalize_theme(theme),
         is_goalkeeper=is_goalkeeper,
         info_rows=_build_info_rows(player, preview_player),
+        reaction_flower_count=0,
+        reaction_egg_count=0,
+        position_markers=_build_position_markers(preview_player),
         position_chips=_build_position_chips(preview_player),
         top_position_chips=_build_top_position_chips(player),
         attribute_groups=(
-            _build_share_group("Technical", technical_fields, preview_player),
-            _build_share_group("Mental", MENTAL_FIELDS, preview_player),
-            _build_share_group("Physical", PHYSICAL_FIELDS, preview_player),
-            _build_share_group("Hidden", HIDDEN_FIELDS, preview_player),
+            _build_share_group("门将属性" if is_goalkeeper else "技术", technical_fields, preview_player),
+            _build_share_group("精神", MENTAL_FIELDS, preview_player),
+            _build_share_group("身体", PHYSICAL_FIELDS, preview_player),
+            _build_share_group("隐藏", HIDDEN_FIELDS, preview_player),
         ),
         radar_metrics=radar_metrics,
         habit_text=(player.player_habits or "").strip(),
         canvas_width=1440,
-        canvas_height=1280,
+        canvas_height=1024,
     )
 
 

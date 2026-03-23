@@ -4,6 +4,11 @@ All notable changes to HEIGO are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Finalized the player share card v3 layout with localized HTML/SVG copy, position-map presentation, and aligned radar placement.
+- Switched the default share template version to `3` in the main-site router and deployment env example.
+
 ### Docs
 
 - Updated deployment notes for the current server entry point `81.70.199.249` and clarified that HTTPS should wait until a real domain is available.

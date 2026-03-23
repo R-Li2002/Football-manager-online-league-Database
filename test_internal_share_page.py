@@ -167,12 +167,13 @@ class InternalSharePageTests(unittest.TestCase):
             response = client.get(
                 "/internal/share/player/24048100?version=2026-03&step=2",
                 headers={"X-Internal-Share-Token": "share-secret"},
-            )
+        )
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("HEIGO PLAYER SHARE", response.text)
+        self.assertIn("HEIGO 球员详情图", response.text)
         self.assertIn("Dani Olmo", response.text)
-        self.assertIn("Growth Preview +2", response.text)
+        self.assertIn("成长预览 +2", response.text)
+        self.assertIn("位置评分", response.text)
         self.assertIn("Noto Sans CJK SC", response.text)
 
     def test_internal_share_page_returns_404_when_missing(self):

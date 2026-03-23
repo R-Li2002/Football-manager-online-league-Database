@@ -58,7 +58,7 @@ def build_frontend_router(
     internal_share_header_name: str = "X-Internal-Share-Token",
     internal_render_signing_key: str = "",
     share_cache_root: str | Path = Path("data/share-cache"),
-    share_template_version: int = 2,
+    share_template_version: int = 3,
 ):
     router = APIRouter()
     png_renderer = share_png_service.SharePngRenderer(

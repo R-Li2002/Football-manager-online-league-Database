@@ -340,6 +340,7 @@ HEIGOOA/
 
 - 主站负责三类分享图：球员图、工资图、名单图
 - 主站内部 SVG / PNG 路由统一收口在 `routers/frontend_routes.py`
+- 默认分享模板版本已提升到 `3`，用于新的球员详情图版式
 - 主站 PNG 渲染统一收口在 `services/share_png_service.py`
 - 球员分享的共享模型 / HTML / SVG 已拆分为：
   - `services/share_card_model_service.py`
@@ -359,6 +360,12 @@ HEIGOOA/
 - `/internal/render/player/{uid}.png`
 - `/internal/render/wage/{uid}.png`
 - `/internal/render/roster.png?team=...&page=...`
+
+当前球员分享图版式要点：
+
+- HTML 预览页与 SVG 成图共用同一套球员分享模型
+- 球员详情图采用中文文案、位置熟练度图、属性分组与能力雷达的统一版式
+- 无真实数据时不显示花 / 蛋反应徽标占位
 
 这样做的目的：
 
