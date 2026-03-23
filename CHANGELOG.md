@@ -10,6 +10,7 @@ All notable changes to HEIGO are documented here.
 - Switched the default share template version to `3` in the main-site router and deployment env example.
 - Changed the NoneBot wage query so `工资` returns text-only calculation details, while `工资图` remains the explicit image command.
 - Changed the NoneBot roster query so `名单` returns text-only roster details, while `名单图` remains the explicit image command.
+- Expanded NoneBot team alias coverage with more Chinese nicknames and English abbreviations, and aligned alias targets to the actual database team names such as `Man UFC`, `Bayer 04`, and `Sporting CP`.
 
 ### Docs
 

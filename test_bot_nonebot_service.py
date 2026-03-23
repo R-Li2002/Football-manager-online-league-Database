@@ -16,8 +16,13 @@ from heigo_bot.service import HeigoBotService  # noqa: E402
 class _FakeApiClient:
     async def get_teams(self):
         return [
+            {"name": "A. Madrid"},
+            {"name": "Bayer 04"},
             {"name": "Barcelona"},
-            {"name": "Man Utd"},
+            {"name": "FC Bayern"},
+            {"name": "Man City"},
+            {"name": "Man UFC"},
+            {"name": "Sporting CP"},
             {"name": "Tottenham"},
         ]
 
@@ -106,6 +111,39 @@ class BotNoneBotServiceTests(unittest.TestCase):
         reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="roster_image", raw_text="", normalized_text="", team_name="巴萨", page=1)))
         self.assertEqual(reply.reply_type, "image")
         self.assertIn("roster/Barcelona/1.png", reply.image_url)
+
+    def test_handle_roster_image_supports_real_name_mismatch_aliases(self):
+        cases = {
+            "曼联": "Man UFC",
+            "药厂": "Bayer 04",
+            "葡体": "Sporting CP",
+        }
+        for alias, team_name in cases.items():
+            with self.subTest(alias=alias):
+                reply = asyncio.run(
+                    self.service.handle_command(
+                        CommandSpec(command_type="roster_image", raw_text="", normalized_text="", team_name=alias, page=1)
+                    )
+                )
+                self.assertEqual(reply.reply_type, "image")
+                self.assertIn(f"roster/{team_name}/1.png", reply.image_url)
+
+    def test_handle_roster_image_supports_expanded_aliases(self):
+        cases = {
+            "马竞": "A. Madrid",
+            "拜仁": "FC Bayern",
+            "曼城": "Man City",
+            "托特纳姆热刺": "Tottenham",
+        }
+        for alias, team_name in cases.items():
+            with self.subTest(alias=alias):
+                reply = asyncio.run(
+                    self.service.handle_command(
+                        CommandSpec(command_type="roster_image", raw_text="", normalized_text="", team_name=alias, page=1)
+                    )
+                )
+                self.assertEqual(reply.reply_type, "image")
+                self.assertIn(f"roster/{team_name}/1.png", reply.image_url)
 
     def test_handle_roster_text(self):
         reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="roster_text", raw_text="", normalized_text="", team_name="Barcelona", page=1)))
