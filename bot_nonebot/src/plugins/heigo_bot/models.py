@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-CommandType = Literal["help", "player_image", "wage_image", "roster_image", "unknown"]
+CommandType = Literal["help", "player_image", "wage_text", "wage_image", "roster_text", "roster_image", "unknown"]
 ReplyType = Literal["text", "image", "noop"]
 
 

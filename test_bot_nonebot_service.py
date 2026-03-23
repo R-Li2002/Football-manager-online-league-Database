@@ -14,17 +14,44 @@ from heigo_bot.service import HeigoBotService  # noqa: E402
 
 
 class _FakeApiClient:
+    async def get_teams(self):
+        return [
+            {"name": "Barcelona"},
+            {"name": "Man Utd"},
+            {"name": "Tottenham"},
+        ]
+
     async def get_player_attribute_detail(self, uid: int, version: str | None = None):
-        return {"uid": uid, "name": "Dani Olmo", "data_version": version or "2026-03"}
+        return {
+            "uid": uid,
+            "name": "Dani Olmo",
+            "data_version": version or "2026-03",
+            "position": "M/AM C",
+            "age": 27,
+            "heigo_club": "Barcelona",
+        }
 
     async def search_player_attributes(self, keyword: str, version: str | None = None):
         return [{"uid": 24048100, "name": "Dani Olmo"}]
 
     async def get_player_wage_detail(self, uid: int):
-        return {"wage": 0.91}
+        return {
+            "initial_value": 7.0,
+            "current_value": 7.0,
+            "potential_value": 7.0,
+            "final_value": 7.0,
+            "initial_field": 7.0,
+            "slot_type": "7M",
+            "coefficient": 0.13,
+            "wage": 0.91,
+        }
 
     async def get_players_by_team(self, team_name: str):
-        return [{"uid": 1}, {"uid": 2}, {"uid": 3}]
+        return [
+            {"uid": 1, "name": "Player 1", "position": "GK", "age": 20, "ca": 140, "pa": 155, "wage": 0.5, "slot_type": "8M"},
+            {"uid": 2, "name": "Player 2", "position": "MC", "age": 21, "ca": 141, "pa": 156, "wage": 0.51, "slot_type": ""},
+            {"uid": 3, "name": "Player 3", "position": "MC", "age": 22, "ca": 142, "pa": 157, "wage": 0.52, "slot_type": ""},
+        ]
 
 
 class _FakeSigner:
@@ -64,10 +91,27 @@ class BotNoneBotServiceTests(unittest.TestCase):
         self.assertEqual(reply.reply_type, "image")
         self.assertIn("wage/24048100.png", reply.image_url)
 
+    def test_handle_wage_text(self):
+        reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="wage_text", raw_text="", normalized_text="", keyword="Dani")))
+        self.assertEqual(reply.reply_type, "text")
+        self.assertIn("工资计算", reply.text)
+        self.assertIn("结果工资 7.00 × 0.13 = 0.910M", reply.text)
+
     def test_handle_roster_image(self):
         reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="roster_image", raw_text="", normalized_text="", team_name="Barcelona", page=2)))
         self.assertEqual(reply.reply_type, "image")
         self.assertIn("roster/Barcelona/1.png", reply.image_url)
+
+    def test_handle_roster_image_supports_alias(self):
+        reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="roster_image", raw_text="", normalized_text="", team_name="巴萨", page=1)))
+        self.assertEqual(reply.reply_type, "image")
+        self.assertIn("roster/Barcelona/1.png", reply.image_url)
+
+    def test_handle_roster_text(self):
+        reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="roster_text", raw_text="", normalized_text="", team_name="Barcelona", page=1)))
+        self.assertEqual(reply.reply_type, "text")
+        self.assertIn("Barcelona 名单 第 1/1 页", reply.text)
+        self.assertIn("1. Player 1 | GK | 20岁 | CA/PA 140 / 155 | 工资 0.500M | 名额 8M", reply.text)
 
     def test_handle_help(self):
         reply = asyncio.run(self.service.handle_text("帮助"))

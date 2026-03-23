@@ -49,7 +49,7 @@ def parse_command(text: str) -> CommandSpec:
                 version=version,
             )
 
-    for prefix in ("工资图", "工资"):
+    for prefix in ("工资图",):
         if working.startswith(prefix):
             keyword = working.removeprefix(prefix).strip()
             uid = int(keyword) if keyword.isdigit() else None
@@ -63,11 +63,37 @@ def parse_command(text: str) -> CommandSpec:
                 version=version,
             )
 
-    for prefix in ("名单图", "名单"):
+    for prefix in ("工资",):
+        if working.startswith(prefix):
+            keyword = working.removeprefix(prefix).strip()
+            uid = int(keyword) if keyword.isdigit() else None
+            return CommandSpec(
+                command_type="wage_text",
+                raw_text=text,
+                normalized_text=normalized_text,
+                keyword=keyword,
+                uid=uid,
+                page=page,
+                version=version,
+            )
+
+    for prefix in ("名单图",):
         if working.startswith(prefix):
             team_name = working.removeprefix(prefix).strip()
             return CommandSpec(
                 command_type="roster_image",
+                raw_text=text,
+                normalized_text=normalized_text,
+                team_name=team_name,
+                page=page,
+                version=version,
+            )
+
+    for prefix in ("名单",):
+        if working.startswith(prefix):
+            team_name = working.removeprefix(prefix).strip()
+            return CommandSpec(
+                command_type="roster_text",
                 raw_text=text,
                 normalized_text=normalized_text,
                 team_name=team_name,

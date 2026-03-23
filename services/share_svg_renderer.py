@@ -453,18 +453,32 @@ def build_wage_share_svg(player: PlayerAttributeDetailResponse, wage_detail: Wag
 def _render_roster_table_rows(rows: tuple[RosterPlayerRow, ...], *, x: int, start_y: int, width: int, tokens: dict[str, str]) -> str:
     rendered: list[str] = []
     row_height = 48
+    position_x = x + 420
+    age_x = x + 540
+    ca_pa_x = x + 680
+    wage_x = x + 790
+    slot_badge_x = x + 808
+    slot_badge_width = 74
     for index, row in enumerate(rows):
         y = start_y + index * row_height
         fill = tokens["panel_soft"] if index % 2 == 0 else "rgba(255,255,255,0.02)"
+        slot_badge = ""
+        if row.slot_type_label and row.slot_type_label != "-":
+            slot_badge = (
+                f'<rect x="{slot_badge_x}" y="{y - 14}" width="{slot_badge_width}" height="22" rx="11" '
+                f'fill="{tokens["accent_soft"]}" stroke="{tokens["line"]}" />'
+                f'<text x="{slot_badge_x + slot_badge_width / 2:.1f}" y="{y + 1}" font-size="11.5" font-weight="700" '
+                f'fill="{tokens["accent"]}" text-anchor="middle">{escape(row.slot_type_label)}</text>'
+            )
         rendered.append(
             f'<rect x="{x}" y="{y - 22}" width="{width}" height="38" rx="12" fill="{fill}" stroke="{tokens["line"]}" />'
             f'<text x="{x + 18}" y="{y}" font-size="13" fill="{tokens["muted"]}">{row.index}</text>'
             f'<text x="{x + 64}" y="{y}" font-size="14" font-weight="700" fill="{tokens["text"]}">{escape(row.name)}</text>'
-            f'<text x="{x + 420}" y="{y}" font-size="13" fill="{tokens["text"]}">{escape(row.position)}</text>'
-            f'<text x="{x + 540}" y="{y}" font-size="13" fill="{tokens["text"]}">{escape(row.age_label)}</text>'
-            f'<text x="{x + 680}" y="{y}" font-size="13" fill="{tokens["text"]}">{escape(row.ca_pa_label)}</text>'
-            f'<text x="{x + 860}" y="{y}" font-size="13" fill="{tokens["text"]}" text-anchor="end">{escape(row.wage_label)}</text>'
-            f'<text x="{x + width - 24}" y="{y}" font-size="13" font-weight="700" fill="{tokens["accent"]}" text-anchor="end">{escape(row.slot_type_label)}</text>'
+            f'<text x="{position_x}" y="{y}" font-size="13" fill="{tokens["text"]}">{escape(row.position)}</text>'
+            f'<text x="{age_x}" y="{y}" font-size="13" fill="{tokens["text"]}">{escape(row.age_label)}</text>'
+            f'<text x="{ca_pa_x}" y="{y}" font-size="13" fill="{tokens["text"]}">{escape(row.ca_pa_label)}</text>'
+            f'<text x="{wage_x}" y="{y}" font-size="13" fill="{tokens["text"]}" text-anchor="end">{escape(row.wage_label)}</text>'
+            f'{slot_badge}'
         )
     return "".join(rendered)
 
@@ -499,7 +513,8 @@ def build_roster_share_svg(team_name: str, players: list[PlayerResponse], *, tea
   <text x="500" y="276" font-size="12" font-weight="700" fill="{tokens["muted"]}" letter-spacing="1.4">POSITION</text>
   <text x="620" y="276" font-size="12" font-weight="700" fill="{tokens["muted"]}" letter-spacing="1.4">AGE</text>
   <text x="760" y="276" font-size="12" font-weight="700" fill="{tokens["muted"]}" letter-spacing="1.4">CA / PA</text>
-  <text x="940" y="276" font-size="12" font-weight="700" fill="{tokens["muted"]}" letter-spacing="1.4" text-anchor="end">WAGE</text>
+  <text x="872" y="276" font-size="12" font-weight="700" fill="{tokens["muted"]}" letter-spacing="1.4" text-anchor="end">WAGE</text>
+  <text x="928" y="276" font-size="12" font-weight="700" fill="{tokens["muted"]}" letter-spacing="1.4" text-anchor="middle">SLOT</text>
   {table_rows}
   <rect x="982" y="228" width="358" height="{height - 288}" rx="24" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />
   <text x="1014" y="180" font-size="18" font-weight="800" fill="{tokens["text"]}">Team Snapshot</text>

@@ -8,6 +8,8 @@ All notable changes to HEIGO are documented here.
 
 - Finalized the player share card v3 layout with localized HTML/SVG copy, position-map presentation, and aligned radar placement.
 - Switched the default share template version to `3` in the main-site router and deployment env example.
+- Changed the NoneBot wage query so `工资` returns text-only calculation details, while `工资图` remains the explicit image command.
+- Changed the NoneBot roster query so `名单` returns text-only roster details, while `名单图` remains the explicit image command.
 
 ### Docs
 

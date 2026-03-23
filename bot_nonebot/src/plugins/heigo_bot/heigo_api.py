@@ -19,6 +19,11 @@ class HeigoApiClient:
         response.raise_for_status()
         return response.json()
 
+    async def get_teams(self) -> list[dict[str, Any]]:
+        response = await self._client.get("/api/teams")
+        response.raise_for_status()
+        return response.json()
+
     async def search_player_attributes(self, player_name: str, version: str | None = None) -> list[dict[str, Any]]:
         params = {"version": version} if version else None
         response = await self._client.get(f"/api/attributes/search/{quote(player_name, safe='')}", params=params)

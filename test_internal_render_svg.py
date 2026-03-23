@@ -94,3 +94,5 @@ class InternalRenderSvgTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("HEIGO ROSTER", response.text)
         self.assertIn("Barcelona", response.text)
+        self.assertIn("SLOT", response.text)
+        self.assertIn("8M", response.text)

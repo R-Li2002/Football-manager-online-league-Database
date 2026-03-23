@@ -18,11 +18,27 @@ class BotNoneBotParserTests(unittest.TestCase):
         self.assertEqual(command.version, "2026-03")
 
     def test_parse_roster_command_with_page(self):
-        command = parse_command("名单图 Barcelona 第 2 页")
-        self.assertEqual(command.command_type, "roster_image")
+        command = parse_command("名单 Barcelona 第 2 页")
+        self.assertEqual(command.command_type, "roster_text")
         self.assertEqual(command.team_name, "Barcelona")
         self.assertEqual(command.page, 2)
 
     def test_parse_help_when_empty(self):
         command = parse_command("")
         self.assertEqual(command.command_type, "help")
+
+    def test_parse_wage_text_command(self):
+        command = parse_command("工资 梅西")
+        self.assertEqual(command.command_type, "wage_text")
+        self.assertEqual(command.keyword, "梅西")
+
+    def test_parse_wage_image_command(self):
+        command = parse_command("工资图 梅西")
+        self.assertEqual(command.command_type, "wage_image")
+        self.assertEqual(command.keyword, "梅西")
+
+    def test_parse_roster_image_command(self):
+        command = parse_command("名单图 Barcelona 第 2 页")
+        self.assertEqual(command.command_type, "roster_image")
+        self.assertEqual(command.team_name, "Barcelona")
+        self.assertEqual(command.page, 2)
