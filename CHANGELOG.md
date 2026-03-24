@@ -4,6 +4,8 @@ All notable changes to HEIGO are documented here.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-03-25
+
 ### Changed
 
 - Finalized the player share card v3 layout with localized HTML/SVG copy, position-map presentation, and aligned radar placement.
