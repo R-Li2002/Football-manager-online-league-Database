@@ -4,6 +4,10 @@ All notable changes to HEIGO are documented here.
 
 ## [Unreleased]
 
+### Docs
+
+- Clarified that league-import `.csv` / `.xlsx` files are treated as raw source inputs for database import rather than normal code changes.
+
 ## [0.2.1] - 2026-03-25
 
 ### Changed

@@ -31,4 +31,3 @@ tmp_*.png
 .cc-connect-debug*.log
 bg_test*.txt
 output/
-*球员属性.xlsx
