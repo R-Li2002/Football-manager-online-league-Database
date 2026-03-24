@@ -89,6 +89,7 @@ HEIGOOA/
 - `frontend_routes.py`
   - 杩斿洖鍓嶇鍏ュ彛椤甸潰
 - `public_routes.py`
+  - 鐞冨憳浜掑姩鎺掕姒?`/api/reactions/leaderboard` 涔熺敱姝ゆā鍧楁彁渚?
   - 鎻愪緵鍏紑鏌ヨ銆佸睘鎬ц鎯呫€佸鍑恒€佷簰鍔ㄦ帴鍙?- `admin_read_routes.py`
   - 鎻愪緵绠＄悊鍛樿鎺ュ彛锛屽瀹¤銆佸鍏ユ憳瑕併€佽繍缁磋鍥?- `admin_write_routes.py`
   - 鎻愪緵绠＄悊鍛樺啓鎺ュ彛锛屽杞細銆佹秷璐广€佽繑鑰併€佹寮忓鍏ャ€侀噸绠?
@@ -116,6 +117,7 @@ HEIGOOA/
 - `static/js/app.overview.js`
 - `static/js/app.players.js`
 - `static/js/app.database.js`
+  - 鍚屾椂鎵块€佺悆鍛樻悳绱㈢粨鏋溿€佽鎯呴〉鍜?`鐞冨憳鎼滅储 / 浜掑姩鎺掕姒?` 浜岀骇鍒囨崲
 - `static/js/app.admin.js`
 
 瀹冪殑浼樺娍鏄瀯寤洪摼绠€鍗曘€侀儴缃茶交閲忥紱浠ｄ环鏄殢鐫€鍔熻兘澧為暱锛屽ぇ鍨嬭剼鏈枃浠堕渶瑕佹寔缁帶鍒惰竟鐣屻€?
@@ -134,6 +136,13 @@ HEIGOOA/
 - 鑱旇禌姒傝
 - 鐞冮槦鍒楄〃涓庣粺璁?- 鑱旇禌鍚嶅崟涓庢悳绱?- 灞炴€у簱鎼滅储涓庣悆鍛樿鎯?- 宸ヨ祫鏄庣粏
 - Excel 瀵煎嚭
+
+鐞冨憳浜掑姩鎺掕姒滃綋鍓嶄篃灞炰簬鍏紑鏌ヨ閾捐矾锛屾帴鍙ｅ涓嬶細
+
+- `GET /api/reactions/leaderboard`
+- 鏀寔鍙傛暟锛?`metric=flowers|eggs|net`銆?`limit`銆?`team`銆?`version`
+- 鏁版嵁鏉ユ簮涓?`player_reaction_summaries` 锛屽綋鍓嶈繑鍥炵疮璁￠矞鑺便€侀浮铔嬬粺璁″拰鍑€濂借瘎鍊?
+- 鍓嶇鍏ュ彛浣嶄簬 `鐞冨憳搴?tab` 锛岄€氳繃 `鐞冨憳鎼滅储 / 浜掑姩鎺掕姒?` 浜岀骇鍒囨崲杩涘叆
 
 鎼滅储绾﹀畾锛?
 - 鐞冨憳鎼滅储涓庡睘鎬ф悳绱㈠叡鐢ㄧ粺涓€鐨勬悳绱㈠綊涓€鍖栭€昏緫
@@ -210,6 +219,13 @@ HEIGOOA/
   - 鍚庣鎸佷箙鍖栬繍缁村璁?- `player_reaction_summaries`
   - 鐞冨憳浜掑姩姹囨€?- `player_reaction_events`
   - 鐞冨憳浜掑姩浜嬩欢鏄庣粏
+
+琛ㄧ粨鏋勪腑鍜岀悆鍛樹簰鍔ㄦ帓琛屾渶鐩稿叧鐨勪袱寮犺〃濡備笅锛?
+
+- `player_reaction_summaries`
+  - 鐢ㄤ簬绱鐞冨憳椴滆姳 / 楦¤泲姹囨€诲拰鍏紑鎺掕姒滄煡璇?
+- `player_reaction_events`
+  - 鐢ㄤ簬淇濈暀鍗曟浜掑姩浜嬩欢锛屼究浜庡悗缁仛鏃堕棿绐楃儹搴︾粺璁°
 
 ### 5.2 褰撳墠鏁版嵁璁捐閲嶇偣
 

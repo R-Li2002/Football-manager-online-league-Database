@@ -30,11 +30,11 @@
         </header>
 
         <div class="nav-tabs glass-card">
-            <button class="nav-tab active" data-tab="home" onclick="showTab('home', this)">⌂ 首页</button>
-            <button class="nav-tab" data-tab="overview" onclick="showTab('overview', this)">联赛概览</button>
-            <button class="nav-tab" data-tab="players" onclick="showTab('players', this)">联赛名单</button>
-            <button class="nav-tab" data-tab="database" onclick="showTab('database', this)">球员库</button>
-            <button class="nav-tab hidden-tab" id="adminTab" data-tab="admin" onclick="showTab('admin', this)">维护中心</button>
+            <button class="nav-tab active" data-tab="home" onclick="showTab('home', this)"><span class="nav-tab-icon" aria-hidden="true">⌂</span><span>首页</span></button>
+            <button class="nav-tab" data-tab="overview" onclick="showTab('overview', this)"><span class="nav-tab-icon" aria-hidden="true">◫</span><span>联赛概览</span></button>
+            <button class="nav-tab" data-tab="players" onclick="showTab('players', this)"><span class="nav-tab-icon" aria-hidden="true">☰</span><span>联赛名单</span></button>
+            <button class="nav-tab" data-tab="database" onclick="showTab('database', this)"><span class="nav-tab-icon" aria-hidden="true">⌕</span><span>球员库</span></button>
+            <button class="nav-tab hidden-tab" id="adminTab" data-tab="admin" onclick="showTab('admin', this)"><span class="nav-tab-icon" aria-hidden="true">⚙</span><span>维护中心</span></button>
         </div>
 
         <div id="home" class="tab-content active">
@@ -83,7 +83,7 @@
         <div id="overview" class="tab-content">
             <div class="overview-section overview-summary-card">
                 <div class="overview-summary-head">
-                    <div class="overview-summary-copy">
+                    <div class="panel-caption overview-summary-copy">
                         <span class="panel-kicker">League Snapshot</span>
                         <h2>联赛概览</h2>
                         <p>默认只展示基础联赛信息。点击展开后，可继续查看统计数据、工资系数、数据更新状态和最近维护摘要。</p>
@@ -143,8 +143,8 @@
                 <aside class="player-filter-panel surface-card">
                     <div class="panel-caption">
                         <span class="panel-kicker">League Roster</span>
-                        <h2>按球队和姓名筛选联赛名单</h2>
-                        <p>这里专门处理联赛内球员浏览，避免和全库搜索混在一起。</p>
+                        <h2>联赛名单</h2>
+                        <p>按球队和姓名筛选当前联赛球员，避免和全库搜索混在一起。</p>
                     </div>
 
                     <div class="form-group">
@@ -184,8 +184,9 @@
         </div>
 
         <div id="database" class="tab-content">
-            <div class="warning-banner" id="attributeVersionBanner">
-                当前球员库版本尚未加载。
+            <div class="database-subtabs surface-card" role="tablist" aria-label="球员库功能切换">
+                <button class="database-subtab active" id="dbSubtabSearch" type="button" onclick="showDatabaseSubtab('search')" role="tab" aria-selected="true">球员搜索</button>
+                <button class="database-subtab" id="dbSubtabLeaderboard" type="button" onclick="showDatabaseSubtab('leaderboard')" role="tab" aria-selected="false">互动排行榜</button>
             </div>
 
             <div class="list-view active" id="dbListView">
@@ -212,6 +213,45 @@
                         <h2 id="dbTableTitle" class="table-title">球员库搜索结果</h2>
                     </div>
                     <div id="dbPlayersTable"><div class="no-data">请输入球员姓名或 UID 进行搜索</div></div>
+                </div>
+            </div>
+
+            <div class="list-view" id="dbReactionLeaderboardView">
+                <div class="search-section">
+                    <div class="search-controls leaderboard-controls">
+                        <div class="form-group">
+                            <label for="dbReactionMetricSelect">榜单类型</label>
+                            <select id="dbReactionMetricSelect" onchange="loadReactionLeaderboard({pushHistory: true, historyMode: 'replace'})">
+                                <option value="flowers">鲜花榜</option>
+                                <option value="eggs">鸡蛋榜</option>
+                                <option value="net">净好评榜</option>
+                            </select>
+                        </div>
+                        <div class="form-group leaderboard-limit-group">
+                            <label for="dbReactionLimitSelect">显示数量</label>
+                            <select id="dbReactionLimitSelect" onchange="loadReactionLeaderboard({pushHistory: true, historyMode: 'replace'})">
+                                <option value="10">Top 10</option>
+                                <option value="20" selected>Top 20</option>
+                                <option value="50">Top 50</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="dbReactionTeamSelect">球队筛选</label>
+                            <select id="dbReactionTeamSelect" onchange="loadReactionLeaderboard({pushHistory: true, historyMode: 'replace'})">
+                                <option value="">-- 全部球队 --</option>
+                            </select>
+                        </div>
+                        <div class="leaderboard-actions">
+                            <button class="btn btn-secondary" type="button" onclick="resetReactionLeaderboardFilters()">重置筛选</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <div class="table-header-row">
+                        <h2 id="dbReactionLeaderboardTitle" class="table-title">互动排行榜</h2>
+                    </div>
+                    <div id="dbReactionLeaderboardTable"><div class="loading">加载中...</div></div>
                 </div>
             </div>
 

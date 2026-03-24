@@ -9,6 +9,12 @@ const AppModules = {
         if (typeof refreshAttributeVersionBanner === 'function') {
             refreshAttributeVersionBanner();
         }
+        if (typeof syncDatabaseSubtabUI === 'function') {
+            syncDatabaseSubtabUI();
+        }
+        if (typeof populateReactionLeaderboardTeamSelect === 'function') {
+            populateReactionLeaderboardTeamSelect();
+        }
         if (typeof renderCompareDock === 'function') renderCompareDock();
     }},
     admin: {onEnter: () => {
@@ -75,13 +81,19 @@ function capturePlayersHistoryState() {
 
 function captureDatabaseHistoryState() {
     const isDetailView = document.getElementById('dbDetailView')?.classList.contains('active');
+    const isLeaderboardView = document.getElementById('dbReactionLeaderboardView')?.classList.contains('active');
     return {
         query: document.getElementById('dbPlayerSearch')?.value.trim() || '',
         attributeVersion: typeof getCurrentAttributeVersion === 'function' ? getCurrentAttributeVersion() : '',
         sort: normalizeSortState(currentDbSort, 'number'),
-        view: isDetailView && currentDetailPlayer ? 'detail' : 'list',
+        subtab: currentDatabaseSubtab === 'leaderboard' ? 'leaderboard' : 'search',
+        leaderboardMetric: document.getElementById('dbReactionMetricSelect')?.value || 'flowers',
+        leaderboardLimit: document.getElementById('dbReactionLimitSelect')?.value || '20',
+        leaderboardTeam: document.getElementById('dbReactionTeamSelect')?.value || '',
+        view: isDetailView && currentDetailPlayer ? 'detail' : isLeaderboardView ? 'leaderboard' : 'list',
         detailUid: isDetailView && currentDetailPlayer ? Number(currentDetailPlayer.uid) || null : null,
         returnTab: normalizeAppTabName(dbDetailReturnState?.tab || 'database'),
+        returnSubtab: dbDetailReturnState?.subtab === 'leaderboard' ? 'leaderboard' : 'search',
     };
 }
 
@@ -121,11 +133,16 @@ function normalizeHistoryState(rawState, index = appHistoryIndex) {
             query: typeof baseState.database?.query === 'string' ? baseState.database.query : '',
             attributeVersion: typeof baseState.database?.attributeVersion === 'string' ? baseState.database.attributeVersion : '',
             sort: normalizeSortState(baseState.database?.sort, 'number'),
-            view: baseState.database?.view === 'detail' ? 'detail' : 'list',
+            subtab: baseState.database?.subtab === 'leaderboard' ? 'leaderboard' : 'search',
+            leaderboardMetric: typeof baseState.database?.leaderboardMetric === 'string' ? baseState.database.leaderboardMetric : 'flowers',
+            leaderboardLimit: typeof baseState.database?.leaderboardLimit === 'string' ? baseState.database.leaderboardLimit : '20',
+            leaderboardTeam: typeof baseState.database?.leaderboardTeam === 'string' ? baseState.database.leaderboardTeam : '',
+            view: baseState.database?.view === 'detail' ? 'detail' : baseState.database?.view === 'leaderboard' ? 'leaderboard' : 'list',
             detailUid: Number.isFinite(Number(baseState.database?.detailUid))
                 ? Number(baseState.database.detailUid)
                 : null,
             returnTab: normalizeAppTabName(baseState.database?.returnTab || 'database'),
+            returnSubtab: baseState.database?.returnSubtab === 'leaderboard' ? 'leaderboard' : 'search',
         },
     };
 }
@@ -219,13 +236,35 @@ async function restoreDatabaseHistoryState(databaseState) {
         setCurrentAttributeVersion(databaseState.attributeVersion);
     }
     currentDbSort = normalizeSortState(databaseState.sort, 'number');
-    dbDetailReturnState = {tab: normalizeAppTabName(databaseState.returnTab || 'database')};
+    currentDatabaseSubtab = databaseState.subtab === 'leaderboard' ? 'leaderboard' : 'search';
+    dbDetailReturnState = {
+        tab: normalizeAppTabName(databaseState.returnTab || 'database'),
+        subtab: databaseState.returnSubtab === 'leaderboard' ? 'leaderboard' : 'search',
+    };
+    if (typeof syncDatabaseSubtabUI === 'function') {
+        syncDatabaseSubtabUI();
+    }
+    const leaderboardMetricSelect = document.getElementById('dbReactionMetricSelect');
+    const leaderboardLimitSelect = document.getElementById('dbReactionLimitSelect');
+    const leaderboardTeamSelect = document.getElementById('dbReactionTeamSelect');
+    if (leaderboardMetricSelect) leaderboardMetricSelect.value = databaseState.leaderboardMetric || 'flowers';
+    if (leaderboardLimitSelect) leaderboardLimitSelect.value = databaseState.leaderboardLimit || '20';
+    if (typeof populateReactionLeaderboardTeamSelect === 'function') {
+        populateReactionLeaderboardTeamSelect();
+    }
+    if (leaderboardTeamSelect) leaderboardTeamSelect.value = databaseState.leaderboardTeam || '';
 
     if (databaseState.view === 'detail' && databaseState.detailUid && typeof showPlayerDetail === 'function') {
         await showPlayerDetail(databaseState.detailUid, {
             returnTab: dbDetailReturnState.tab,
+            returnSubtab: dbDetailReturnState.subtab,
             pushHistory: false,
         });
+        return;
+    }
+
+    if (databaseState.view === 'leaderboard' && typeof loadReactionLeaderboard === 'function') {
+        await loadReactionLeaderboard({pushHistory: false});
         return;
     }
 

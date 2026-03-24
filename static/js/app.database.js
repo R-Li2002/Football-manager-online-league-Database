@@ -98,26 +98,61 @@ function renderDatabaseSearchVersionPicker() {
 }
 
 function refreshAttributeVersionBanner() {
-    const banner = document.getElementById('attributeVersionBanner');
     renderDatabaseSearchVersionPicker();
-    if (!banner) return;
-    const version = getCurrentAttributeVersion();
-    const available = Array.isArray(availableAttributeVersions) ? availableAttributeVersions.join(' / ') : '';
-    banner.innerHTML = version
-        ? `当前球员库版本：<strong>${escapeHtml(version)}</strong>${available ? `，可切换版本：${escapeHtml(available)}` : ''}`
-        : '当前球员库版本尚未加载。';
 }
 
 async function handleDatabaseSearchVersionChange(version) {
     await handleAttributeVersionChange(version);
 }
 
+function getDatabaseLeaderboardMetricLabel(metric) {
+    const labels = {flowers: '鲜花榜', eggs: '鸡蛋榜', net: '净好评榜'};
+    return labels[metric] || '互动排行榜';
+}
+
+function syncDatabaseSubtabUI() {
+    const searchButton = document.getElementById('dbSubtabSearch');
+    const leaderboardButton = document.getElementById('dbSubtabLeaderboard');
+    if (searchButton) {
+        const active = currentDatabaseSubtab === 'search';
+        searchButton.classList.toggle('active', active);
+        searchButton.setAttribute('aria-selected', active ? 'true' : 'false');
+    }
+    if (leaderboardButton) {
+        const active = currentDatabaseSubtab === 'leaderboard';
+        leaderboardButton.classList.toggle('active', active);
+        leaderboardButton.setAttribute('aria-selected', active ? 'true' : 'false');
+    }
+}
+
+function populateReactionLeaderboardTeamSelect() {
+    const select = document.getElementById('dbReactionTeamSelect');
+    if (!select) return;
+    const previousValue = select.value;
+    select.innerHTML = '<option value="">-- 全部球队 --</option>';
+    teams.forEach(team => {
+        const option = document.createElement('option');
+        option.value = team.name;
+        option.textContent = `${team.name} (${team.level})`;
+        select.appendChild(option);
+    });
+    if (teams.some(team => team.name === previousValue)) {
+        select.value = previousValue;
+    }
+}
+
 function activateDatabaseView(viewName = 'list') {
+    const isSearchView = viewName === 'list';
+    const isLeaderboardView = viewName === 'leaderboard';
     const isDetailView = viewName === 'detail';
     const dbListView = document.getElementById('dbListView');
+    const dbReactionLeaderboardView = document.getElementById('dbReactionLeaderboardView');
     const dbDetailView = document.getElementById('dbDetailView');
     if (dbListView) {
-        dbListView.classList.toggle('active', !isDetailView);
+        dbListView.classList.toggle('active', isSearchView);
+    }
+    if (dbReactionLeaderboardView) {
+        dbReactionLeaderboardView.classList.toggle('active', isLeaderboardView);
     }
     if (dbDetailView) {
         dbDetailView.classList.toggle('active', isDetailView);
@@ -131,6 +166,8 @@ function activateDatabaseView(viewName = 'list') {
 async function searchDatabase(nameOverride = null, options = {}) {
     const shouldSyncHistory = options.pushHistory !== false;
     const historyMode = options.historyMode || 'push';
+    currentDatabaseSubtab = 'search';
+    syncDatabaseSubtabUI();
     await loadAttributeVersionCatalog();
     refreshAttributeVersionBanner();
     const name = nameOverride ?? document.getElementById('dbPlayerSearch').value.trim();
@@ -150,6 +187,7 @@ async function searchDatabase(nameOverride = null, options = {}) {
     if (/^\d+$/.test(name)) {
         await showPlayerDetail(name, {
             returnTab: 'database',
+            returnSubtab: 'search',
             pushHistory: shouldSyncHistory,
             historyMode,
             version: getCurrentAttributeVersion(),
@@ -161,6 +199,155 @@ async function searchDatabase(nameOverride = null, options = {}) {
     renderDbPlayers(currentDbPlayers);
     if (shouldSyncHistory && typeof syncAppHistory === 'function') {
         syncAppHistory(historyMode);
+    }
+}
+
+async function loadReactionLeaderboard(options = {}) {
+    const shouldSyncHistory = options.pushHistory !== false;
+    const historyMode = options.historyMode || 'push';
+    currentDatabaseSubtab = 'leaderboard';
+    syncDatabaseSubtabUI();
+    activateDatabaseView('leaderboard');
+    await loadAttributeVersionCatalog();
+    refreshAttributeVersionBanner();
+    populateReactionLeaderboardTeamSelect();
+
+    const metric = document.getElementById('dbReactionMetricSelect')?.value || 'flowers';
+    const limit = document.getElementById('dbReactionLimitSelect')?.value || '20';
+    const team = document.getElementById('dbReactionTeamSelect')?.value || '';
+    const title = document.getElementById('dbReactionLeaderboardTitle');
+    const table = document.getElementById('dbReactionLeaderboardTable');
+    if (title) {
+        title.textContent = `${getDatabaseLeaderboardMetricLabel(metric)} (${limit})`;
+    }
+    if (table) {
+        table.innerHTML = '<div class="loading">加载中...</div>';
+    }
+
+    const params = new URLSearchParams({
+        metric,
+        limit: String(limit),
+    });
+    if (team) {
+        params.set('team', team);
+    }
+    const version = getCurrentAttributeVersion();
+    if (version) {
+        params.set('version', version);
+    }
+    try {
+        const response = await fetch(`/api/reactions/leaderboard?${params.toString()}`);
+        let payload = null;
+        try {
+            payload = await response.json();
+        } catch (error) {
+            payload = null;
+        }
+        if (!response.ok) {
+            throw new Error(payload?.detail || payload?.message || `HTTP ${response.status}`);
+        }
+        renderReactionLeaderboard(payload);
+    } catch (error) {
+        renderReactionLeaderboardError({
+            metric,
+            limit,
+            dataVersion: version,
+            message: error?.message || '互动排行榜加载失败，请稍后重试。',
+        });
+    }
+    if (shouldSyncHistory && typeof syncAppHistory === 'function') {
+        syncAppHistory(historyMode);
+    }
+}
+
+function renderReactionLeaderboardError({metric = 'flowers', limit = '20', dataVersion = '', message = ''} = {}) {
+    const table = document.getElementById('dbReactionLeaderboardTable');
+    const title = document.getElementById('dbReactionLeaderboardTitle');
+    if (!table) return;
+
+    const versionLabel = dataVersion ? ` · ${escapeHtml(dataVersion)}` : '';
+    if (title) {
+        title.textContent = `${getDatabaseLeaderboardMetricLabel(metric)} (${limit})${versionLabel}`;
+    }
+
+    const fallbackMessage = message ? `互动排行榜加载失败：${message}` : '互动排行榜加载失败，请稍后重试。';
+    table.innerHTML = `<div class="no-data">${escapeHtml(fallbackMessage)}</div>`;
+}
+
+function renderReactionLeaderboard(payload) {
+    const table = document.getElementById('dbReactionLeaderboardTable');
+    const title = document.getElementById('dbReactionLeaderboardTitle');
+    if (!table) return;
+
+    const metric = payload?.metric || document.getElementById('dbReactionMetricSelect')?.value || 'flowers';
+    const limit = payload?.limit || document.getElementById('dbReactionLimitSelect')?.value || '20';
+    const versionLabel = payload?.data_version ? ` · ${escapeHtml(payload.data_version)}` : '';
+    if (title) {
+        title.textContent = `${getDatabaseLeaderboardMetricLabel(metric)} (${limit})${versionLabel}`;
+    }
+
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    if (!items.length) {
+        table.innerHTML = '<div class="no-data">当前筛选条件下还没有互动数据</div>';
+        return;
+    }
+
+    table.innerHTML = `
+        <table class="db-reaction-table" aria-label="球员互动排行榜">
+            <thead>
+                <tr>
+                    <th class="numeric-column">排名</th>
+                    <th>球员</th>
+                    <th class="numeric-column">UID</th>
+                    <th>HEIGO球队</th>
+                    <th>位置</th>
+                    <th class="numeric-column">CA</th>
+                    <th class="numeric-column">PA</th>
+                    <th class="numeric-column">鲜花</th>
+                    <th class="numeric-column">鸡蛋</th>
+                    <th class="numeric-column">净值</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${items.map((item, index) => `
+                    <tr>
+                        <td class="numeric-cell"><span class="leaderboard-rank-badge">${index + 1}</span></td>
+                        <td><span class="player-link" onclick="showPlayerDetail(${item.uid}, {returnTab: 'database', returnSubtab: 'leaderboard', version: '${escapeHtml(item.data_version)}'})">${escapeHtml(item.name)}</span></td>
+                        <td class="numeric-cell">${escapeHtml(item.uid)}</td>
+                        <td class="${item.heigo_club !== '大海' ? 'heigo-club' : ''}">${escapeHtml(item.heigo_club || '大海')}</td>
+                        <td>${escapeHtml(item.position || '-')}</td>
+                        <td class="numeric-cell">${escapeHtml(item.ca ?? '-')}</td>
+                        <td class="numeric-cell">${escapeHtml(item.pa ?? '-')}</td>
+                        <td class="numeric-cell leaderboard-flower">${escapeHtml(item.flowers ?? 0)}</td>
+                        <td class="numeric-cell leaderboard-egg">${escapeHtml(item.eggs ?? 0)}</td>
+                        <td class="numeric-cell"><strong>${escapeHtml(item.net_score ?? 0)}</strong></td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function resetReactionLeaderboardFilters() {
+    const metricSelect = document.getElementById('dbReactionMetricSelect');
+    const limitSelect = document.getElementById('dbReactionLimitSelect');
+    const teamSelect = document.getElementById('dbReactionTeamSelect');
+    if (metricSelect) metricSelect.value = 'flowers';
+    if (limitSelect) limitSelect.value = '20';
+    if (teamSelect) teamSelect.value = '';
+    loadReactionLeaderboard({pushHistory: true, historyMode: 'replace'});
+}
+
+function showDatabaseSubtab(subtab, options = {}) {
+    currentDatabaseSubtab = subtab === 'leaderboard' ? 'leaderboard' : 'search';
+    syncDatabaseSubtabUI();
+    if (currentDatabaseSubtab === 'leaderboard') {
+        loadReactionLeaderboard(options);
+        return;
+    }
+    activateDatabaseView('list');
+    if (options.pushHistory !== false && typeof syncAppHistory === 'function') {
+        syncAppHistory(options.historyMode || 'push');
     }
 }
 
@@ -193,7 +380,7 @@ function renderDbPlayers(players) {
             <tbody>
                 ${sortedPlayers.map(p => `
                     <tr>
-                        <td><span class="player-link" onclick="showPlayerDetail(${p.uid}, {returnTab: 'database', version: '${escapeHtml(p.data_version)}'})">${escapeHtml(p.name)}</span></td>
+                        <td><span class="player-link" onclick="showPlayerDetail(${p.uid}, {returnTab: 'database', returnSubtab: 'search', version: '${escapeHtml(p.data_version)}'})">${escapeHtml(p.name)}</span></td>
                         <td>${escapeHtml(p.position || '-')}</td>
                         <td class="numeric-cell">${escapeHtml(p.age ?? '-')}</td>
                         <td class="numeric-cell"><strong>${escapeHtml(p.ca ?? '-')}</strong></td>
@@ -213,11 +400,12 @@ async function viewPlayerInDatabase(uid) {
     if (typeof selectRosterPlayer === 'function') {
         selectRosterPlayer(uid);
     }
-    await showPlayerDetail(uid, {returnTab: 'players'});
+    await showPlayerDetail(uid, {returnTab: 'players', returnSubtab: currentDatabaseSubtab || 'search'});
 }
 
 async function showPlayerDetail(uid, options = {}) {
     const returnTab = options.returnTab || 'database';
+    const returnSubtab = options.returnSubtab || currentDatabaseSubtab || 'search';
     const shouldSyncHistory = options.pushHistory !== false;
     const historyMode = options.historyMode || 'push';
     const preservePreviewStep = options.preservePreviewStep === true;
@@ -225,7 +413,7 @@ async function showPlayerDetail(uid, options = {}) {
     const requestedVersion = options.version || getCurrentAttributeVersion();
     setCurrentAttributeVersion(requestedVersion);
     refreshAttributeVersionBanner();
-    dbDetailReturnState = {tab: returnTab};
+    dbDetailReturnState = {tab: returnTab, subtab: returnSubtab};
     if (!preservePreviewStep) {
         currentGrowthPreviewStep = 0;
     }
@@ -1238,6 +1426,10 @@ async function handleAttributeVersionChange(version) {
     const nextVersion = setCurrentAttributeVersion(version);
     refreshAttributeVersionBanner();
     const currentQuery = document.getElementById('dbPlayerSearch')?.value.trim() || '';
+    if (document.getElementById('dbReactionLeaderboardView')?.classList.contains('active')) {
+        await loadReactionLeaderboard({pushHistory: true, historyMode: 'replace'});
+        return;
+    }
     if (document.getElementById('dbListView')?.classList.contains('active')) {
         if (currentQuery) {
             await searchDatabase(currentQuery, {pushHistory: true, historyMode: 'replace'});
@@ -1253,6 +1445,7 @@ async function handleAttributeVersionChange(version) {
     }
     await showPlayerDetail(currentDetailPlayer.uid, {
         returnTab: dbDetailReturnState.tab || 'database',
+        returnSubtab: dbDetailReturnState.subtab || currentDatabaseSubtab || 'search',
         pushHistory: true,
         historyMode: 'replace',
         version: nextVersion,
@@ -1401,6 +1594,7 @@ function renderCompareDock() {
     const filledCount = filledSlots.length;
     const compareNames = filledSlots.map(slot => `${escapeHtml(slot.player.name)} (${escapeHtml(getPlayerDataVersion(slot.player))})`);
     const detailReturnTab = activeTab === 'players' ? 'players' : 'database';
+    const detailReturnSubtab = detailReturnTab === 'database' ? currentDatabaseSubtab || 'search' : 'search';
 
     dock.innerHTML = `
         <div class="compare-dock-shell ${compareDockExpanded ? 'is-expanded' : 'is-collapsed'} ${filledCount ? 'has-items' : 'is-empty'}">
@@ -1431,7 +1625,7 @@ function renderCompareDock() {
                                     <div class="compare-slot-name">${escapeHtml(slot.player.name)}</div>
                                     <div class="compare-slot-meta">${escapeHtml(slot.player.position || '-')} · ${escapeHtml(getPlayerDataVersion(slot.player))} · CA ${escapeHtml(previewPlayer.preview_ca ?? slot.player.ca ?? '-')}</div>
                                     <div class="compare-slot-actions">
-                                        <button class="compare-slot-action" type="button" onclick="showPlayerDetail(${slot.player.uid}, {returnTab: '${detailReturnTab}', version: '${escapeHtml(getPlayerDataVersion(slot.player))}'})">查看球员</button>
+                                        <button class="compare-slot-action" type="button" onclick="showPlayerDetail(${slot.player.uid}, {returnTab: '${detailReturnTab}', returnSubtab: '${detailReturnSubtab}', version: '${escapeHtml(getPlayerDataVersion(slot.player))}'})">查看球员</button>
                                         <button class="compare-slot-action is-danger" type="button" onclick="removePlayerFromCompare(${index})">移除</button>
                                     </div>
                                 </div>
@@ -1767,13 +1961,18 @@ function backToList(options = {}) {
     clearPlayerReactionCooldownTimer();
     clearPlayerReactionBounce();
     playerReactionSubmitting = false;
-    activateDatabaseView('list');
+    currentDatabaseSubtab = dbDetailReturnState.subtab || currentDatabaseSubtab || 'search';
+    syncDatabaseSubtabUI();
+    activateDatabaseView(currentDatabaseSubtab === 'leaderboard' ? 'leaderboard' : 'list');
     currentDetailPlayer = null;
     const returnTab = dbDetailReturnState.tab || 'database';
     if (returnTab !== 'database') {
         showTab(returnTab, null, {syncHistory: false});
     } else {
         showTab('database', null, {syncHistory: false});
+        if (currentDatabaseSubtab === 'leaderboard') {
+            loadReactionLeaderboard({pushHistory: false});
+        }
     }
     if (options.pushHistory !== false && typeof syncAppHistory === 'function') {
         syncAppHistory(options.historyMode || 'replace');

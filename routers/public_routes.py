@@ -10,6 +10,7 @@ from schemas_read import (
     AttributeVersionsResponse,
     LeagueInfoResponse,
     PlayerReactionActionResponse,
+    PlayerReactionLeaderboardResponse,
     PlayerAttributeDetailResponse,
     PlayerResponse,
     TeamResponse,
@@ -97,6 +98,22 @@ def build_public_router(get_db):
             player_uid=uid,
             visitor_token=stable_visitor_token,
             reaction_type=reaction_type,
+            data_version=version,
+        )
+
+    @router.get("/api/reactions/leaderboard", response_model=PlayerReactionLeaderboardResponse)
+    def get_player_reaction_leaderboard(
+        metric: str = "flowers",
+        limit: int = 20,
+        team: str | None = None,
+        version: str | None = None,
+        db: Session = Depends(get_db),
+    ):
+        return read_service.get_player_reaction_leaderboard(
+            db,
+            metric=metric,
+            limit=limit,
+            team_name=team,
             data_version=version,
         )
 

@@ -170,6 +170,30 @@ class PlayerReactionActionResponse(BaseModel):
     summary: PlayerReactionSummaryResponse
 
 
+class PlayerReactionLeaderboardItemResponse(BaseModel):
+    uid: int
+    name: str
+    data_version: str
+    position: str
+    age: int
+    ca: int
+    pa: int
+    heigo_club: str
+    flowers: int = 0
+    eggs: int = 0
+    net_score: int = 0
+    total_reactions: int = 0
+    updated_at: Optional[datetime] = None
+
+
+class PlayerReactionLeaderboardResponse(BaseModel):
+    metric: Literal["flowers", "eggs", "net"]
+    limit: int
+    team: Optional[str] = None
+    data_version: str
+    items: list[PlayerReactionLeaderboardItemResponse] = Field(default_factory=list)
+
+
 class PlayerAttributeDetailResponse(BaseModel):
     uid: int
     name: str

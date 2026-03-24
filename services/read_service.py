@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from database import BOOTSTRAP_LOG_PATH
-from models import Team
+from models import PlayerAttribute, PlayerAttributeVersion, Team
 from repositories.attribute_repository import (
     get_default_attribute_version,
     get_player_attribute_by_uid,
@@ -16,6 +16,7 @@ from repositories.attribute_repository import (
 )
 from repositories.league_info_repository import list_league_info
 from repositories.operation_audit_repository import get_latest_operation_audit, list_operation_audits, list_recent_operation_audits
+from repositories.player_reaction_repository import list_player_reaction_leaderboard_rows
 from repositories.player_repository import get_player_by_uid, list_players_excluding_team, map_player_uid_to_team_name, search_players_by_name
 from repositories.team_repository import list_visible_teams
 from repositories.transfer_log_repository import list_recent_transfer_logs
@@ -26,6 +27,8 @@ from schemas_read import (
     OperationAuditResponse,
     PlayerResponse,
     PlayerAttributeDetailResponse,
+    PlayerReactionLeaderboardItemResponse,
+    PlayerReactionLeaderboardResponse,
     PlayerRadarMetricResponse,
     PositionScoreResponse,
     SchemaBootstrapStatusResponse,
@@ -371,6 +374,58 @@ def get_attribute_versions(db: Session) -> AttributeVersionsResponse:
     return AttributeVersionsResponse(
         available_versions=available_versions,
         default_version=get_default_attribute_version(db),
+    )
+
+
+def get_player_reaction_leaderboard(
+    db: Session,
+    *,
+    metric: str = "flowers",
+    limit: int = 20,
+    team_name: str | None = None,
+    data_version: str | None = None,
+) -> PlayerReactionLeaderboardResponse:
+    normalized_metric = str(metric or "flowers").strip().lower()
+    if normalized_metric not in {"flowers", "eggs", "net"}:
+        raise HTTPException(status_code=400, detail="排行榜类型仅支持 flowers、eggs、net。")
+
+    requested_limit = 20 if limit is None else int(limit)
+    normalized_limit = max(1, min(100, requested_limit))
+    resolved_version = resolve_attribute_version(db, data_version)
+    available_versions = list_available_attribute_versions(db)
+    attribute_model = PlayerAttributeVersion if available_versions else PlayerAttribute
+    rows = list_player_reaction_leaderboard_rows(
+        db,
+        attribute_model=attribute_model,
+        data_version=resolved_version,
+        metric=normalized_metric,
+        team_name=team_name,
+        limit=normalized_limit,
+    )
+    items = [
+        PlayerReactionLeaderboardItemResponse(
+            uid=row.uid,
+            name=row.name,
+            data_version=resolved_version,
+            position=row.position,
+            age=row.age,
+            ca=row.ca,
+            pa=row.pa,
+            heigo_club=row.heigo_club or ATTRIBUTE_FALLBACK_TEAM,
+            flowers=row.flowers,
+            eggs=row.eggs,
+            net_score=row.net_score,
+            total_reactions=row.total_reactions,
+            updated_at=row.updated_at,
+        )
+        for row in rows
+    ]
+    return PlayerReactionLeaderboardResponse(
+        metric=normalized_metric,
+        limit=normalized_limit,
+        team=team_name or None,
+        data_version=resolved_version,
+        items=items,
     )
 
 

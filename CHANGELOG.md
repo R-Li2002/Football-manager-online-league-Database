@@ -11,6 +11,7 @@ All notable changes to HEIGO are documented here.
 - Changed the NoneBot wage query so `工资` returns text-only calculation details, while `工资图` remains the explicit image command.
 - Changed the NoneBot roster query so `名单` returns text-only roster details, while `名单图` remains the explicit image command.
 - Expanded NoneBot team alias coverage with more Chinese nicknames and English abbreviations, and aligned alias targets to the actual database team names such as `Man UFC`, `Bayer 04`, and `Sporting CP`.
+- Added a player reaction leaderboard under the database tab with flowers, eggs, and net-score rankings plus team and version filters.
 
 ### Docs
 

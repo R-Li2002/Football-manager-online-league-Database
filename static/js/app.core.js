@@ -17,6 +17,7 @@ var currentDetailPlayer = null;
 var currentGrowthPreviewStep = 0;
 var currentSelectedRosterUid = null;
 var currentRosterSort = {field: '', order: 'desc'};
+var currentDatabaseSubtab = 'search';
 var dbDetailReturnState = {tab: 'database'};
 var playerCompareSlots = [null, null];
 var comparisonModalOpen = false;
@@ -42,6 +43,7 @@ Object.defineProperties(window.AppState, {
     currentGrowthPreviewStep: {enumerable: true, get: () => currentGrowthPreviewStep, set: value => { currentGrowthPreviewStep = value; }},
     currentSelectedRosterUid: {enumerable: true, get: () => currentSelectedRosterUid, set: value => { currentSelectedRosterUid = value; }},
     currentRosterSort: {enumerable: true, get: () => currentRosterSort, set: value => { currentRosterSort = value; }},
+    currentDatabaseSubtab: {enumerable: true, get: () => currentDatabaseSubtab, set: value => { currentDatabaseSubtab = value; }},
     dbDetailReturnState: {enumerable: true, get: () => dbDetailReturnState, set: value => { dbDetailReturnState = value; }},
     playerCompareSlots: {enumerable: true, get: () => playerCompareSlots, set: value => { playerCompareSlots = value; }},
     comparisonModalOpen: {enumerable: true, get: () => comparisonModalOpen, set: value => { comparisonModalOpen = value; }},
