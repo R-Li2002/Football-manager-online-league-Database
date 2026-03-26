@@ -302,6 +302,7 @@ def recalculate_team_stats(
     stat_scopes: Iterable[str] | None = None,
     refresh_mode: str | None = None,
 ):
+    # This helper recalculates ORM state first and only persists when commit=True.
     db.flush()
     normalized_team_ids = None if affected_team_ids is None else _normalize_team_ids(affected_team_ids)
     normalized_scopes = _normalize_stat_scopes(stat_scopes)
@@ -330,6 +331,8 @@ def persist_with_team_stats(
     stat_scopes: Iterable[str] | None = None,
     refresh_mode: str = TEAM_CACHE_REFRESH_MODE_WRITE_INCREMENTAL,
 ):
+    # Admin write actions should prefer this helper when a mutation and team
+    # stat refresh need to share one final commit boundary.
     recalculate_team_stats(
         db,
         commit=False,
