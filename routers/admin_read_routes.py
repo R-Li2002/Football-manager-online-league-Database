@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from database import BOOTSTRAP_LOG_PATH
 from schemas_read import (
     AuthStatusResponse,
     LogsResponse,
@@ -13,7 +14,7 @@ from schemas_read import (
     TransferLogResponse,
 )
 from schemas_write import AdminImportResponse
-from services import auth_service, read_service
+from services import admin_read_service, auth_service, read_service
 
 
 def build_admin_read_router(get_db, verify_admin, log_file: str):
@@ -36,7 +37,7 @@ def build_admin_read_router(get_db, verify_admin, log_file: str):
     @router.get("/api/admin/transfer-logs", response_model=list[TransferLogResponse])
     def get_transfer_logs(db: Session = Depends(get_db), admin: str = Depends(verify_admin)):
         require_admin(admin)
-        return read_service.get_transfer_logs(db)
+        return admin_read_service.get_transfer_logs(db)
 
     @router.get("/api/admin/team/{team_name:path}", response_model=TeamInfoResponse)
     def get_team_info(team_name: str, db: Session = Depends(get_db), admin: str = Depends(verify_admin)):
@@ -46,12 +47,12 @@ def build_admin_read_router(get_db, verify_admin, log_file: str):
     @router.get("/api/admin/logs", response_model=LogsResponse)
     def get_log_file(admin: str = Depends(verify_admin)):
         require_admin(admin)
-        return read_service.get_recent_logs(log_file)
+        return admin_read_service.get_recent_logs(log_file)
 
     @router.get("/api/admin/schema-bootstrap-status", response_model=SchemaBootstrapStatusResponse)
     def get_schema_bootstrap_status(admin: str = Depends(verify_admin)):
         require_admin(admin)
-        return read_service.get_schema_bootstrap_status()
+        return admin_read_service.get_schema_bootstrap_status(BOOTSTRAP_LOG_PATH)
 
     @router.get("/api/admin/operations-audit", response_model=list[OperationAuditResponse])
     def get_operations_audit(
@@ -61,7 +62,7 @@ def build_admin_read_router(get_db, verify_admin, log_file: str):
         admin: str = Depends(verify_admin),
     ):
         require_admin(admin)
-        return read_service.get_recent_operation_audits(db, limit=limit, category=category)
+        return admin_read_service.get_recent_operation_audits(db, limit=limit, category=category)
 
     @router.get("/api/admin/operations-audit/export")
     def export_operations_audit(
@@ -71,7 +72,7 @@ def build_admin_read_router(get_db, verify_admin, log_file: str):
         admin: str = Depends(verify_admin),
     ):
         require_admin(admin)
-        csv_text = read_service.export_operation_audits_report(db, category=category, limit=limit)
+        csv_text = admin_read_service.export_operation_audits_report(db, category=category, limit=limit)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         category_suffix = category or "all"
         filename = f"operation_audits_{category_suffix}_{timestamp}.csv"
@@ -87,6 +88,6 @@ def build_admin_read_router(get_db, verify_admin, log_file: str):
         admin: str = Depends(verify_admin),
     ):
         require_admin(admin)
-        return read_service.get_latest_formal_import_response(db)
+        return admin_read_service.get_latest_formal_import_response(db)
 
     return router

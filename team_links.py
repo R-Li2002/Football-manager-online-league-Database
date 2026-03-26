@@ -1,8 +1,7 @@
 from sqlalchemy.orm import Session
 
 from models import Player, Team
-from repositories.player_repository import get_players_by_team_name, get_team_players
-from repositories.team_repository import get_team_by_id, get_team_by_name
+from repositories.team_repository import get_team_by_name
 
 SEA_TEAM_NAME = "85\u5927\u6d77"
 

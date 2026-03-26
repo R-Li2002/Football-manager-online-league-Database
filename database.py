@@ -24,7 +24,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DATABASE_PATH}")
 BASE_DIR = Path(__file__).resolve().parent
 ALEMBIC_INI_PATH = BASE_DIR / "alembic.ini"
 ALEMBIC_SCRIPT_LOCATION = BASE_DIR / "alembic"
-BOOTSTRAP_LOG_PATH = BASE_DIR / "schema_bootstrap.log"
+BOOTSTRAP_LOG_PATH = BASE_DIR / "output" / "logs" / "schema_bootstrap.log"
 
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -151,11 +151,11 @@ def init_database(target_engine=None) -> None:
     record_schema_bootstrap_event(
         "runtime_fallback_blocked",
         active_engine,
-        "automatic runtime fallback removed; use runtime_schema_repair.py for emergency legacy repair",
+        "automatic runtime fallback removed; use scripts/maintenance/runtime_schema_repair.py for emergency legacy repair",
     )
     raise RuntimeError(
         "Alembic migrations are unavailable. Automatic runtime schema fallback has been removed. "
-        "Use python runtime_schema_repair.py only for emergency legacy repair."
+        "Use python scripts/maintenance/runtime_schema_repair.py only for emergency legacy repair."
     )
 
 

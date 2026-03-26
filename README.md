@@ -56,6 +56,15 @@ curl http://127.0.0.1:8001/health
 - 更新记录：`CHANGELOG.md`
 - Agent 约束：`AGENTS.md`
 
+## 目录补充约定
+
+- `scripts/maintenance/`：运维/排障/修复类脚本入口。
+  - `check_*` / `audit_*` / `debug_*`：只读排查脚本。
+  - `fix_*` / `recalculate_*` / `init_*`：会写数据库或生成结果的维护脚本。
+  - `runtime_schema_repair.py`：仅限应急修复使用。
+- `output/`：运行日志、截图、分析报表和其他可再生输出。
+- 联赛导入原件可保留在项目根目录或 `imports/`，但不应和普通功能改动混同。
+
 ## 当前分享与机器人链路
 
 主站当前内置图片接口：

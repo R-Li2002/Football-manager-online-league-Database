@@ -4,9 +4,27 @@ All notable changes to HEIGO are documented here.
 
 ## [Unreleased]
 
+### Refactored
+
+- Split app startup wiring into `app_bootstrap.py`, `app_security.py`, and `app_factory.py`, while keeping `main1.py` as the compatibility entrypoint for scripts and tests.
+- Extracted database search/leaderboard and compare-dock logic into separate frontend files loaded from `static/app.html`.
+- Added `services/admin_action_runner.py` to centralize admin write execution, rollback, transfer-log persistence, and team-stat refresh boundaries.
+- Refactored `services/transfer_service.py` and `services/roster_service.py` so single-player write actions reuse the same mutation runner instead of duplicating commit/log/stat-refresh flow.
+- Turned `services/admin_service.py` and `services/admin_write_service.py` into compatibility-oriented aggregation layers that point back to the unified admin write entry path.
+- Split the formal import runtime out of `import_data.py` into `imports_runtime/` modules for reporting, source resolution, validation, workbook parsing, attribute parsing, and persistence orchestration, while keeping `import_data.py` as the compatibility CLI facade.
+- Split public read response assembly out of `services/read_service.py` into `services/read_presenters.py` and `services/team_stat_source_service.py`, so `read_service.py` now focuses on query orchestration.
+- Moved operator scripts into `scripts/maintenance/` and grouped generated logs, reports, screenshots, and backup artifacts under `output/` / `data/backups/`.
+
+### Tests
+
+- Added focused unit tests in `test_transfer_service.py` and `test_roster_service.py` for transfer-log persistence, team-stat refresh, team rename consistency, and UID reference sync.
+
 ### Docs
 
 - Clarified that league-import `.csv` / `.xlsx` files are treated as raw source inputs for database import rather than normal code changes.
+- Documented the new admin write-action contract in `docs/PROJECT_MANUAL.md`, including which layers may `commit()` and which should only return mutation metadata.
+- Documented the `imports_runtime/` split and the updated import write-boundary contract in `docs/PROJECT_MANUAL.md`.
+- Updated README and `docs/PROJECT_MANUAL.md` with the new read-service boundary notes and root-directory cleanup rules.
 
 ## [0.2.1] - 2026-03-25
 

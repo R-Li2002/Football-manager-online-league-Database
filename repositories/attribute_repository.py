@@ -39,6 +39,10 @@ def resolve_attribute_version(db: Session, data_version: str | None = None) -> s
     return requested_version or DEFAULT_ATTRIBUTE_DATA_VERSION
 
 
+def get_attribute_model_for_versions(available_versions: list[str]):
+    return PlayerAttributeVersion if available_versions else PlayerAttribute
+
+
 def _query_versioned_attributes(db: Session, data_version: str):
     return db.query(PlayerAttributeVersion).filter(PlayerAttributeVersion.data_version == data_version)
 

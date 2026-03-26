@@ -21,10 +21,10 @@ from database import Base, init_database
 from migration_helpers import backfill_team_link_data
 from league_settings import create_league_info_record, get_growth_age_limit, is_supported_league_info_key
 from models import AdminUser, LeagueInfo, OperationAudit, Player, PlayerAttribute, Team, TransferLog
+from repositories.player_repository import get_players_by_team_name
+from services import admin_read_service, read_service, wage_service
 from services.league_service import TEAM_CACHE_REFRESH_MODE_WRITE_INCREMENTAL, TEAM_STAT_SCOPE_WAGE, persist_with_team_stats, recalculate_team_stats
 from services.operation_audit_service import import_legacy_admin_log_to_operation_audits
-from services import read_service, wage_service
-from team_links import get_players_by_team_name
 
 
 class Phase1Tests(unittest.TestCase):
@@ -446,8 +446,7 @@ class Phase1Tests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        with mock.patch("services.read_service.BOOTSTRAP_LOG_PATH", bootstrap_log_path):
-            status = read_service.get_schema_bootstrap_status(limit=2)
+        status = admin_read_service.get_schema_bootstrap_status(bootstrap_log_path, limit=2)
 
         self.assertTrue(status.file_exists)
         self.assertEqual(status.log_path, str(bootstrap_log_path))

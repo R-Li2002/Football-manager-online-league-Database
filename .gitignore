@@ -31,3 +31,4 @@ tmp_*.png
 .cc-connect-debug*.log
 bg_test*.txt
 output/
+data/backups/

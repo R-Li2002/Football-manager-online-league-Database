@@ -87,9 +87,9 @@ def main():
         print("- /api/teams now surfaces stat_sources metadata so callers can see which team fields are cached and which are realtime overlays.")
         print("- teams now persist the latest cache refresh mode/timestamp/scopes so the admin debug view can distinguish cache hits, realtime overlays, and recent write-driven refreshes.")
         print("- startup now requires Alembic upgrade head; automatic runtime fallback has been removed from normal app boot.")
-        print("- runtime_schema_repair.py remains available as an operator-invoked emergency repair path, and every bootstrap/repair attempt is logged to schema_bootstrap.log.")
-        print("- legacy text cleanup now normalizes historical fake-slot values to 伪名 and enables UTF-8 local startup output.")
-        print("- import_data.py now defaults to strict workbook validation against 信息总览 + 联赛名单, while legacy fallback remains opt-in for older files.")
+        print("- scripts/maintenance/runtime_schema_repair.py remains available as an operator-invoked emergency repair path, and every bootstrap/repair attempt is logged to output/logs/schema_bootstrap.log.")
+        print("- legacy text cleanup now normalizes historical fake-slot values to 浼悕 and enables UTF-8 local startup output.")
+        print("- import_data.py now defaults to strict workbook validation against 淇℃伅鎬昏 + 鑱旇禌鍚嶅崟, while legacy fallback remains opt-in for older files.")
 
 
 if __name__ == "__main__":
