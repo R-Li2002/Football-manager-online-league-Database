@@ -6,6 +6,8 @@ const vm = require('node:vm');
 const workspaceRoot = __dirname;
 const coreCode = fs.readFileSync(path.join(workspaceRoot, 'static/js/app.core.js'), 'utf8');
 const databaseCode = fs.readFileSync(path.join(workspaceRoot, 'static/js/app.database.js'), 'utf8');
+const databaseSearchCode = fs.readFileSync(path.join(workspaceRoot, 'static/js/database.search.js'), 'utf8');
+const databaseCompareCode = fs.readFileSync(path.join(workspaceRoot, 'static/js/database.compare.js'), 'utf8');
 
 function createClassList(initialClasses = []) {
     const classes = new Set(initialClasses);
@@ -138,6 +140,8 @@ const context = {
 vm.createContext(context);
 vm.runInContext(coreCode, context, {filename: 'app.core.js'});
 vm.runInContext(databaseCode, context, {filename: 'app.database.js'});
+vm.runInContext(databaseSearchCode, context, {filename: 'database.search.js'});
+vm.runInContext(databaseCompareCode, context, {filename: 'database.compare.js'});
 
 context.teams = [
     {name: 'Alpha FC', level: '超级'},

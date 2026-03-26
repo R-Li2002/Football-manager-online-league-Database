@@ -87,11 +87,11 @@ def test_export():
         with open(filename, 'wb') as f:
             f.write(output.getvalue())
         
-        print("\n✅ 导出测试成功！")
+        print("\n[OK] 导出测试成功！")
         print(f"   测试文件已保存为: {filename}")
         
     except Exception as e:
-        print(f"\n❌ 错误: {type(e).__name__}: {e}")
+        print(f"\n[ERROR] 错误: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
     finally:

@@ -95,6 +95,7 @@ class SimulationTests(unittest.TestCase):
         env["DATABASE_URL"] = f"sqlite:///{self.db_path.as_posix()}"
         env["SESSION_COOKIE_SECURE"] = "false"
         env["HEIGO_IMPORT_ROOT"] = self.temp_dir.name
+        env["HEIGO_BOOTSTRAP_ADMINS"] = "HEIGO01=HEIGOLeverkusen85"
         env["PYTHONIOENCODING"] = "utf-8"
 
         self.server = subprocess.Popen(
