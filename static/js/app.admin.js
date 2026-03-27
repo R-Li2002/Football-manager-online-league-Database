@@ -1,6 +1,7 @@
 let pendingUndoLogId = null;
 const ADMIN_UNAUTHORIZED_ERROR = 'ADMIN_UNAUTHORIZED';
 let lastAdminUnauthorizedNoticeAt = 0;
+let recentDataFeedbackReports = [];
 
 function isAdminUnauthorizedError(error) {
     return error?.code === ADMIN_UNAUTHORIZED_ERROR || error?.message === ADMIN_UNAUTHORIZED_ERROR;
@@ -154,9 +155,61 @@ function showAdminTab() {
     loadSchemaBootstrapStatus();
     loadLatestFormalImportSummary();
     loadOperationsAudit();
+    loadDataFeedbackReports();
     loadSeaPlayers();
     loadTransferLogs();
     loadLogFile();
+}
+
+function getDataFeedbackIssueTypeLabel(issueType) {
+    const labels = {
+        player_profile: '球员资料',
+        attribute_value: '属性数值',
+        team_assignment: '球队归属',
+        wage_slot: '工资 / 名额',
+        other: '其他',
+    };
+    return labels[issueType] || issueType || '未分类';
+}
+
+function renderDataFeedbackReportsCard() {
+    const container = document.getElementById('dataFeedbackReportsCard');
+    if (!container) return;
+    if (!recentDataFeedbackReports.length) {
+        container.innerHTML = '<div class="import-summary-placeholder">当前还没有收到新的数据纠错反馈。</div>';
+        return;
+    }
+
+    container.innerHTML = recentDataFeedbackReports.map(item => `
+        <div class="feedback-admin-item">
+            <div class="feedback-admin-head">
+                <span class="bootstrap-status-pill info">${escapeHtml(getDataFeedbackIssueTypeLabel(item.issue_type))}</span>
+                <span class="feedback-admin-meta">#${escapeHtml(item.id)} 路 ${escapeHtml(item.status || 'open')} 路 ${escapeHtml(item.created_at || '-')}</span>
+            </div>
+            <div class="feedback-admin-title">${escapeHtml(item.summary || '未填写摘要')}</div>
+            <div class="feedback-admin-meta">
+                ${item.player_uid ? `UID：${escapeHtml(item.player_uid)}` : 'UID：未填写'}
+                ${item.player_name ? ` 路 球员：${escapeHtml(item.player_name)}` : ''}
+                ${item.source_page ? ` 路 来源：${escapeHtml(item.source_page)}` : ''}
+            </div>
+            <div class="feedback-admin-body">${escapeHtml(item.details || '')}</div>
+            ${item.suggested_correction ? `<div class="feedback-admin-extra"><strong>建议更正：</strong>${escapeHtml(item.suggested_correction)}</div>` : ''}
+            ${item.contact ? `<div class="feedback-admin-extra"><strong>联系方式：</strong>${escapeHtml(item.contact)}</div>` : ''}
+        </div>
+    `).join('');
+}
+
+async function loadDataFeedbackReports() {
+    try {
+        const result = await adminJsonRequest('/api/admin/data-feedback?limit=20', {silentUnauthorized: true});
+        if (!result) return;
+        const {response: res, data} = result;
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        recentDataFeedbackReports = Array.isArray(data) ? data : [];
+    } catch (error) {
+        recentDataFeedbackReports = [];
+    }
+    renderDataFeedbackReportsCard();
 }
 
 function formatDatasetCounters(summary) {

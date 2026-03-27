@@ -485,6 +485,20 @@
                         </div>
                     </div>
 
+                    <div class="admin-cluster admin-section">
+                        <div class="maintenance-header">
+                            <h3>数据纠错反馈</h3>
+                            <p>这里会显示站点公开“数据纠错”页面提交的最新反馈，便于管理员集中核对。</p>
+                        </div>
+                        <div class="operations-audit-actions" style="margin-bottom: 14px;">
+                            <button class="btn btn-secondary" onclick="loadDataFeedbackReports()">刷新列表</button>
+                            <a class="btn btn-secondary" href="/data-feedback" target="_blank" rel="noopener noreferrer">打开公开纠错页</a>
+                        </div>
+                        <div id="dataFeedbackReportsCard" class="import-summary-card">
+                            <div class="import-summary-placeholder">这里会显示最近收到的数据纠错反馈。</div>
+                        </div>
+                    </div>
+
                     <div class="admin-log-grid">
                         <div class="admin-section">
                             <h3>大海球员列表</h3>
@@ -503,6 +517,19 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        <div class="footer-links-band">
+            <a class="footer-link-card" href="/updates">
+                <span class="footer-link-kicker">Project Updates</span>
+                <strong>更新记录</strong>
+                <span>查看网站和项目本身的版本历史</span>
+            </a>
+            <a class="footer-link-card" href="/data-feedback">
+                <span class="footer-link-kicker">Data Feedback</span>
+                <strong>数据纠错</strong>
+                <span>提交球员资料、归属和数值问题反馈</span>
+            </a>
         </div>
 
         <footer>

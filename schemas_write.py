@@ -139,3 +139,15 @@ class PlayerUpdateRequest(BaseModel):
 class UpdateUidRequest(BaseModel):
     old_uid: int
     new_uid: int
+
+
+class DataFeedbackRequest(BaseModel):
+    player_uid: Optional[int] = None
+    player_name: Optional[str] = None
+    issue_type: str
+    summary: str
+    details: str
+    suggested_correction: Optional[str] = None
+    contact: Optional[str] = None
+    source_page: Optional[str] = None
+    website: Optional[str] = ""

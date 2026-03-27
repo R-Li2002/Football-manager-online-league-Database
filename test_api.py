@@ -45,6 +45,15 @@ def main() -> int:
     for player in players:
         print(f"  - {player['name']}: {player['team_name']}")
 
+    print("\n=== 检查更新记录与数据纠错页面 ===")
+    updates_res = requests.get(f"{BASE_URL}/updates", timeout=10)
+    updates_res.raise_for_status()
+    print(f"/updates -> {updates_res.status_code}")
+
+    feedback_res = requests.get(f"{BASE_URL}/data-feedback", timeout=10)
+    feedback_res.raise_for_status()
+    print(f"/data-feedback -> {feedback_res.status_code}")
+
     return 0
 
 

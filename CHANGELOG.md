@@ -4,6 +4,11 @@ All notable changes to HEIGO are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Added public `/updates` and `/data-feedback` pages, linked from the main footer so users can查看项目更新历史并提交数据纠错反馈。
+- Added SQLite-backed `data_feedback_reports` storage and an admin read入口 for reviewing the latest public data-feedback submissions.
+
 ### Refactored
 
 - Split app startup wiring into `app_bootstrap.py`, `app_security.py`, and `app_factory.py`, while keeping `main1.py` as the compatibility entrypoint for scripts and tests.

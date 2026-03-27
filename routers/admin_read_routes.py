@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from database import BOOTSTRAP_LOG_PATH
 from schemas_read import (
     AuthStatusResponse,
+    DataFeedbackReportResponse,
     LogsResponse,
     OperationAuditResponse,
     PlayerResponse,
@@ -89,5 +90,15 @@ def build_admin_read_router(get_db, verify_admin, log_file: str):
     ):
         require_admin(admin)
         return admin_read_service.get_latest_formal_import_response(db)
+
+    @router.get("/api/admin/data-feedback", response_model=list[DataFeedbackReportResponse])
+    def get_data_feedback_reports(
+        limit: int = 20,
+        status: str | None = None,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_admin),
+    ):
+        require_admin(admin)
+        return admin_read_service.get_recent_data_feedback_reports(db, status=status, limit=limit)
 
     return router

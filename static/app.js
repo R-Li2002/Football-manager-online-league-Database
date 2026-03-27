@@ -26,6 +26,7 @@ const AppModules = {
                 syncAdminPanelVisibility();
             }
             if (typeof renderOperationsAuditCard === 'function') renderOperationsAuditCard();
+            if (typeof renderDataFeedbackReportsCard === 'function') renderDataFeedbackReportsCard();
             return;
         }
         if (typeof showAdminLoginPanel === 'function') {

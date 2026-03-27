@@ -8,15 +8,18 @@ from sqlalchemy.orm import Session
 from schemas_read import (
     AttributeSearchResponse,
     AttributeVersionsResponse,
+    DataFeedbackSubmitResponse,
     LeagueInfoResponse,
     PlayerReactionActionResponse,
     PlayerReactionLeaderboardResponse,
     PlayerAttributeDetailResponse,
     PlayerResponse,
+    ProjectUpdateEntryResponse,
     TeamResponse,
     WageDetailResponse,
 )
-from services import export_service, read_service, reaction_service
+from schemas_write import DataFeedbackRequest
+from services import data_feedback_service, export_service, project_update_service, read_service, reaction_service
 
 REACTION_VISITOR_COOKIE_NAME = "heigo_reaction_visitor"
 REACTION_VISITOR_COOKIE_MAX_AGE_SECONDS = 31536000
@@ -129,5 +132,13 @@ def build_public_router(get_db):
     @router.get("/api/player/wage-detail/{uid}", response_model=WageDetailResponse)
     def get_player_wage_detail(uid: int, db: Session = Depends(get_db)):
         return read_service.get_player_wage_detail(db, uid)
+
+    @router.get("/api/project-updates", response_model=list[ProjectUpdateEntryResponse])
+    def get_project_updates(limit: int = 20):
+        return project_update_service.list_project_updates(limit=limit)
+
+    @router.post("/api/data-feedback", response_model=DataFeedbackSubmitResponse, status_code=201)
+    def submit_data_feedback(request: DataFeedbackRequest, db: Session = Depends(get_db)):
+        return data_feedback_service.submit_data_feedback(db, request)
 
     return router

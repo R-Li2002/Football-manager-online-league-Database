@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据纠错 - HEIGO</title>
+    <link rel="icon" href="/favicon.ico">
+    <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="light-mode">
+    <div class="subpage-shell">
+        <header class="subpage-header surface-card">
+            <div>
+                <span class="panel-kicker">Data Feedback</span>
+                <h1>数据纠错</h1>
+                <p>如果你发现球员资料、球队归属、工资名额或其他数据库信息有误，可以在这里提交反馈。</p>
+            </div>
+            <div class="subpage-actions">
+                <a class="btn btn-secondary" href="/">返回主站</a>
+            </div>
+        </header>
+
+        <main class="subpage-content subpage-grid">
+            <section class="surface-card">
+                <div class="subpage-section-head">
+                    <h2>提交纠错信息</h2>
+                    <p>当前版本会将反馈直接保存到后台，由管理员人工查看和处理。</p>
+                </div>
+                <form id="dataFeedbackForm" class="feedback-form">
+                    <div class="feedback-grid">
+                        <div class="form-group">
+                            <label for="feedbackPlayerUid">球员 UID</label>
+                            <input type="number" id="feedbackPlayerUid" placeholder="如果知道 UID，优先填写">
+                        </div>
+                        <div class="form-group">
+                            <label for="feedbackPlayerName">球员姓名</label>
+                            <input type="text" id="feedbackPlayerName" placeholder="例如：Joao Neves">
+                        </div>
+                        <div class="form-group">
+                            <label for="feedbackIssueType">问题类型</label>
+                            <select id="feedbackIssueType">
+                                <option value="player_profile">球员资料</option>
+                                <option value="attribute_value">属性数值</option>
+                                <option value="team_assignment">球队归属</option>
+                                <option value="wage_slot">工资 / 名额</option>
+                                <option value="other">其他</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="feedbackContact">联系方式（可选）</label>
+                            <input type="text" id="feedbackContact" placeholder="QQ / 邮箱 / 备注">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="feedbackSummary">问题摘要</label>
+                        <input type="text" id="feedbackSummary" maxlength="160" placeholder="一句话描述问题，例如：该球员俱乐部归属错误" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="feedbackDetails">详细说明</label>
+                        <textarea id="feedbackDetails" rows="6" placeholder="请尽量写清楚你看到的内容、你认为正确的内容，以及依据。" required></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="feedbackSuggestedCorrection">建议更正内容（可选）</label>
+                        <textarea id="feedbackSuggestedCorrection" rows="4" placeholder="例如：应从 FK Bodø/Glimt 改为 Benfica"></textarea>
+                    </div>
+
+                    <input type="text" id="feedbackWebsite" class="feedback-honeypot" tabindex="-1" autocomplete="off">
+
+                    <div class="feedback-form-actions">
+                        <button type="submit" class="btn btn-primary">提交反馈</button>
+                        <span class="feedback-form-note">提交后会生成一条后台记录，便于后续核对。</span>
+                    </div>
+                </form>
+            </section>
+
+            <aside class="surface-card">
+                <div class="subpage-section-head">
+                    <h2>填写建议</h2>
+                </div>
+                <div class="feedback-tips">
+                    <div class="feedback-tip">
+                        <strong>能填 UID 就填 UID</strong>
+                        <p>这样后台定位更快，也更不容易和重名球员混淆。</p>
+                    </div>
+                    <div class="feedback-tip">
+                        <strong>尽量写清“现在是什么”与“应改成什么”</strong>
+                        <p>例如当前球队、正确球队、你判断的依据。</p>
+                    </div>
+                    <div class="feedback-tip">
+                        <strong>联系方式可以不填</strong>
+                        <p>如果你愿意留个 QQ 或邮箱，后续核对会更方便。</p>
+                    </div>
+                </div>
+                <div id="feedbackSubmitResult" class="feedback-submit-result"></div>
+            </aside>
+        </main>
+    </div>
+
+    <script src="/static/js/data-feedback.page.js"></script>
+</body>
+</html>

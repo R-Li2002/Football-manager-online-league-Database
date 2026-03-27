@@ -38,6 +38,41 @@ class OperationAuditResponse(BaseModel):
     created_at: Optional[datetime] = None
 
 
+class ProjectUpdateSectionResponse(BaseModel):
+    heading: str
+    items: list[str] = Field(default_factory=list)
+
+
+class ProjectUpdateEntryResponse(BaseModel):
+    version: str
+    release_date: Optional[str] = None
+    is_unreleased: bool = False
+    sections: list[ProjectUpdateSectionResponse] = Field(default_factory=list)
+
+
+class DataFeedbackReportResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    player_uid: Optional[int] = None
+    player_name: Optional[str] = None
+    issue_type: str
+    summary: str
+    details: str
+    suggested_correction: Optional[str] = None
+    contact: Optional[str] = None
+    source_page: Optional[str] = None
+    status: str
+    created_at: Optional[datetime] = None
+
+
+class DataFeedbackSubmitResponse(BaseModel):
+    success: bool
+    report_id: int
+    message: str
+    status: str
+
+
 class PlayerResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

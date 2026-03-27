@@ -10,6 +10,8 @@ from services import read_service, share_page_service, share_png_service, share_
 
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 FRONTEND_FILE = STATIC_DIR / "app.html"
+UPDATES_FILE = STATIC_DIR / "updates.html"
+DATA_FEEDBACK_FILE = STATIC_DIR / "data-feedback.html"
 FAVICON_FILE = STATIC_DIR / "favicon.ico"
 FAVICON_FALLBACK_FILE = STATIC_DIR / "heigo.jpeg"
 
@@ -69,6 +71,14 @@ def build_frontend_router(
     @router.get("/", response_class=FileResponse)
     def read_root():
         return FileResponse(FRONTEND_FILE, media_type="text/html; charset=utf-8")
+
+    @router.get("/updates", response_class=FileResponse)
+    def read_updates_page():
+        return FileResponse(UPDATES_FILE, media_type="text/html; charset=utf-8")
+
+    @router.get("/data-feedback", response_class=FileResponse)
+    def read_data_feedback_page():
+        return FileResponse(DATA_FEEDBACK_FILE, media_type="text/html; charset=utf-8")
 
     @router.get("/favicon.ico", include_in_schema=False)
     def read_favicon():

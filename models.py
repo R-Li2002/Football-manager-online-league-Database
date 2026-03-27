@@ -312,3 +312,19 @@ class OperationAudit(Base):
         except json.JSONDecodeError:
             return {}
         return payload if isinstance(payload, dict) else {}
+
+
+class DataFeedbackReport(Base):
+    __tablename__ = "data_feedback_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    player_uid = Column(Integer, index=True)
+    player_name = Column(String, index=True)
+    issue_type = Column(String, index=True, nullable=False)
+    summary = Column(String, nullable=False)
+    details = Column(Text, nullable=False)
+    suggested_correction = Column(Text)
+    contact = Column(String)
+    source_page = Column(String)
+    status = Column(String, index=True, nullable=False, default="open")
+    created_at = Column(DateTime, index=True)

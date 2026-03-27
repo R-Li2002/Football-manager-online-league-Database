@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 
 from repositories.operation_audit_repository import get_latest_operation_audit, list_operation_audits, list_recent_operation_audits
 from repositories.transfer_log_repository import list_recent_transfer_logs
-from schemas_read import LogsResponse, OperationAuditResponse, SchemaBootstrapStatusResponse
+from schemas_read import DataFeedbackReportResponse, LogsResponse, OperationAuditResponse, SchemaBootstrapStatusResponse
 from schemas_write import AdminImportResponse
+from services.data_feedback_service import get_data_feedback_reports
 from services.operation_audit_service import export_operation_audits_csv
 
 
@@ -103,3 +104,12 @@ def get_latest_formal_import_response(db: Session) -> Optional[AdminImportRespon
 def export_operation_audits_report(db: Session, category: str | None = None, limit: int | None = None) -> str:
     records = list_operation_audits(db, category=category, limit=limit)
     return export_operation_audits_csv(records)
+
+
+def get_recent_data_feedback_reports(
+    db: Session,
+    *,
+    status: str | None = None,
+    limit: int = 50,
+) -> list[DataFeedbackReportResponse]:
+    return get_data_feedback_reports(db, status=status, limit=limit)
