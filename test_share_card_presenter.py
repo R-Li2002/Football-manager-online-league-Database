@@ -1,7 +1,9 @@
 ﻿import unittest
 
+from services.share_card_model_service import build_roster_share_card_model
 from services.share_page_service import build_player_share_card_model, build_preview_player
 from test_internal_share_page import _sample_player_detail
+from test_internal_share_page import _sample_team_info, _sample_team_players
 
 
 class ShareCardPresenterTests(unittest.TestCase):
@@ -48,3 +50,26 @@ class ShareCardPresenterTests(unittest.TestCase):
         technical_labels = [item.label for item in model.attribute_groups[0].items]
         self.assertIn("反应", technical_labels)
         self.assertIn("手控球", technical_labels)
+
+    def test_roster_card_model_expands_canvas_for_twenty_players(self):
+        players = _sample_team_players()
+        while len(players) < 20:
+            idx = len(players)
+            players.append(
+                players[0].model_copy(
+                    update={
+                        "uid": 24048100 + idx,
+                        "name": f"Barcelona Player {idx + 1}",
+                        "age": 20 + idx,
+                        "ca": 140 + idx,
+                        "pa": 155 + idx,
+                        "wage": 0.5 + idx * 0.01,
+                        "slot_type": "8M" if idx % 5 == 0 else "",
+                    }
+                )
+            )
+
+        model = build_roster_share_card_model("Barcelona", players, team_info=_sample_team_info(), page=1)
+
+        self.assertEqual(len(model.player_rows), 20)
+        self.assertGreaterEqual(model.canvas_height, 1330)

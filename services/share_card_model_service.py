@@ -580,5 +580,5 @@ def build_roster_share_card_model(
         total_pages=total_pages,
         total_players=total_players,
         canvas_width=1440,
-        canvas_height=1180,
+        canvas_height=max(1180, 490 + len(player_rows) * 42),
     )
