@@ -8,7 +8,7 @@ var lastSchemaBootstrapStatus = null;
 var recentOperationAudits = [];
 var currentOperationAuditCategory = '';
 var availableAttributeVersions = [];
-var currentAttributeVersion = localStorage.getItem('attributeDataVersion') || '';
+var currentAttributeVersion = '';
 var isAdmin = false;
 var adminEntryUnlocked = false;
 var isDarkMode = false;
@@ -80,9 +80,6 @@ function setCurrentAttributeVersion(version, options = {}) {
     const normalized = normalizeAttributeVersion(version);
     const fallbackVersion = availableAttributeVersions[0] || normalized;
     currentAttributeVersion = availableAttributeVersions.includes(normalized) ? normalized : fallbackVersion;
-    if (options.persist !== false) {
-        localStorage.setItem('attributeDataVersion', currentAttributeVersion || '');
-    }
     return currentAttributeVersion;
 }
 
@@ -97,8 +94,8 @@ async function loadAttributeVersionCatalog(options = {}) {
     const response = await fetch('/api/attributes/versions');
     const payload = await response.json();
     availableAttributeVersions = Array.isArray(payload.available_versions) ? payload.available_versions : [];
-    const savedVersion = normalizeAttributeVersion(localStorage.getItem('attributeDataVersion'));
-    setCurrentAttributeVersion(savedVersion || payload.default_version, {persist: true});
+    const activeVersion = normalizeAttributeVersion(currentAttributeVersion);
+    setCurrentAttributeVersion(activeVersion || payload.default_version, {persist: false});
     return payload;
 }
 
