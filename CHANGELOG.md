@@ -8,6 +8,7 @@ All notable changes to HEIGO are documented here.
 
 - 新增公开页面 `/updates` 与 `/data-feedback`，并从主站页脚提供入口，方便用户查看项目更新历史和提交数据纠错反馈。
 - 新增基于 SQLite 的 `data_feedback_reports` 留档能力，并提供后台只读入口查看最近收到的公开纠错反馈。
+- 新增 NoneBot `球员图 <名字或UID> +1~+5 [版本]` 命令形态，可直接请求主站成长预览分享图。
 
 ### Refactored
 
@@ -19,6 +20,7 @@ All notable changes to HEIGO are documented here.
 - 将正式导入运行时从 `import_data.py` 拆分到 `imports_runtime/`，分别承接报告、来源解析、校验、工作簿解析、属性解析与持久化编排，同时保留 `import_data.py` 兼容 CLI facade。
 - 将公开读响应的组装逻辑从 `services/read_service.py` 拆分到 `services/read_presenters.py` 与 `services/team_stat_source_service.py`，使 `read_service.py` 更专注于查询编排。
 - 将运维脚本迁移到 `scripts/maintenance/`，并把日志、报表、截图和备份产物归类到 `output/` / `data/backups/`。
+- 移除前端详情页、对比页与分享图中的预览 CA 数值推算，成长预览仅保留 `+N` 步进与逆足 `+1` 展示，避免误导用户。
 
 ### Tests
 

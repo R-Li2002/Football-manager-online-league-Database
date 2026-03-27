@@ -293,11 +293,6 @@ function clampAttributeValue(value) {
     return Math.max(1, Math.min(20, Math.floor(Number(value) || 0)));
 }
 
-function getPreviewCaGain(step) {
-    const lookup = [0, 11, 30, 50, 70, 90];
-    return lookup[clampGrowthPreviewStep(step)] || 0;
-}
-
 function getWeakFootPreview(player, step) {
     if (clampGrowthPreviewStep(step) < 5) return null;
     const left = Number(player.left_foot) || 0;
@@ -331,7 +326,6 @@ function buildPreviewPlayer(player, step) {
     }
 
     previewPlayer.preview_step = previewStep;
-    previewPlayer.preview_ca = (Number(player.ca) || 0) + getPreviewCaGain(previewStep);
     previewPlayer.preview_weak_foot = weakFootPreview;
     return previewPlayer;
 }
@@ -676,13 +670,12 @@ function formatHeight(value) {
 }
 
 function buildPlayerInfoRows(player, previewPlayer) {
-    const caGrowth = getPreviewCaGain(currentGrowthPreviewStep);
     return [
         ['国籍', player.nationality || '-'],
         ['年龄', player.age ?? '-'],
         ['生日', player.birth_date || '未知'],
         ['位置', player.position || '-'],
-        ['CA / PA', `<strong>${escapeHtml(previewPlayer.preview_ca ?? player.ca ?? '-')}</strong>${caGrowth > 0 ? `<span class="growth-indicator growth-positive">(+${caGrowth})</span>` : ''} / ${escapeHtml(player.pa ?? '-')}`, true],
+        ['CA / PA', `${escapeHtml(player.ca ?? '-')} / ${escapeHtml(player.pa ?? '-')}`],
         ['左脚 / 右脚', `${previewPlayer.left_foot ?? '-'} / ${previewPlayer.right_foot ?? '-'}`],
         ['身高', formatHeight(player.height)],
         ['HEIGO俱乐部', `<span class="${player.heigo_club !== '大海' ? 'heigo-club' : ''}">${escapeHtml(player.heigo_club || '-')}</span>`, true],
@@ -1118,7 +1111,6 @@ function renderGrowthPreviewToolbar(player) {
     currentGrowthPreviewStep = clampGrowthPreviewStep(currentGrowthPreviewStep);
 
     const labels = ['当前', '+1', '+2', '+3', '+4', '+5'];
-    const previewCa = (Number(player.ca) || 0) + getPreviewCaGain(currentGrowthPreviewStep);
     const weakFootPreview = getWeakFootPreview(player, currentGrowthPreviewStep);
     const compareSlotIndex = getCompareSlotIndex(player);
     const versionSource = (availableAttributeVersions && availableAttributeVersions.length)
@@ -1174,7 +1166,6 @@ function renderGrowthPreviewToolbar(player) {
                     >
                 </div>
                 <div class="foot-summary">
-                    <span class="foot-badge">预览 CA <strong>${previewCa}</strong></span>
                     ${weakFootPreview ? `<span class="foot-badge">${weakFootPreview.label}逆足 <strong>+1</strong></span>` : ''}
                 </div>
             </div>

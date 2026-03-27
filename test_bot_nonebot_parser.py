@@ -17,6 +17,13 @@ class BotNoneBotParserTests(unittest.TestCase):
         self.assertEqual(command.keyword, "梅西")
         self.assertEqual(command.version, "2026-03")
 
+    def test_parse_player_image_command_with_growth_step(self):
+        command = parse_command("球员图 梅西 +2 v2026-03")
+        self.assertEqual(command.command_type, "player_image")
+        self.assertEqual(command.keyword, "梅西")
+        self.assertEqual(command.step, 2)
+        self.assertEqual(command.version, "2026-03")
+
     def test_parse_roster_command_with_page(self):
         command = parse_command("名单 Barcelona 第 2 页")
         self.assertEqual(command.command_type, "roster_text")

@@ -5,13 +5,13 @@ from test_internal_share_page import _sample_player_detail
 
 
 class ShareCardPresenterTests(unittest.TestCase):
-    def test_preview_player_applies_growth_and_ca_gain(self):
+    def test_preview_player_applies_growth_without_preview_ca(self):
         player = _sample_player_detail()
 
         preview = build_preview_player(player, 5)
 
         self.assertEqual(preview["preview_step"], 5)
-        self.assertEqual(preview["preview_ca"], player.ca + 90)
+        self.assertNotIn("preview_ca", preview)
         self.assertEqual(preview["passing"], min(20, player.passing + 5))
 
     def test_preview_player_applies_weak_foot_bonus_at_step_five(self):

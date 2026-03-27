@@ -9,11 +9,17 @@ from .parser import parse_command
 
 HELP_TEXT = (
     "可用命令:\n"
-    "球员图 <名字或UID> [版本v2026-03]\n"
+    "球员图 <名字或UID> [+1~+5] [版本v2026-03]\n"
     "工资 <名字或UID>\n"
     "工资图 <名字或UID>\n"
     "名单 <球队名> [第2页]\n"
-    "名单图 <球队名> [第2页]"
+    "名单图 <球队名> [第2页]\n"
+    "\n"
+    "示例:\n"
+    "球员图 梅西\n"
+    "球员图 梅西 +2 v2026-03\n"
+    "工资图 贝林厄姆\n"
+    "名单图 巴萨 第2页"
 )
 
 TEAM_ALIASES = {
@@ -127,9 +133,11 @@ class HeigoBotService:
         url = self.signer.build_player_png_url(
             int(detail["uid"]),
             version=command.version or detail.get("data_version"),
+            step=command.step,
             theme=self.settings.bot_default_theme,
         )
-        return ReplySpec(reply_type="image", text=f"{detail['name']} | UID {detail['uid']}", image_url=url)
+        preview_label = f"成长预览 +{command.step}" if command.step > 0 else "当前属性"
+        return ReplySpec(reply_type="image", text=f"{detail['name']} | UID {detail['uid']} | {preview_label}", image_url=url)
 
     async def _handle_wage_image(self, command: CommandSpec) -> ReplySpec:
         detail, error = await self._resolve_player(command)

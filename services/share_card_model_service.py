@@ -291,11 +291,6 @@ def _clamp_growth_preview_step(step: int | None) -> int:
     return max(0, min(5, int(step or 0)))
 
 
-def _preview_ca_gain(step: int) -> int:
-    lookup = [0, 11, 30, 50, 70, 90]
-    return lookup[_clamp_growth_preview_step(step)]
-
-
 def _weak_foot_preview(player: PlayerAttributeDetailResponse, step: int) -> tuple[str, int] | None:
     if step < 5:
         return None
@@ -329,7 +324,6 @@ def build_preview_player(player: PlayerAttributeDetailResponse, step: int) -> di
             payload["right_foot"] = foot_value
 
     payload["preview_step"] = preview_step
-    payload["preview_ca"] = int(player.ca or 0) + _preview_ca_gain(preview_step)
     payload["preview_weak_foot"] = weak_foot
     return payload
 
@@ -435,7 +429,7 @@ def _build_info_rows(player: PlayerAttributeDetailResponse, preview_player: dict
         ShareInfoRow("年龄", str(player.age or "-")),
         ShareInfoRow("生日", player.birth_date or "未知"),
         ShareInfoRow("位置", player.position or "-"),
-        ShareInfoRow("CA / PA", f"{int(preview_player.get('preview_ca') or player.ca or 0)} / {int(player.pa or 0)}"),
+        ShareInfoRow("CA / PA", f"{int(player.ca or 0)} / {int(player.pa or 0)}"),
         ShareInfoRow("左脚 / 右脚", f"{preview_player.get('left_foot', '-')} / {preview_player.get('right_foot', '-')}"),
         ShareInfoRow("身高", _format_height(player.height)),
         ShareInfoRow("HEIGO俱乐部", player.heigo_club or "-"),

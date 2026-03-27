@@ -16,6 +16,7 @@ class CommandSpec:
     keyword: str = ""
     uid: int | None = None
     team_name: str | None = None
+    step: int = 0
     page: int = 1
     version: str | None = None
 

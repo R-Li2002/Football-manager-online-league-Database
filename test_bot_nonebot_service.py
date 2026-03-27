@@ -61,7 +61,7 @@ class _FakeApiClient:
 
 class _FakeSigner:
     def build_player_png_url(self, uid: int, *, version: str | None = None, step: int = 0, theme: str | None = None):
-        return f"https://example.com/player/{uid}.png"
+        return f"https://example.com/player/{uid}.png?step={step}"
 
     def build_wage_png_url(self, uid: int, *, theme: str | None = None):
         return f"https://example.com/wage/{uid}.png"
@@ -90,6 +90,15 @@ class BotNoneBotServiceTests(unittest.TestCase):
         reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="player_image", raw_text="", normalized_text="", keyword="Dani")))
         self.assertEqual(reply.reply_type, "image")
         self.assertIn("player/24048100.png", reply.image_url)
+        self.assertIn("当前属性", reply.text)
+
+    def test_handle_player_image_with_growth_preview_step(self):
+        reply = asyncio.run(
+            self.service.handle_command(CommandSpec(command_type="player_image", raw_text="", normalized_text="", keyword="Dani", step=2))
+        )
+        self.assertEqual(reply.reply_type, "image")
+        self.assertIn("step=2", reply.image_url)
+        self.assertIn("成长预览 +2", reply.text)
 
     def test_handle_wage_image(self):
         reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="wage_image", raw_text="", normalized_text="", keyword="Dani")))
