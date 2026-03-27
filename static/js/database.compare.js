@@ -66,7 +66,7 @@ function queuePlayerForCompare(player) {
     if (emptyIndex === -1) {
         compareDockExpanded = true;
         renderCompareDock();
-        showModal('瀵规瘮澶瑰凡婊?, '鏈€澶氭敮鎸佸悓鏃跺姣?2 鍚嶇悆鍛橈紝璇峰厛浠庡彸渚у姣斿す绉婚櫎涓€鍚嶅悗鍐嶅姞鍏ャ€?);
+        showModal('对比夹已满', '最多同时对比 2 名球员，请先从右侧对比夹移除一名后再加入。');
         return;
     }
 
@@ -141,37 +141,37 @@ function renderCompareDock() {
                     <div class="compare-dock-head">
                         <div>
                             <span class="panel-kicker">Compare Folder</span>
-                            <h4>瀵规瘮澶?/h4>
-                            <div class="compare-dock-summary">${compareNames.length ? compareNames.join(' vs ') : '杩樻病鏈夊姞鍏ュ姣旂悆鍛?}</div>
+                            <h4>对比夹</h4>
+                            <div class="compare-dock-summary">${compareNames.length ? compareNames.join(' vs ') : '还没有加入对比球员'}</div>
                         </div>
-                        ${filledCount ? '<button class="compare-dock-clear" type="button" onclick="clearCompareSlots()">娓呯┖</button>' : ''}
+                        ${filledCount ? '<button class="compare-dock-clear" type="button" onclick="clearCompareSlots()">清空</button>' : ''}
                     </div>
                     <div class="compare-slot-list">
                         ${playerCompareSlots.map((slot, index) => {
                             if (!slot) {
                                 return `
                                     <div class="compare-slot is-empty">
-                                        <span class="compare-slot-index">妲戒綅 ${index + 1}</span>
-                                        <p>鍦ㄧ悆鍛樿鎯呴〉鐐瑰嚮鈥滃姞鍏ュ姣斺€?/p>
+                                        <span class="compare-slot-index">槽位 ${index + 1}</span>
+                                        <p>在球员详情页点击“加入对比”</p>
                                     </div>
                                 `;
                             }
                             const previewPlayer = buildPreviewPlayer(slot.player, slot.step);
                             return `
                                 <div class="compare-slot is-filled is-${index === 0 ? 'blue' : 'red'}">
-                                    <span class="compare-slot-index">妲戒綅 ${index + 1}</span>
+                                    <span class="compare-slot-index">槽位 ${index + 1}</span>
                                     <div class="compare-slot-name">${escapeHtml(slot.player.name)}</div>
                                     <div class="compare-slot-meta">${escapeHtml(slot.player.position || '-')} 路 ${escapeHtml(getPlayerDataVersion(slot.player))} 路 成长预览 +${clampGrowthPreviewStep(slot.step)}</div>
                                     <div class="compare-slot-actions">
-                                        <button class="compare-slot-action" type="button" onclick="showPlayerDetail(${slot.player.uid}, {returnTab: '${detailReturnTab}', returnSubtab: '${detailReturnSubtab}', version: '${escapeHtml(getPlayerDataVersion(slot.player))}'})">鏌ョ湅鐞冨憳</button>
-                                        <button class="compare-slot-action is-danger" type="button" onclick="removePlayerFromCompare(${index})">绉婚櫎</button>
+                                        <button class="compare-slot-action" type="button" onclick="showPlayerDetail(${slot.player.uid}, {returnTab: '${detailReturnTab}', returnSubtab: '${detailReturnSubtab}', version: '${escapeHtml(getPlayerDataVersion(slot.player))}'})">查看球员</button>
+                                        <button class="compare-slot-action is-danger" type="button" onclick="removePlayerFromCompare(${index})">移除</button>
                                     </div>
                                 </div>
                             `;
                         }).join('')}
                     </div>
                     <div class="compare-dock-actions">
-                        <button class="btn btn-primary compare-run-button" type="button" onclick="openComparisonWorkspace()" ${filledCount < 2 ? 'disabled' : ''}>鏌ョ湅瀵规瘮椤?/button>
+                        <button class="btn btn-primary compare-run-button" type="button" onclick="openComparisonWorkspace()" ${filledCount < 2 ? 'disabled' : ''}>查看对比页</button>
                     </div>
                 </div>
             ` : ''}
@@ -180,10 +180,10 @@ function renderCompareDock() {
                 type="button"
                 onclick="toggleCompareDock()"
                 aria-expanded="${compareDockExpanded}"
-                aria-label="${compareDockExpanded ? '鏀惰捣瀵规瘮澶? : '灞曞紑瀵规瘮澶?}"
+                aria-label="${compareDockExpanded ? '收起对比夹' : '展开对比夹'}"
             >
                 <span class="compare-dock-handle-dot">${filledCount ? filledCount : '+'}</span>
-                <span class="compare-dock-handle-label">${compareDockExpanded ? '鏀惰捣' : '瀵规瘮澶?}</span>
+                <span class="compare-dock-handle-label">${compareDockExpanded ? '收起' : '对比夹'}</span>
                 <span class="compare-dock-handle-meta">${filledCount}/2</span>
             </button>
         </div>
@@ -191,7 +191,7 @@ function renderCompareDock() {
 }
 
 function buildComparisonSlider(slotIndex, slot) {
-    const labels = ['褰撳墠', '+1', '+2', '+3', '+4', '+5'];
+    const labels = ['当前', '+1', '+2', '+3', '+4', '+5'];
     const accentClass = slotIndex === 0 ? 'is-blue' : 'is-red';
     return `
         <div class="comparison-slider-box ${accentClass}">
@@ -205,7 +205,7 @@ function buildComparisonSlider(slotIndex, slot) {
                 max="5"
                 step="1"
                 value="${clampGrowthPreviewStep(slot.step)}"
-                aria-label="瀵规瘮鎴愰暱棰勮"
+                aria-label="对比成长预览"
                 oninput="setCompareSlotGrowthStep(${slotIndex}, this.value)"
             >
         </div>
@@ -350,7 +350,7 @@ function setCompareSlotGrowthStep(slotIndex, step) {
 function openComparisonWorkspace() {
     normalizeCompareSlots();
     if (playerCompareSlots.filter(Boolean).length < 2) {
-        showModal('鏃犳硶寮€濮嬪姣?, '璇峰厛鍦ㄧ悆鍛樿鎯呴〉鍔犲叆涓ゅ悕鐞冨憳锛屽啀鎵撳紑瀵规瘮鐣岄潰銆?);
+        showModal('无法开始对比', '请先在球员详情页加入两名球员，再打开对比界面。');
         return;
     }
     comparisonModalOpen = true;
@@ -375,7 +375,7 @@ function renderComparisonWorkspace() {
     const leftSlot = playerCompareSlots[0];
     const rightSlot = playerCompareSlots[1];
     if (!leftSlot || !rightSlot) {
-        content.innerHTML = '<div class="no-data">瀵规瘮澶逛腑闇€瑕佸悓鏃跺瓨鍦ㄤ袱鍚嶇悆鍛樸€?/div>';
+        content.innerHTML = '<div class="no-data">对比夹中需要同时存在两名球员。</div>';
         return;
     }
 
@@ -383,7 +383,7 @@ function renderComparisonWorkspace() {
     const rightPreview = buildPreviewPlayer(rightSlot.player, rightSlot.step);
     const leftCollections = getPlayerFieldCollections(leftPreview);
     const rightCollections = getPlayerFieldCollections(rightPreview);
-    const technicalTitle = leftCollections.isGoalkeeper || rightCollections.isGoalkeeper ? '鎶€鏈?/ 闂ㄥ皢' : '鎶€鏈?/ 瀹氫綅鐞?;
+    const technicalTitle = leftCollections.isGoalkeeper || rightCollections.isGoalkeeper ? '技术 / 门将' : '技术 / 定位球';
     const positionItemsLeft = leftCollections.positions.filter(item => item.value > 1);
     const positionItemsRight = rightCollections.positions.filter(item => item.value > 1);
 
@@ -399,10 +399,10 @@ function renderComparisonWorkspace() {
             </div>
             <div class="comparison-grid">
                 ${renderComparisonMetricPanel(technicalTitle, leftCollections.technical.concat(leftCollections.setPieces), rightCollections.technical.concat(rightCollections.setPieces))}
-                ${renderComparisonMetricPanel('绮剧', leftCollections.mental, rightCollections.mental)}
-                ${renderComparisonMetricPanel('韬綋', leftCollections.physical, rightCollections.physical)}
-                ${renderComparisonMetricPanel('闅愯棌', leftCollections.hidden, rightCollections.hidden, {wide: true})}
-                ${renderComparisonMetricPanel('浣嶇疆鐔熺粌搴?, positionItemsLeft, positionItemsRight, {wide: true})}
+                ${renderComparisonMetricPanel('精神', leftCollections.mental, rightCollections.mental)}
+                ${renderComparisonMetricPanel('身体', leftCollections.physical, rightCollections.physical)}
+                ${renderComparisonMetricPanel('隐藏', leftCollections.hidden, rightCollections.hidden, {wide: true})}
+                ${renderComparisonMetricPanel('位置熟练度', positionItemsLeft, positionItemsRight, {wide: true})}
             </div>
         </div>
     `;
