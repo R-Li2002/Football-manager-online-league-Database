@@ -7,11 +7,6 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
-function applyStoredTheme() {
-    const mode = localStorage.getItem('themeMode') || 'light';
-    document.body.classList.toggle('light-mode', mode !== 'dark');
-}
-
 function renderFeedbackSubmitResult(payload, isError = false) {
     const container = document.getElementById('feedbackSubmitResult');
     if (!container) return;
@@ -21,7 +16,7 @@ function renderFeedbackSubmitResult(payload, isError = false) {
             <div class="feedback-result-card is-success">
                 <strong>提交成功</strong>
                 <p>${escapeHtml(payload.message || '')}</p>
-                <div class="feedback-result-meta">反馈编号：#${escapeHtml(payload.report_id)} 路 状态：${escapeHtml(payload.status)}</div>
+                <div class="feedback-result-meta">反馈编号：#${escapeHtml(payload.report_id)} | 当前状态：${escapeHtml(payload.status)}</div>
             </div>
         `;
 }

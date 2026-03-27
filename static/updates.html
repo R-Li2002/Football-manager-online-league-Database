@@ -3,36 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>项目更新记录 - HEIGO</title>
+    <title>更新记录 - HEIGO</title>
     <link rel="icon" href="/favicon.ico">
     <link rel="stylesheet" href="/static/app.css">
+    <link rel="stylesheet" href="/static/subpages.css">
 </head>
 <body class="light-mode">
-    <div class="subpage-shell">
-        <header class="subpage-header surface-card">
-            <div>
-                <span class="panel-kicker">Project Updates</span>
-                <h1>项目更新记录</h1>
-                <p>这里展示网站与项目本身的版本更新，不与联赛数据导入记录混放。</p>
-            </div>
-            <div class="subpage-actions">
-                <a class="btn btn-secondary" href="/">返回主站</a>
+    <div class="container subpage-container subpage-shell-updates">
+        <header class="shell-header">
+            <div class="shell-topbar glass-card subpage-topbar">
+                <a class="btn btn-secondary shell-button subpage-nav-button" href="/">返回主站</a>
+                <button class="btn btn-secondary shell-button theme-toggle" type="button" onclick="toggleTheme()">
+                    <span id="themeIcon">🌙</span>
+                    <span id="themeText">切换夜间</span>
+                </button>
             </div>
         </header>
 
-        <main class="subpage-content">
-            <section class="surface-card">
-                <div class="subpage-section-head">
-                    <h2>更新历史</h2>
-                    <p>内容直接来自仓库内的 CHANGELOG，页面仅做展示。</p>
-                </div>
-                <div id="updatesTimeline" class="updates-timeline">
-                    <div class="loading">加载中...</div>
-                </div>
-            </section>
+        <main id="updatesTimeline" class="surface-card updates-timeline">
+            <div class="loading">加载中...</div>
         </main>
     </div>
 
+    <script src="/static/js/subpage.theme.js"></script>
     <script src="/static/js/updates.page.js"></script>
 </body>
 </html>

@@ -6,31 +6,28 @@
     <title>数据纠错 - HEIGO</title>
     <link rel="icon" href="/favicon.ico">
     <link rel="stylesheet" href="/static/app.css">
+    <link rel="stylesheet" href="/static/subpages.css">
 </head>
 <body class="light-mode">
-    <div class="subpage-shell">
-        <header class="subpage-header surface-card">
-            <div>
-                <span class="panel-kicker">Data Feedback</span>
-                <h1>数据纠错</h1>
-                <p>如果你发现球员资料、球队归属、工资名额或其他数据库信息有误，可以在这里提交反馈。</p>
-            </div>
-            <div class="subpage-actions">
-                <a class="btn btn-secondary" href="/">返回主站</a>
+    <div class="container subpage-container">
+        <header class="shell-header">
+            <div class="shell-topbar glass-card subpage-topbar">
+                <a class="btn btn-secondary shell-button subpage-nav-button" href="/">返回主站</a>
+                <button class="btn btn-secondary shell-button theme-toggle" type="button" onclick="toggleTheme()">
+                    <span id="themeIcon">🌙</span>
+                    <span id="themeText">切换夜间</span>
+                </button>
             </div>
         </header>
 
-        <main class="subpage-content subpage-grid">
-            <section class="surface-card">
-                <div class="subpage-section-head">
-                    <h2>提交纠错信息</h2>
-                    <p>当前版本会将反馈直接保存到后台，由管理员人工查看和处理。</p>
-                </div>
+        <main class="feedback-layout">
+            <section class="surface-card feedback-panel">
+                <h2>提交纠错信息</h2>
                 <form id="dataFeedbackForm" class="feedback-form">
                     <div class="feedback-grid">
                         <div class="form-group">
                             <label for="feedbackPlayerUid">球员 UID</label>
-                            <input type="number" id="feedbackPlayerUid" placeholder="如果知道 UID，优先填写">
+                            <input type="number" id="feedbackPlayerUid" placeholder="如果知道 UID，建议填写">
                         </div>
                         <div class="form-group">
                             <label for="feedbackPlayerName">球员姓名</label>
@@ -47,51 +44,48 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="feedbackContact">联系方式（可选）</label>
+                            <label for="feedbackContact">联系方式，可选</label>
                             <input type="text" id="feedbackContact" placeholder="QQ / 邮箱 / 备注">
                         </div>
                     </div>
 
                     <div class="form-group">
                         <label for="feedbackSummary">问题摘要</label>
-                        <input type="text" id="feedbackSummary" maxlength="160" placeholder="一句话描述问题，例如：该球员俱乐部归属错误" required>
+                        <input type="text" id="feedbackSummary" maxlength="160" placeholder="例如：该球员俱乐部归属错误" required>
                     </div>
 
                     <div class="form-group">
                         <label for="feedbackDetails">详细说明</label>
-                        <textarea id="feedbackDetails" rows="6" placeholder="请尽量写清楚你看到的内容、你认为正确的内容，以及依据。" required></textarea>
+                        <textarea id="feedbackDetails" rows="6" placeholder="请尽量写清楚你看到的内容、你认为正确的内容，以及判断依据。" required></textarea>
                     </div>
 
                     <div class="form-group">
-                        <label for="feedbackSuggestedCorrection">建议更正内容（可选）</label>
+                        <label for="feedbackSuggestedCorrection">建议更正内容，可选</label>
                         <textarea id="feedbackSuggestedCorrection" rows="4" placeholder="例如：应从 FK Bodø/Glimt 改为 Benfica"></textarea>
                     </div>
 
                     <input type="text" id="feedbackWebsite" class="feedback-honeypot" tabindex="-1" autocomplete="off">
 
                     <div class="feedback-form-actions">
-                        <button type="submit" class="btn btn-primary">提交反馈</button>
-                        <span class="feedback-form-note">提交后会生成一条后台记录，便于后续核对。</span>
+                        <button type="submit" class="btn btn-primary feedback-submit">提交反馈</button>
                     </div>
                 </form>
             </section>
 
-            <aside class="surface-card">
-                <div class="subpage-section-head">
-                    <h2>填写建议</h2>
-                </div>
+            <aside class="surface-card feedback-panel">
+                <h2>填写建议</h2>
                 <div class="feedback-tips">
                     <div class="feedback-tip">
-                        <strong>能填 UID 就填 UID</strong>
-                        <p>这样后台定位更快，也更不容易和重名球员混淆。</p>
+                        <strong>优先填写 UID</strong>
+                        <p>如果知道 UID，后台定位会更快，也能避免重名混淆。</p>
                     </div>
                     <div class="feedback-tip">
-                        <strong>尽量写清“现在是什么”与“应改成什么”</strong>
-                        <p>例如当前球队、正确球队、你判断的依据。</p>
+                        <strong>把“当前是什么”和“应改成什么”写清楚</strong>
+                        <p>例如当前球队、建议球队，以及你判断的依据。</p>
                     </div>
                     <div class="feedback-tip">
                         <strong>联系方式可以不填</strong>
-                        <p>如果你愿意留个 QQ 或邮箱，后续核对会更方便。</p>
+                        <p>如果愿意留个 QQ 或邮箱，后续核对会更方便。</p>
                     </div>
                 </div>
                 <div id="feedbackSubmitResult" class="feedback-submit-result"></div>
@@ -99,6 +93,7 @@
         </main>
     </div>
 
+    <script src="/static/js/subpage.theme.js"></script>
     <script src="/static/js/data-feedback.page.js"></script>
 </body>
 </html>
