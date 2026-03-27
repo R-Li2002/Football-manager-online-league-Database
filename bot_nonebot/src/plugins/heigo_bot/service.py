@@ -9,17 +9,17 @@ from .parser import parse_command
 
 HELP_TEXT = (
     "可用命令:\n"
-    "球员图 <名字或UID> [+1~+5] [版本v2026-03]\n"
+    "球员图 <名字或UID> [+1~+5]\n"
     "工资 <名字或UID>\n"
     "工资图 <名字或UID>\n"
-    "名单 <球队名> [第2页]\n"
-    "名单图 <球队名> [第2页]\n"
+    "名单 <球队名>\n"
+    "名单图 <球队名>\n"
     "\n"
     "示例:\n"
     "球员图 梅西\n"
-    "球员图 梅西 +2 v2026-03\n"
+    "球员图 梅西 +2\n"
     "工资图 贝林厄姆\n"
-    "名单图 巴萨 第2页"
+    "名单图 巴萨"
 )
 
 TEAM_ALIASES = {
@@ -193,10 +193,8 @@ class HeigoBotService:
         players = await self.api_client.get_players_by_team(team_name)
         if not players:
             return ReplySpec(reply_type="text", text=f"未找到球队“{team_name}”的名单。")
-        total_pages = max(1, (len(players) + self.settings.bot_roster_page_size - 1) // self.settings.bot_roster_page_size)
-        page = max(1, min(total_pages, command.page or 1))
-        url = self.signer.build_roster_png_url(team_name, page=page, theme=self.settings.bot_default_theme)
-        return ReplySpec(reply_type="image", text=f"{team_name} 名单图 第 {page}/{total_pages} 页", image_url=url)
+        url = self.signer.build_roster_png_url(team_name, page=1, theme=self.settings.bot_default_theme)
+        return ReplySpec(reply_type="image", text=f"{team_name} 名单图", image_url=url)
 
     async def _handle_roster_text(self, command: CommandSpec) -> ReplySpec:
         team_name, error = await self._resolve_team_name(command.team_name or "")
@@ -209,12 +207,9 @@ class HeigoBotService:
         if not players:
             return ReplySpec(reply_type="text", text=f"未找到球队“{team_name}”的名单。")
 
-        total_pages = max(1, (len(players) + self.settings.bot_roster_page_size - 1) // self.settings.bot_roster_page_size)
-        page = max(1, min(total_pages, command.page or 1))
-        start = (page - 1) * self.settings.bot_roster_page_size
-        page_rows = players[start : start + self.settings.bot_roster_page_size]
-        lines = [f"{team_name} 名单 第 {page}/{total_pages} 页"]
-        for index, player in enumerate(page_rows, start=start + 1):
+        visible_players = players[: self.settings.bot_roster_page_size]
+        lines = [f"{team_name} 名单"]
+        for index, player in enumerate(visible_players, start=1):
             lines.append(
                 f"{index}. {player.get('name', '-') } | {player.get('position', '-')} | "
                 f"{player.get('age', '-')}岁 | CA/PA {player.get('ca', '-')} / {player.get('pa', '-')} | "

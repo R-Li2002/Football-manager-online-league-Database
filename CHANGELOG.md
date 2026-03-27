@@ -8,7 +8,8 @@ All notable changes to HEIGO are documented here.
 
 - 新增公开页面 `/updates` 与 `/data-feedback`，并从主站页脚提供入口，方便用户查看项目更新历史和提交数据纠错反馈。
 - 新增基于 SQLite 的 `data_feedback_reports` 留档能力，并提供后台只读入口查看最近收到的公开纠错反馈。
-- 新增 NoneBot `球员图 <名字或UID> +1~+5 [版本]` 命令形态，可直接请求主站成长预览分享图。
+- 新增 NoneBot `球员图 <名字或UID> +1~+5` 命令形态，可直接请求主站成长预览分享图，默认使用最新属性版本。
+- 调整 NoneBot 名单能力与名单分享图为单页最多 20 人，不再暴露翻页用法。
 
 ### Refactored
 

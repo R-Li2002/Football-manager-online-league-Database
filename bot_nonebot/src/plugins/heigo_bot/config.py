@@ -40,7 +40,7 @@ class BotSettings:
             internal_render_signing_key=os.environ.get("INTERNAL_RENDER_SIGNING_KEY", "").strip(),
             heigo_render_ttl_seconds=int(os.environ.get("HEIGO_RENDER_TTL_SECONDS", "90")),
             bot_default_theme=os.environ.get("BOT_DEFAULT_THEME", "dark").strip() or "dark",
-            bot_roster_page_size=max(8, min(24, int(os.environ.get("BOT_ROSTER_PAGE_SIZE", "16")))),
+            bot_roster_page_size=max(20, min(20, int(os.environ.get("BOT_ROSTER_PAGE_SIZE", "20")))),
             qq_bot_allowed_groups=_parse_csv(os.environ.get("QQ_BOT_ALLOWED_GROUPS")),
             qq_bot_allow_all_groups=_parse_bool(os.environ.get("QQ_BOT_ALLOW_ALL_GROUPS"), default=False),
             bot_user_cooldown_seconds=int(os.environ.get("BOT_USER_COOLDOWN_SECONDS", "5")),

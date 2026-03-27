@@ -78,7 +78,7 @@ class BotNoneBotServiceTests(unittest.TestCase):
             internal_render_signing_key="secret",
             heigo_render_ttl_seconds=90,
             bot_default_theme="dark",
-            bot_roster_page_size=16,
+            bot_roster_page_size=20,
             qq_bot_allowed_groups=(),
             qq_bot_allow_all_groups=False,
             bot_user_cooldown_seconds=5,
@@ -115,6 +115,7 @@ class BotNoneBotServiceTests(unittest.TestCase):
         reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="roster_image", raw_text="", normalized_text="", team_name="Barcelona", page=2)))
         self.assertEqual(reply.reply_type, "image")
         self.assertIn("roster/Barcelona/1.png", reply.image_url)
+        self.assertEqual(reply.text, "Barcelona 名单图")
 
     def test_handle_roster_image_supports_alias(self):
         reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="roster_image", raw_text="", normalized_text="", team_name="巴萨", page=1)))
@@ -157,7 +158,7 @@ class BotNoneBotServiceTests(unittest.TestCase):
     def test_handle_roster_text(self):
         reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="roster_text", raw_text="", normalized_text="", team_name="Barcelona", page=1)))
         self.assertEqual(reply.reply_type, "text")
-        self.assertIn("Barcelona 名单 第 1/1 页", reply.text)
+        self.assertIn("Barcelona 名单", reply.text)
         self.assertIn("1. Player 1 | GK | 20岁 | CA/PA 140 / 155 | 工资 0.500M | 名额 8M", reply.text)
 
     def test_handle_help(self):

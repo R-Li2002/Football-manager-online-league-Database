@@ -548,10 +548,10 @@ def build_roster_share_card_model(
     *,
     team_info: TeamInfoResponse | None = None,
     page: int = 1,
-    page_size: int = 16,
+    page_size: int = 20,
     theme: str = "dark",
 ) -> RosterShareCardModel:
-    normalized_page_size = max(8, min(24, int(page_size or 16)))
+    normalized_page_size = max(20, min(20, int(page_size or 20)))
     total_players = len(players)
     total_pages = max(1, int(ceil(total_players / normalized_page_size))) if total_players else 1
     normalized_page = max(1, min(total_pages, int(page or 1)))
