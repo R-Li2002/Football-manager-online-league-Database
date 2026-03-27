@@ -416,7 +416,7 @@ def build_wage_share_svg(player: PlayerAttributeDetailResponse, wage_detail: Wag
     tokens = _theme_tokens(model.theme)
     width = model.canvas_width
     height = model.canvas_height
-    summary_rows = _render_info_rows(model.summary_rows, x=82, start_y=270, label_fill=tokens["muted"], value_fill=tokens["text"], line_fill=tokens["line"], width=320)
+    summary_rows = _render_info_rows(model.summary_rows, x=82, start_y=248, label_fill=tokens["muted"], value_fill=tokens["text"], line_fill=tokens["line"], width=320)
     formula_rows = _render_info_rows(model.formula_rows, x=520, start_y=286, label_fill=tokens["muted"], value_fill=tokens["text"], line_fill=tokens["line"], width=820, row_height=42)
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
   <defs>
@@ -440,15 +440,15 @@ def build_wage_share_svg(player: PlayerAttributeDetailResponse, wage_detail: Wag
   <rect x="60" y="122" width="380" height="{height - 182}" rx="24" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />
   <text x="82" y="174" font-size="44" font-weight="800" fill="{tokens["text"]}">{escape(model.player_name)}</text>
   <text x="82" y="206" font-size="14" fill="{tokens["muted"]}" letter-spacing="1.2">UID {model.uid} | {escape(model.position)} | Age {escape(model.age_label)}</text>
-  <rect x="82" y="224" width="190" height="88" rx="22" fill="url(#wage-accent-gradient)" />
-  <text x="104" y="256" font-size="14" font-weight="700" fill="#ffffff" letter-spacing="1.0">CURRENT WAGE</text>
-  <text x="104" y="292" font-size="32" font-weight="800" fill="#ffffff">{escape(model.headline_value)}</text>
   {summary_rows}
   <rect x="472" y="122" width="908" height="{height - 182}" rx="24" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />
   <text x="520" y="178" font-size="18" font-weight="800" fill="{tokens["text"]}">Wage Calculation</text>
   <text x="520" y="210" font-size="14" fill="{tokens["muted"]}">Club {escape(model.team_name)} | Position {escape(model.position)}</text>
   <rect x="520" y="236" width="820" height="1" fill="{tokens["line"]}" />
   {formula_rows}
+  <rect x="1088" y="692" width="252" height="96" rx="24" fill="url(#wage-accent-gradient)" />
+  <text x="1114" y="728" font-size="13" font-weight="700" fill="#ffffff" letter-spacing="1.1">FINAL WAGE</text>
+  <text x="1114" y="768" font-size="34" font-weight="800" fill="#ffffff">{escape(model.headline_value)}</text>
 </svg>"""
 def _render_roster_table_rows(rows: tuple[RosterPlayerRow, ...], *, x: int, start_y: int, width: int, tokens: dict[str, str]) -> str:
     rendered: list[str] = []

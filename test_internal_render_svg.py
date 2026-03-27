@@ -77,7 +77,7 @@ class InternalRenderSvgTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("HEIGO WAGE CARD", response.text)
-        self.assertIn("CURRENT WAGE", response.text)
+        self.assertIn("FINAL WAGE", response.text)
 
     def test_internal_render_roster_svg_returns_svg(self):
         app = FastAPI()
