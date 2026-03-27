@@ -9,11 +9,30 @@ from services import read_service, share_page_service, share_png_service, share_
 
 
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
+PROJECT_ROOT = STATIC_DIR.parent
 FRONTEND_FILE = STATIC_DIR / "app.html"
 UPDATES_FILE = STATIC_DIR / "updates.html"
 DATA_FEEDBACK_FILE = STATIC_DIR / "data-feedback.html"
 FAVICON_FILE = STATIC_DIR / "favicon.ico"
 FAVICON_FALLBACK_FILE = STATIC_DIR / "heigo.jpeg"
+VERSION_FILE = PROJECT_ROOT / "VERSION"
+STATIC_ASSET_VERSION_PLACEHOLDER = "__STATIC_ASSET_VERSION__"
+
+
+def _load_static_asset_version() -> str:
+    try:
+        version = VERSION_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        version = ""
+    return version or "dev"
+
+
+STATIC_ASSET_VERSION = _load_static_asset_version()
+
+
+def _render_frontend_file(file_path: Path) -> str:
+    html = file_path.read_text(encoding="utf-8-sig")
+    return html.replace(STATIC_ASSET_VERSION_PLACEHOLDER, STATIC_ASSET_VERSION)
 
 
 def _verify_internal_share_access(
@@ -68,9 +87,9 @@ def build_frontend_router(
         template_version=share_template_version,
     )
 
-    @router.get("/", response_class=FileResponse)
+    @router.get("/", response_class=HTMLResponse)
     def read_root():
-        return FileResponse(FRONTEND_FILE, media_type="text/html; charset=utf-8")
+        return HTMLResponse(content=_render_frontend_file(FRONTEND_FILE))
 
     @router.get("/updates", response_class=FileResponse)
     def read_updates_page():

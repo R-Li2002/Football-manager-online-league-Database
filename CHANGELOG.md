@@ -4,6 +4,8 @@ All notable changes to HEIGO are documented here.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-03-28
+
 ### Added
 
 - 新增公开页面 `/updates` 与 `/data-feedback`，并从主站页脚提供入口，方便用户查看项目更新历史和提交数据纠错反馈。
@@ -22,6 +24,7 @@ All notable changes to HEIGO are documented here.
 - 将公开读响应的组装逻辑从 `services/read_service.py` 拆分到 `services/read_presenters.py` 与 `services/team_stat_source_service.py`，使 `read_service.py` 更专注于查询编排。
 - 将运维脚本迁移到 `scripts/maintenance/`，并把日志、报表、截图和备份产物归类到 `output/` / `data/backups/`。
 - 移除前端详情页、对比页与分享图中的预览 CA 数值推算，成长预览仅保留 `+N` 步进与逆足 `+1` 展示，避免误导用户。
+- 主站根页面改为在返回 `app.html` 时注入 `VERSION` 作为静态资源查询参数，降低浏览器继续使用旧版 CSS/JS 缓存的概率。
 
 ### Tests
 
