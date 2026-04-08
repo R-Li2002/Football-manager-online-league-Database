@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -16,6 +17,7 @@ from import_data import (
     run_import,
 )
 from models import LeagueInfo, Player, PlayerAttribute, PlayerAttributeVersion, Team
+import imports_runtime.persistence as runtime_persistence
 from services import read_service
 
 
@@ -393,6 +395,27 @@ class ImportDataTests(unittest.TestCase):
             {"league_info": 0, "teams": 0, "players": 0, "player_attributes": 0, "player_attribute_versions": 0},
         )
 
+    def test_default_cli_root_uses_project_root_for_auto_attribute_discovery(self):
+        fake_runtime_dir = self.root_dir / "imports_runtime"
+        fake_runtime_dir.mkdir(exist_ok=True)
+        fake_persistence_file = fake_runtime_dir / "persistence.py"
+        fake_persistence_file.touch()
+        auto_discovery_attributes_path = self.root_dir / "测试球员属性.csv"
+        self.attributes_csv_path.replace(auto_discovery_attributes_path)
+        self.attributes_csv_path = auto_discovery_attributes_path
+
+        with patch.dict("os.environ", {}, clear=False):
+            with patch.object(runtime_persistence, "__file__", str(fake_persistence_file)):
+                report = run_import(
+                    workbook_path=self.workbook_path.name,
+                    target_engine=self.engine,
+                )
+
+        self.assertFalse(report.has_errors)
+        self.assertTrue(report.committed)
+        self.assertEqual(Path(report.attributes_csv_path).name, self.attributes_csv_path.name)
+        self.assertEqual(self.count_rows()["player_attributes"], 2)
+
     def test_real_import_is_idempotent(self):
         first_report = run_import(
             workbook_path=self.workbook_path,
@@ -612,6 +635,76 @@ class ImportDataTests(unittest.TestCase):
         session = self.SessionLocal()
         try:
             self.assertIsNone(session.query(Team).filter(Team.name == "Legacy Roma").first())
+            self.assertEqual(session.query(Team).count(), 3)
+        finally:
+            session.close()
+
+    def test_real_import_full_sync_removes_players_missing_from_new_roster(self):
+        initial_workbook_path = self.root_dir / "full_sync_initial.xlsx"
+        write_workbook(
+            initial_workbook_path,
+            team_rows=[
+                {"info_key": "灞婃暟", "info_value": 85, "name": "Alpha FC", "manager": "Coach A", "level": "瓒呯骇", "extra_wage": 0.0, "after_tax": 0, "notes": ""},
+                {"info_key": "鎴愰暱骞撮緞涓婇檺", "info_value": 24, "name": "Beta FC", "manager": "Coach B", "level": "鐢茬骇", "extra_wage": 0.0, "after_tax": 0, "notes": ""},
+                {"info_key": "鏈増棣栧眾", "info_value": 84, "name": "Gamma FC", "manager": "Coach C", "level": "涔欑骇", "extra_wage": 0.0, "after_tax": 0, "notes": ""},
+            ],
+            player_rows=[
+                {"uid": 1, "name": "寮犱笁", "age": 20, "initial_ca": 120, "ca": 125, "pa": 150, "position": "MC", "nationality": "CN", "club_name": "Alpha FC"},
+                {"uid": 2, "name": "鏉庡洓", "age": 21, "initial_ca": 118, "ca": 121, "pa": 148, "position": "GK", "nationality": "CN", "club_name": "Alpha FC"},
+                {"uid": 3, "name": "鐜嬩簲", "age": 22, "initial_ca": 116, "ca": 119, "pa": 144, "position": "ST", "nationality": "CN", "club_name": "Gamma FC"},
+            ],
+        )
+        updated_workbook_path = self.root_dir / "full_sync_updated.xlsx"
+        write_workbook(
+            updated_workbook_path,
+            team_rows=[
+                {"info_key": "灞婃暟", "info_value": 85, "name": "Alpha FC", "manager": "Coach A", "level": "瓒呯骇", "extra_wage": 0.0, "after_tax": 0, "notes": ""},
+                {"info_key": "鎴愰暱骞撮緞涓婇檺", "info_value": 24, "name": "Beta FC", "manager": "Coach B", "level": "鐢茬骇", "extra_wage": 0.0, "after_tax": 0, "notes": ""},
+            ],
+            player_rows=[
+                {"uid": 1, "name": "寮犱笁", "age": 20, "initial_ca": 120, "ca": 125, "pa": 150, "position": "MC", "nationality": "CN", "club_name": "Alpha FC"},
+            ],
+        )
+
+        first_report = run_import(
+            workbook_path=initial_workbook_path,
+            attributes_csv_path=self.attributes_csv_path,
+            target_engine=self.engine,
+        )
+        self.assertFalse(first_report.has_errors)
+        self.assertTrue(first_report.committed)
+
+        second_report = run_import(
+            workbook_path=updated_workbook_path,
+            attributes_csv_path=self.attributes_csv_path,
+            target_engine=self.engine,
+        )
+
+        self.assertFalse(second_report.has_errors)
+        self.assertTrue(second_report.committed)
+        self.assertEqual(second_report.datasets["player_sync_cleanup"].details["removed_count"], 2)
+        self.assertEqual(
+            [sample["uid"] for sample in second_report.datasets["player_sync_cleanup"].details["removed_players_sample"]],
+            [2, 3],
+        )
+        self.assertEqual(
+            second_report.datasets["player_sync_cleanup"].details["removed_team_breakdown"],
+            {"Alpha FC": 1, "Gamma FC": 1},
+        )
+        self.assertEqual(second_report.datasets["team_cleanup"].details["removed_count"], 1)
+        self.assertEqual(second_report.datasets["team_cleanup"].details["removed_teams"], ["Gamma FC"])
+
+        session = self.SessionLocal()
+        try:
+            remaining_player = session.query(Player).filter(Player.uid == 1).one()
+            alpha_team = session.query(Team).filter(Team.name == "Alpha FC").one()
+            self.assertEqual(session.query(Player).count(), 1)
+            self.assertIsNone(session.query(Player).filter(Player.uid == 2).first())
+            self.assertIsNone(session.query(Player).filter(Player.uid == 3).first())
+            self.assertEqual(alpha_team.team_size, 1)
+            self.assertEqual(alpha_team.gk_count, 0)
+            self.assertAlmostEqual(alpha_team.wage, remaining_player.wage)
+            self.assertIsNone(session.query(Team).filter(Team.name == "Gamma FC").first())
             self.assertEqual(session.query(Team).count(), 3)
         finally:
             session.close()

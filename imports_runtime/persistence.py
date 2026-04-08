@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -223,7 +224,43 @@ def cleanup_stale_visible_teams(db: Session, source_team_names: set[str], report
         summary.details["blocked_teams"] = blocked_team_names
     db.flush()
 
-def import_players(db: Session, workbook_path: Path, report: ImportReport, *, strict_mode: bool = True) -> None:
+def cleanup_stale_players(db: Session, source_player_uids: set[int] | None, report: ImportReport) -> set[str]:
+    summary = dataset_summary(report, "player_sync_cleanup", Path("<derived>"))
+    source_player_uids = source_player_uids or set()
+    summary.details["source_uid_count"] = len(source_player_uids)
+    if not source_player_uids:
+        summary.add_warning("No source player UIDs were resolved; player full-sync cleanup skipped.")
+        return set()
+
+    stale_players = db.query(Player).filter(Player.uid.not_in(source_player_uids)).order_by(Player.uid.asc()).all()
+    removed_team_counter: Counter[str] = Counter()
+    removed_player_samples: list[dict[str, Any]] = []
+
+    for player in stale_players:
+        team_name = clean_string(player.team_name)
+        if team_name:
+            removed_team_counter[team_name] += 1
+        if len(removed_player_samples) < 20:
+            removed_player_samples.append(
+                {
+                    "uid": player.uid,
+                    "name": clean_string(player.name),
+                    "team_name": team_name,
+                }
+            )
+        db.delete(player)
+
+    summary.updated = len(stale_players)
+    summary.details["candidate_count"] = len(stale_players)
+    summary.details["removed_count"] = len(stale_players)
+    if removed_team_counter:
+        summary.details["removed_team_breakdown"] = dict(sorted(removed_team_counter.items()))
+    if removed_player_samples:
+        summary.details["removed_players_sample"] = removed_player_samples
+    db.flush()
+    return set(removed_team_counter)
+
+def import_players(db: Session, workbook_path: Path, report: ImportReport, *, strict_mode: bool = True) -> set[int]:
     summary = dataset_summary(report, "players", workbook_path)
     summary.details["strict_mode"] = strict_mode
     try:
@@ -390,6 +427,8 @@ def import_players(db: Session, workbook_path: Path, report: ImportReport, *, st
             "position_rule": "联赛名单.位置 必须非空",
             "team_rule": "联赛名单中的球队名必须与 信息总览.球队名 完全一致",
         }
+
+    return seen_uids
 
 def import_player_attributes(db: Session, attributes_csv_path: Path, report: ImportReport) -> None:
     summary = dataset_summary(report, "player_attributes", attributes_csv_path)
@@ -594,7 +633,7 @@ def run_import(
         if root_dir
         else Path(configured_root).expanduser().resolve()
         if configured_root
-        else Path(__file__).resolve().parent
+        else Path(__file__).resolve().parents[1]
     )
     resolved_workbook, resolved_attributes_csv, warnings = resolve_input_files(workbook_path, attributes_csv_path, workspace_root)
     report = ImportReport(
@@ -610,7 +649,8 @@ def run_import(
     try:
         import_league_info(db, resolved_workbook, report)
         source_team_names = import_teams(db, resolved_workbook, report)
-        import_players(db, resolved_workbook, report, strict_mode=strict_mode)
+        source_player_uids = import_players(db, resolved_workbook, report, strict_mode=strict_mode)
+        cleanup_stale_players(db, source_player_uids, report)
         import_player_attributes(db, resolved_attributes_csv, report)
         cleanup_stale_visible_teams(db, source_team_names, report)
 

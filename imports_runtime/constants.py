@@ -64,7 +64,7 @@ TEAM_COLUMN_ALIASES = {
 
 PLAYER_COLUMN_ALIASES = {
     "uid": ["编号"],
-    "name": ["姓名"],
+    "name": ["姓名", "球员"],
     "age": ["年龄"],
     "initial_ca": ["初始CA"],
     "ca": ["当前CA"],
@@ -82,11 +82,11 @@ PLAYER_TEAM_MAP_COLUMN_ALIASES = {
 
 ATTRIBUTE_COLUMN_ALIASES = {
     "uid": ["UID"],
-    "name": ["姓名"],
+    "name": ["姓名", "球员"],
     "position": ["位置"],
     "age": ["年龄"],
-    "ca": ["ca"],
-    "pa": ["pa"],
+    "ca": ["ca", "CA"],
+    "pa": ["pa", "PA"],
     "nationality": ["国籍"],
     "club": ["俱乐部"],
     "corner": ["角球"],
@@ -183,7 +183,7 @@ ATTRIBUTE_COLUMN_ALIASES = {
     "radar_gk_eccentricity": ["意外性"],
     "radar_gk_aerial": ["制空.1"],
     "radar_gk_kicking": ["大脚"],
-    "birth_date": ["出生日期"],
+    "birth_date": ["出生日期", "生日"],
     "national_caps": ["国家队出场"],
     "national_goals": ["国家队进球"],
     "player_habits": ["球员习惯"],

@@ -1,4 +1,5 @@
 from datetime import datetime
+import re
 from typing import Iterable, Optional
 
 from sqlalchemy.orm import Session
@@ -31,6 +32,30 @@ ALL_TEAM_CACHE_REFRESH_MODES = frozenset(
     }
 )
 PERSISTED_TEAM_STAT_SCOPE_ORDER = (TEAM_STAT_SCOPE_ROSTER, TEAM_STAT_SCOPE_WAGE)
+TEAM_EXTRA_WAGE_CAP_RE = re.compile(r"([+-]?\d+(?:\.\d+)?)\s*[mMＭ](?:工资帽)?")
+
+def get_team_extra_wage_cap(team: Team) -> float:
+    notes = (team.notes or "").replace(" ", "")
+    if not notes:
+        return 0.0
+
+    if "工资帽" in notes:
+        match = TEAM_EXTRA_WAGE_CAP_RE.search(notes)
+        if match:
+            try:
+                return max(float(match.group(1)), 0.0)
+            except ValueError:
+                return 0.0
+
+    if "+" in notes:
+        match = TEAM_EXTRA_WAGE_CAP_RE.search(notes)
+        if match:
+            try:
+                return max(float(match.group(1)), 0.0)
+            except ValueError:
+                return 0.0
+
+    return 0.0
 
 
 def calculate_player_wage_payload(
@@ -116,10 +141,7 @@ def calculate_team_final_wage(team: Team, players: list[Player]):
     base_cap = level_wage_cap.get(team.level, 9.4)
     min_wage = level_min_wage.get(team.level, 8.0)
 
-    extra_cap = 0.0
-    if team.notes and "+0.1M" in team.notes:
-        extra_cap = 0.1
-
+    extra_cap = get_team_extra_wage_cap(team)
     effective_cap = base_cap + extra_cap
     player_total_wage = sum(player.wage for player in players)
     extra_wage = team.extra_wage if team.extra_wage else 0.0

@@ -64,6 +64,7 @@ flowchart LR
 - `imports_runtime/` 当前承载正式导入运行时模块，负责 source resolver、parser、validator、reporting 和 persistence 的职责拆分。
 - `import_data.py` 继续保留为兼容 facade，供 CLI、测试脚本和 `services/import_service.py` 直接调用。
 - `scripts/maintenance/` 当前承载运维、排障、修复和诊断脚本，避免继续堆在仓库根目录。
+- `scripts/maintenance/rename_teams_from_workbook.py` 可在正式导入前，按新工作簿批量把数据库中的球队名对齐到 Excel 命名，减少球队更名带来的严格模式失败。
 - `output/` 当前承载日志、截图、分析报表等可再生产物；`data/backups/` 承载可留档的数据库备份。
 
 ### 3.2 椤跺眰鐩綍鑱岃矗
@@ -613,5 +614,30 @@ HEIGOOA/
   - 后台管理员页面提供只读列表，便于集中核对。
 
 这一轮的目标是先把“入口 -> 提交 -> 留档 -> 后台查看”的闭环打通，而不是一次性做完整工单系统、通知推送或反馈处理流。
+
+## 补充：自动化测试入口约定（2026-03）
+
+为避免本地排查脚本误伤自动化测试收集，当前补充以下约定：
+
+- 仓库根目录的 `test_db.py` 与 `test_sqlite.py`
+  - 当前定位为面向本地数据库文件的手工排查脚本。
+  - 依赖开发者机器上的 `heigo.db` 现状，不保证在临时数据库、CI 或全新环境下可重复执行。
+  - 不属于项目默认自动化测试套件。
+- `pytest.ini`
+  - 当前通过 `addopts = --ignore=test_db.py --ignore=test_sqlite.py` 将上述两个脚本排除出 `pytest` 自动收集入口。
+- 后续新增测试时的边界
+  - 可重复自动化测试应优先使用临时 SQLite、fixture 数据和显式初始化流程，不应依赖仓库根目录现成数据库内容。
+  - 一次性数据库排查、线上问题复盘或手工核对脚本，应优先放入 `scripts/maintenance/` 或明确命名为诊断脚本，而不是继续挂在默认 `pytest` 发现路径下。
+
+## 补充：正式导入全量同步约定（2026-04）
+
+当前正式导入的联赛名单写入语义已从“仅按 UID 新增 / 更新”收口为“全量同步”：
+
+- `imports_runtime.persistence.run_import()` 在成功解析 `联赛名单` 后，会先执行名单 upsert，再按本次 Excel 中出现过的 UID 集合清理 `players` 表里已经不在新名单中的旧球员。
+- 旧球员清理与球队清理、球队缓存重算处于同一导入事务内；只要导入失败或 `dry-run`，这些变更都会一起回滚。
+- 球队人数、门将数、名额占用、工资与最终工资缓存会在清理后的最终名单基础上重算，因此网站展示应与当次 Excel 名单保持一致。
+- `player_attributes` 与 `player_attribute_versions` 仍按属性版本库语义维护，不因为联赛名单缺少某个 UID 就删除历史属性记录。
+
+这一约定的目的，是避免旧名单球员残留在 `players` 表中，继续污染球队名单页、球队人数和工资统计。
 
 

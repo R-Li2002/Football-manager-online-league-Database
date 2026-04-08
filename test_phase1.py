@@ -23,7 +23,7 @@ from league_settings import create_league_info_record, get_growth_age_limit, is_
 from models import AdminUser, LeagueInfo, OperationAudit, Player, PlayerAttribute, Team, TransferLog
 from repositories.player_repository import get_players_by_team_name
 from services import admin_read_service, read_service, wage_service
-from services.league_service import TEAM_CACHE_REFRESH_MODE_WRITE_INCREMENTAL, TEAM_STAT_SCOPE_WAGE, persist_with_team_stats, recalculate_team_stats
+from services.league_service import TEAM_CACHE_REFRESH_MODE_WRITE_INCREMENTAL, TEAM_STAT_SCOPE_WAGE, calculate_team_final_wage, persist_with_team_stats, recalculate_team_stats
 from services.operation_audit_service import import_legacy_admin_log_to_operation_audits
 
 
@@ -537,6 +537,17 @@ class Phase1Tests(unittest.TestCase):
         self.assertEqual(imported[0].action, "login")
         self.assertEqual(imported[1].category, "transfer")
         self.assertEqual(imported[1].action, "transfer_player")
+
+    def test_extra_wage_cap_notes_raise_effective_cap_for_wage_judgement(self):
+        beta = Team(name="Beta FC", manager="B", level="甲级", wage=0, notes="额外0.1M工资帽")
+        players = [Player(uid=2001, name="Beta One", wage=9.0, position="MC")]
+
+        result = calculate_team_final_wage(beta, players)
+
+        self.assertEqual(result["effective_cap"], 9.0)
+        self.assertEqual(result["total_wage"], 9.0)
+        self.assertEqual(result["final_wage"], 9.0)
+        self.assertEqual(result["status"], "normal")
 
 
 if __name__ == "__main__":

@@ -87,9 +87,11 @@ def import_current_league_data(db: Session, admin: str | None, write_to_log: Log
         for name, summary in report.to_dict()["datasets"].items()
     }
     cleanup_summary = datasets.get("team_cleanup")
+    player_sync_summary = datasets.get("player_sync_cleanup")
     attribute_summary = datasets.get("player_attributes")
     imported_attribute_version = attribute_summary.details.get("data_version") if attribute_summary else None
-    removed_count = cleanup_summary.details.get("removed_count", 0) if cleanup_summary else 0
+    removed_team_count = cleanup_summary.details.get("removed_count", 0) if cleanup_summary else 0
+    removed_player_count = player_sync_summary.details.get("removed_count", 0) if player_sync_summary else 0
 
     if report.has_errors or not report.committed:
         message = "正式导入未提交，请先修复源数据或检查导入报告。"
@@ -111,14 +113,16 @@ def import_current_league_data(db: Session, admin: str | None, write_to_log: Log
         )
 
     message = f"已正式导入 {Path(report.workbook_path).name}"
-    if removed_count:
-        message += f"，并清理 {removed_count} 支过期孤立球队"
+    if removed_player_count:
+        message += f"，并全量同步清理 {removed_player_count} 名旧名单球员"
+    if removed_team_count:
+        message += f"，并清理 {removed_team_count} 支过期孤立球队"
     if backup_path:
         message += "。导入前备份已创建"
 
     write_to_log(
         "正式导入联赛数据",
-        f"workbook={Path(report.workbook_path).name}; backup={backup_path or 'none'}; cleaned_teams={removed_count}",
+        f"workbook={Path(report.workbook_path).name}; backup={backup_path or 'none'}; cleaned_players={removed_player_count}; cleaned_teams={removed_team_count}; attributes_version={imported_attribute_version or 'unknown'}",
         admin,
     )
     return AdminImportResponse(

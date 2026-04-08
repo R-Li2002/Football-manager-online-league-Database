@@ -61,6 +61,22 @@ function formatDebugTime(value) {
     return parsed.toLocaleString();
 }
 
+function getTeamExtraWageCap(notes) {
+    const compactNotes = (notes || '').replace(/\s+/g, '');
+    if (!compactNotes) return 0;
+
+    const capMatch = compactNotes.match(/([+-]?\d+(?:\.\d+)?)\s*[mMＭ](?:工资帽)?/i);
+    if (!capMatch) return 0;
+
+    if (!(compactNotes.includes('工资帽') || compactNotes.includes('+'))) {
+        return 0;
+    }
+
+    const amount = Number.parseFloat(capMatch[1]);
+    if (!Number.isFinite(amount) || amount <= 0) return 0;
+    return amount;
+}
+
 function renderTeamStatSourceDebugView() {
     const panel = document.getElementById('teamStatDebugPanel');
     const content = document.getElementById('teamStatDebugContent');
@@ -286,7 +302,7 @@ function renderTeamsTableWithData(data) {
     const html = `<table><thead><tr>${renderTeamHeader('级别', 'level')}${renderTeamHeader('球队名', 'name')}${renderTeamHeader('主教', 'manager')}${renderTeamHeader('人数', 'team_size')}${renderTeamHeader('门将', 'gk_count')}${renderTeamHeader('球员总工资', 'wage')}${renderTeamHeader('额外工资', 'extra_wage')}${renderTeamHeader('最终工资', 'final_wage')}<th>工资帽</th>${renderTeamHeader('8M', 'count_8m')}${renderTeamHeader('7M', 'count_7m')}${renderTeamHeader('伪名', 'count_fake')}${renderTeamHeader('总身价', 'total_value')}${renderTeamHeader('平均CA', 'avg_ca')}${renderTeamHeader('平均PA', 'avg_pa')}${renderTeamHeader('成长', 'total_growth')}${renderTeamHeader('备注', 'notes')}</tr></thead><tbody>${sortedData.map(team => {
         const baseWageCap = levelWageCap[team.level] || 0;
         const minWage = levelMinWage[team.level] || 0;
-        const extraCap = team.notes && team.notes.includes('+0.1M') ? 0.1 : 0;
+        const extraCap = getTeamExtraWageCap(team.notes);
         const effectiveCap = baseWageCap + extraCap;
 
         const playerTotalWage = team.wage || 0;
@@ -320,7 +336,7 @@ function renderTeamsTableWithData(data) {
         const sizeClass = sizeCompliant ? 'compliant' : 'non-compliant';
         const gkClass = gkCompliant ? 'compliant' : 'non-compliant';
         const notesDisplay = team.notes || '-';
-        const notesClass = team.notes && team.notes.includes('+0.1M') ? 'notes-cell has-extra' : 'notes-cell';
+        const notesClass = extraCap > 0 ? 'notes-cell has-extra' : 'notes-cell';
         const capDisplay = extraCap > 0 ? `${baseWageCap.toFixed(1)}M (+${extraCap.toFixed(1)}M)` : `${baseWageCap.toFixed(1)}M`;
         const playerWageDisplay = `${playerTotalWage.toFixed(3)}M`;
         const extraWageDisplay = extraWage > 0 ? `${extraWage.toFixed(3)}M` : '-';

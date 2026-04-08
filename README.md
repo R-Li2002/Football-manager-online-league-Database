@@ -97,3 +97,9 @@ curl http://127.0.0.1:8001/health
 - 主站通过 Nginx 或直接端口映射对外提供 `http://81.70.199.249`
 - `bot-nonebot` 和 NapCat 不对公网开放
 - 等未来有真实域名后，再补 HTTPS 证书和 443 配置
+
+## 导入提示
+
+- 正式导入的详细模板、字段和上传约定见 `docs/IMPORT_TEMPLATE_GUIDE.md`。
+- 当根目录存在多个 `*球员属性.csv` / `*球员属性.xlsx` 时，系统会自动选最新文件；如果你要明确导入某个版本，例如 `2640球员属性.xlsx`，推荐显式传 `--attributes-csv`。
+- 如果新名单里球队名改了、但你想保留 Excel 中的新队名，应先运行 `scripts/maintenance/rename_teams_from_workbook.py` 把系统中的球队名批量对齐，再做正式导入。
