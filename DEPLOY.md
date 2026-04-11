@@ -192,3 +192,82 @@ powershell -ExecutionPolicy Bypass -File .\scripts\pre-release-check.ps1
 - `bot_nonebot` 解析 / 调度测试
 - `bot_nonebot` 语法编译
 
+## 11. 常见部署排障
+
+### 11.1 宿主机源码已更新，但线上行为没变
+
+这通常不是 Git 没拉下来，而是“宿主机源码”和“运行容器内代码”还没有同步：
+
+- `git pull` 只会更新 `/srv/heigo` 下的源码
+- 正在运行的 `heigo` 容器仍然使用旧镜像里的 `/app/*`
+- 因此，正式部署仍应执行：
+
+```bash
+cd /srv/heigo
+docker compose build heigo
+docker compose up -d heigo
+```
+
+如需先确认运行容器里的代码是否已经生效，可以进入容器检查对应源码片段。
+
+如果镜像重建暂时因为网络问题无法完成，而线上又必须先恢复，可临时采用应急热修：
+
+- 把修复后的文件 `docker cp` 到运行中的 `heigo:/app/...`
+- `docker compose restart heigo`
+
+但这只用于应急恢复；网络稳定后仍应补一次正式 `build + up -d`，避免热修内容在下次重建时丢失。
+
+### 11.2 腾讯云上 `docker compose build heigo` 卡在 `pip install`
+
+在腾讯云等网络环境下，`python:3.11-slim` 镜像构建阶段可能长时间卡在：
+
+```text
+RUN pip install --no-cache-dir -r requirements.txt
+```
+
+这通常是从 PyPI 拉取 `pandas`、`sqlalchemy` 等 wheel 超时，不一定是 Docker 卡死。
+
+推荐处理方式：
+
+1. 先 `Ctrl+C` 中断本次构建
+2. 临时把 `Dockerfile` 中的 `pip install` 切到国内镜像并增加超时 / 重试
+3. 再重新执行 `docker compose build heigo`
+
+示例：
+
+```bash
+cd /srv/heigo
+cp Dockerfile Dockerfile.bak
+sed -i 's#RUN pip install --no-cache-dir -r requirements.txt#RUN pip install --default-timeout=300 --retries 10 -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn --no-cache-dir -r requirements.txt#' Dockerfile
+docker compose build heigo
+docker compose up -d heigo
+```
+
+如清华源不可用，也可以换成其他国内镜像，例如阿里云。
+
+### 11.3 后端接口正常，但网页仍表现为旧逻辑
+
+当前前端静态资源默认会附带 `VERSION` 查询参数；如果发布后浏览器仍保留旧 JS / CSS，可能出现这类现象：
+
+- 属性库页面仍默认查 `2620`，而接口 `/api/attributes/versions` 实际已经返回 `2630`
+- 球队工资帽规则已经支持 `额外0.1M工资帽`，但页面展示仍像旧逻辑
+
+推荐排查顺序：
+
+1. 先直接检查接口：
+
+```bash
+curl http://127.0.0.1:8080/api/attributes/versions
+```
+
+2. 如果接口返回正常，让浏览器强制刷新
+3. 如需正式发布新静态资源版本，再同步更新根目录 `VERSION` 后重启主站
+
+示例：
+
+```bash
+cd /srv/heigo
+printf '0.2.3\n' > VERSION
+docker compose restart heigo
+```
+

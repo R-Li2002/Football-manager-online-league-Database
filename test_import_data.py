@@ -342,6 +342,101 @@ def write_attributes_xlsx_2620(path: Path) -> None:
     pd.DataFrame(matrix).to_excel(path, sheet_name="数据", header=False, index=False)
 
 
+def write_attributes_xlsx_2630(path: Path) -> None:
+    headers = [
+        "姓名", "UID", "年龄", "CA", "PA", "俱乐部", "位置", "传球", "传中", "盯人", "技术", "盘带", "抢断", "射门", "停球",
+        "头球", "远射", "点球", "角球", "界外球", "任意球", "想象力", "防守站位", "工作投入", "集中", "决断", "领导力", "侵略性",
+        "视野", "团队合作", "无球跑动", "意志力", "勇敢", "预判", "镇定", "爆发力", "弹跳", "灵活", "耐力", "平衡2", "强壮",
+        "速度", "体质", "左脚", "右脚", "出击", "大脚开球", "反应", "拦截传中", "击球倾向", "手控球", "手抛球", "一对一",
+        "神经指数", "指挥防守", "制空能力", "稳定性", "肮脏动作", "大赛发挥", "多样性", "受伤倾向", "适应性", "野心", "争论倾向",
+        "忠诚", "抗压能力", "职业素养", "体育精神", "情绪控制", "国籍", "前腰", "左前腰", "右前腰", "中后卫", "左后卫", "右后卫",
+        "后腰", "门将", "中前卫", "左前卫", "右前卫", "前锋", "进攻型左边卫", "进攻型右边卫", "球员习惯", "身高", "生日",
+    ]
+
+    rows = [
+        {
+            "姓名": "哈兰德",
+            "UID": 29179241,
+            "年龄": 24,
+            "CA": 188,
+            "PA": 194,
+            "俱乐部": "Manchester City",
+            "位置": "ST",
+            "传球": 12,
+            "传中": 7,
+            "盯人": 4,
+            "技术": 15,
+            "盘带": 14,
+            "抢断": 3,
+            "射门": 18,
+            "停球": 16,
+            "头球": 17,
+            "远射": 14,
+            "点球": 15,
+            "角球": 4,
+            "界外球": 3,
+            "任意球": 5,
+            "想象力": 12,
+            "防守站位": 6,
+            "工作投入": 13,
+            "集中": 12,
+            "决断": 16,
+            "领导力": 8,
+            "侵略性": 12,
+            "视野": 11,
+            "团队合作": 14,
+            "无球跑动": 18,
+            "意志力": 16,
+            "勇敢": 17,
+            "预判": 14,
+            "镇定": 15,
+            "爆发力": 17,
+            "弹跳": 18,
+            "灵活": 13,
+            "耐力": 15,
+            "平衡2": 16,
+            "强壮": 18,
+            "速度": 17,
+            "体质": 16,
+            "左脚": 11,
+            "右脚": 20,
+            "出击": 1,
+            "大脚开球": 2,
+            "反应": 3,
+            "拦截传中": 2,
+            "击球倾向": 1,
+            "手控球": 1,
+            "手抛球": 1,
+            "一对一": 2,
+            "神经指数": 1,
+            "指挥防守": 2,
+            "制空能力": 2,
+            "稳定性": 15,
+            "肮脏动作": 3,
+            "大赛发挥": 15,
+            "多样性": 10,
+            "受伤倾向": 6,
+            "适应性": 14,
+            "野心": 18,
+            "争论倾向": 3,
+            "忠诚": 10,
+            "抗压能力": 17,
+            "职业素养": 18,
+            "体育精神": 14,
+            "情绪控制": 13,
+            "国籍": "Norway,England",
+            "前锋": 20,
+            "球员习惯": "",
+            "身高": 194,
+            "生日": "2000-07-21",
+        }
+    ]
+
+    matrix = [list(range(1, len(headers) + 1)), headers]
+    matrix.extend([[row.get(header, "") for header in headers] for row in rows])
+    pd.DataFrame(matrix).to_excel(path, sheet_name="数据", header=False, index=False)
+
+
 class ImportDataTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = TemporaryDirectory()
@@ -868,6 +963,42 @@ class ImportDataTests(unittest.TestCase):
             self.assertEqual(detail_2620.player_habits, "经常尝试传身后球\n角度刁钻的射门\n回撤拿球")
             self.assertEqual(detail_2620.player_habits_raw_code, "525440")
             self.assertEqual(detail_2620.player_habits_high_bits, "")
+        finally:
+            session.close()
+
+    def test_import_supports_2630_attribute_workbook_ca_pa_aliases(self):
+        attribute_workbook_path = self.root_dir / "2630_fixture.xlsx"
+        write_attributes_xlsx_2630(attribute_workbook_path)
+
+        report = run_import(
+            workbook_path=self.workbook_path,
+            attributes_csv_path=attribute_workbook_path,
+            target_engine=self.engine,
+        )
+
+        self.assertFalse(report.has_errors)
+        self.assertTrue(report.committed)
+        attribute_summary = report.datasets["player_attributes"]
+        self.assertEqual(attribute_summary.details["data_version"], "2630")
+
+        session = self.SessionLocal()
+        try:
+            player = session.query(PlayerAttribute).filter(PlayerAttribute.uid == 29179241).one()
+            versioned = (
+                session.query(PlayerAttributeVersion)
+                .filter(
+                    PlayerAttributeVersion.uid == 29179241,
+                    PlayerAttributeVersion.data_version == "2630",
+                )
+                .one()
+            )
+
+            self.assertEqual(player.ca, 188)
+            self.assertEqual(player.pa, 194)
+            self.assertEqual(versioned.ca, 188)
+            self.assertEqual(versioned.pa, 194)
+            self.assertEqual(player.birth_date, "2000-07-21")
+            self.assertEqual(versioned.birth_date, "2000-07-21")
         finally:
             session.close()
 

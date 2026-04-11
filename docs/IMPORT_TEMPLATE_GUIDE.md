@@ -610,6 +610,12 @@ D:\HEIGOOA\.venv\Scripts\python.exe D:\HEIGOOA\scripts\maintenance\rename_teams_
 
 因此像 `2630球员属性.xlsx` 这类工作簿，只要其他结构正常，也可以直接作为正式导入的属性源文件。
 
+补充说明：
+
+- `2620` 一类历史属性工作簿常见写法是 `当前CA / 当前PA`
+- `2630` 一类工作簿常见写法是 `CA / PA`
+- 如果导入报告里 `player_attributes` 长时间表现为 `unchanged`，而你确认已经换了新的属性工作簿，应优先检查表头是否命中了别名映射，并建议显式传入 `--attributes-csv`
+
 ## 补充：`额外0.1M工资帽` 备注约定（2026-04）
 
 当前系统会识别球队备注中的以下工资帽增量语义：

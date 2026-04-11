@@ -200,6 +200,12 @@ def build_player_response(player: Any, nationality: str) -> PlayerResponse:
     )
 
 
+def _coerce_int(value: Any, default: int = 0) -> int:
+    if value is None or value == "":
+        return default
+    return int(value)
+
+
 def build_attribute_search_response(player: Any, *, data_version: str, heigo_club: str) -> AttributeSearchResponse:
     return AttributeSearchResponse(
         uid=player.uid,
@@ -207,8 +213,8 @@ def build_attribute_search_response(player: Any, *, data_version: str, heigo_clu
         data_version=getattr(player, "data_version", data_version),
         position=player.position,
         age=player.age,
-        ca=player.ca,
-        pa=player.pa,
+        ca=_coerce_int(player.ca),
+        pa=_coerce_int(player.pa),
         nationality=player.nationality,
         club=player.club,
         heigo_club=heigo_club,
@@ -243,6 +249,8 @@ def build_player_attribute_detail_response(
     reaction_summary,
 ) -> PlayerAttributeDetailResponse:
     payload = {field_name: getattr(attr, field_name) for field_name in ATTRIBUTE_DETAIL_FIELDS}
+    payload["ca"] = _coerce_int(payload.get("ca"))
+    payload["pa"] = _coerce_int(payload.get("pa"))
     payload.update(
         data_version=getattr(attr, "data_version", data_version),
         heigo_club=heigo_club,
@@ -265,8 +273,8 @@ def build_player_reaction_leaderboard_item_response(
         data_version=data_version,
         position=row.position,
         age=row.age,
-        ca=row.ca,
-        pa=row.pa,
+        ca=_coerce_int(row.ca),
+        pa=_coerce_int(row.pa),
         heigo_club=row.heigo_club or fallback_team,
         flowers=row.flowers,
         eggs=row.eggs,

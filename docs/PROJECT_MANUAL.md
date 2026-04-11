@@ -646,6 +646,20 @@ HEIGOOA/
 
 这一约定的目的，是避免旧名单球员残留在 `players` 表中，继续污染球队名单页、球队人数和工资统计。
 
+## 补充：属性版本默认选择与缓存排障（2026-04）
+
+当前属性库的版本选择约定如下：
+
+- `/api/attributes/versions` 会返回 `available_versions` 与 `default_version`
+- `default_version` 由 `repositories/attribute_repository.py` 结合 `attribute_versions.py` 统一按“数值最新优先”计算，例如 `2630` 应覆盖 `2620`
+- 前端数据库页、详情页和排行榜筛选都应从该接口读取默认版本，而不是在页面脚本中硬编码某个历史版本号
+
+当前线上排障经验如下：
+
+- 如果接口 `GET /api/attributes/versions` 已返回最新版本，但页面仍默认查询旧版属性库，优先排查浏览器缓存和静态资源版本，而不是直接怀疑数据库
+- 如果属性搜索页长时间停留在“搜索中”，应先检查 `/api/attributes/versions` 与 `/api/attributes/search/...` 的实际状态码和返回体，再判断是前端缓存问题还是后端数据问题
+- 当前已知的一类后端数据问题是历史属性记录 `ca / pa` 为空；现有 `services/read_presenters.py` 已统一兜底为 `0`，避免单条异常记录中断整批查询响应
+
 ## 补充：球员库高级搜索模式（2026-04）
 
 当前球员库公开查询已在原有 `GET /api/attributes/search/{player_name}` 之外，新增高级搜索接口：
@@ -673,5 +687,13 @@ HEIGOOA/
 - 为避免一次返回过大结果集，高级搜索当前默认上限为 `200`；命中过多时响应会返回 `truncated=true`
 - 数据库页会把高级搜索条件纳入 SPA history capture / restore；切换属性版本、从详情页返回和浏览器前进后退时，都应保留高级筛选上下文
 - 当前结果区会显示关键词 / 高级条件 chips，并提供“一键清空高级条件”入口；这部分属于数据库页搜索体验的一部分，不应绕开 `database.search.js` 再做平行实现
+
+## 补充：容器更新与静态资源缓存经验（2026-04）
+
+当前部署与排障中应注意以下边界：
+
+- 宿主机 `/srv/heigo` 的源码更新并不会自动更新运行中的 `heigo` 容器；正式生效仍依赖 `docker compose build heigo` 与 `docker compose up -d heigo`
+- 如镜像重建暂时受阻而必须应急排障，可以临时把修复过的源码 `docker cp` 进运行容器后重启主站；但这种热修只应作为恢复手段，后续仍应补一次正式镜像重建
+- 当前前端静态资源查询参数由根目录 `VERSION` 注入；如果后端接口已正确返回最新属性版本或新工资帽规则，但浏览器仍表现为旧逻辑，应优先怀疑静态资源缓存，处理方式是强制刷新，或在发布时同步提升 `VERSION`
 
 

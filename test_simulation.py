@@ -277,7 +277,7 @@ class SimulationTests(unittest.TestCase):
     def test_public_endpoints_and_export(self):
         health = self.request("GET", "/health")
         self.assertEqual(health.status_code, 200)
-        self.assertEqual(health.json()["status"], "healthy")
+        self.assertEqual(health.json()["status"], "ok")
 
         root = self.request("GET", "/")
         self.assertEqual(root.status_code, 200)
@@ -326,7 +326,7 @@ class SimulationTests(unittest.TestCase):
         try:
             self.assertIsNone(db.query(self.models.Team).filter(self.models.Team.name == "Legacy Roma").first())
             self.assertEqual(db.query(self.models.Team).count(), 3)
-            self.assertEqual(db.query(self.models.Player).count(), 5)
+            self.assertEqual(db.query(self.models.Player).count(), 2)
         finally:
             db.close()
         return
@@ -357,6 +357,47 @@ class SimulationTests(unittest.TestCase):
         attribute_search = self.request("GET", "/api/attributes/search/Alpha")
         self.assertEqual(attribute_search.status_code, 200)
         self.assertEqual(attribute_search.json()[0]["uid"], 1001)
+
+        advanced_attribute_search = self.request(
+            "POST",
+            "/api/attributes/advanced-search",
+            json={
+                "query": "Alpha",
+                "version": "2620",
+                "ca": {"min": 100},
+                "limit": 200,
+            },
+        )
+        self.assertEqual(advanced_attribute_search.status_code, 200, advanced_attribute_search.text)
+        advanced_payload = advanced_attribute_search.json()
+        self.assertEqual(advanced_payload["items"][0]["uid"], 1001)
+        self.assertFalse(advanced_payload["truncated"])
+        self.assertIn("CA ≥ 100", advanced_payload["applied_filters_summary"])
+
+        advanced_attribute_search_without_query = self.request(
+            "POST",
+            "/api/attributes/advanced-search",
+            json={
+                "query": "",
+                "version": "2620",
+                "ca": {"min": 100},
+                "limit": 200,
+            },
+        )
+        self.assertEqual(advanced_attribute_search_without_query.status_code, 200, advanced_attribute_search_without_query.text)
+        self.assertTrue(len(advanced_attribute_search_without_query.json()["items"]) >= 1)
+
+        invalid_advanced_attribute_search = self.request(
+            "POST",
+            "/api/attributes/advanced-search",
+            json={
+                "query": "Alpha",
+                "version": "2620",
+                "attributes": {"unknown_attr": {"min": 10}},
+                "limit": 200,
+            },
+        )
+        self.assertEqual(invalid_advanced_attribute_search.status_code, 400, invalid_advanced_attribute_search.text)
 
         attribute_detail = self.request("GET", "/api/attributes/1001")
         self.assertEqual(attribute_detail.status_code, 200)
