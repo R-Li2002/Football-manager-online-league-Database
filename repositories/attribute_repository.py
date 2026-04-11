@@ -224,14 +224,11 @@ def _apply_range_filters(query, attribute_model, filters: Iterable[AttributeRang
 
 
 def _apply_position_filters(query, attribute_model, filters: Iterable[PositionScoreFilter]):
-    position_conditions = []
     for item in filters:
         column_name = POSITION_SCORE_FIELD_ALLOWLIST.get(item.position)
         if not column_name:
             continue
-        position_conditions.append(getattr(attribute_model, column_name) >= item.minimum_score)
-    if position_conditions:
-        query = query.filter(or_(*position_conditions))
+        query = query.filter(getattr(attribute_model, column_name) >= item.minimum_score)
     return query
 
 

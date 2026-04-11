@@ -201,6 +201,12 @@ async function assertPositionCycleFollowsConfiguredSteps() {
     assert.equal('ST' in context.currentDbAdvancedFilters.positions, false);
 }
 
+async function assertPositionMapHidesInlineScoreBadge() {
+    context.applyAdvancedDatabaseFiltersState({positions: {ST: 15, AMC: 18}}, {renderPanel: true});
+    context.renderDatabaseAdvancedSearchPanel();
+    assert.equal(elements.get('dbAdvancedSearchPanel').innerHTML.includes('advanced-search-position-state'), false);
+}
+
 async function assertAdvancedSearchSupportsBlankKeyword() {
     advancedSearchBodies = [];
     context.applyAdvancedDatabaseFiltersState({ca: {min: '120'}, positions: {ST: 15}});
@@ -245,6 +251,7 @@ async function assertClearAdvancedFiltersResetsState() {
 (async () => {
     await assertAdvancedTriggerReflectsActiveCount();
     await assertPositionCycleFollowsConfiguredSteps();
+    await assertPositionMapHidesInlineScoreBadge();
     await assertAdvancedSearchSupportsBlankKeyword();
     await assertVersionSwitchRerunsAdvancedSearch();
     await assertClearAdvancedFiltersResetsState();

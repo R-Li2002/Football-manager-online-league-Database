@@ -303,6 +303,49 @@ function buildAdvancedRangeFieldMarkup(field, label, value = {min: '', max: ''},
     `;
 }
 
+function buildAdvancedSearchPositionMap() {
+    const filters = ensureCurrentDbAdvancedFilters();
+    const markers = POSITION_MARKERS.map(marker => {
+        const score = Number(filters.positions?.[marker.label]) || 0;
+        const markerClass = getAdvancedPositionMarkerClass(score);
+        const selectedClass = score ? 'is-selected' : '';
+        const tooltipClasses = getPitchTooltipClasses(marker);
+        const stateText = score ? `>= ${score}` : '未启用';
+        return `
+            <button
+                class="pitch-marker advanced-search-position-marker ${markerClass} ${selectedClass}"
+                style="left:${marker.x}%;top:${marker.y}%;background:none;border:none;padding:0;"
+                type="button"
+                onclick="cycleAdvancedPositionFilter('${marker.label}')"
+                aria-pressed="${score ? 'true' : 'false'}"
+                aria-label="${marker.label} ${stateText}"
+            >
+                <span class="pitch-marker-core">${marker.label}</span>
+                <span class="pitch-marker-tooltip ${tooltipClasses}">${marker.label} · ${stateText}</span>
+            </button>
+        `;
+    }).join('');
+
+    return `
+        <div class="position-map-card database-position-filter-card">
+            <h4>位置熟练度图</h4>
+            <p class="database-advanced-helper">点击球场位置循环切换为 <strong>>=10</strong>、<strong>>=15</strong>、<strong>>=18</strong> 或关闭。多位置会按“同时满足”处理。</p>
+            <div class="pitch-board">
+                <div class="pitch-field">
+                    <span class="pitch-half-line"></span>
+                    <span class="pitch-center-circle"></span>
+                    <span class="pitch-center-spot"></span>
+                    <span class="pitch-top-box"></span>
+                    <span class="pitch-bottom-box"></span>
+                    <span class="pitch-top-goal-box"></span>
+                    <span class="pitch-bottom-goal-box"></span>
+                    ${markers}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
 function renderDatabaseAdvancedSearchPanel() {
     ensureCurrentDbAdvancedFilters();
     const panel = document.getElementById('dbAdvancedSearchPanel');

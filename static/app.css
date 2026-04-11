@@ -3753,34 +3753,17 @@ body.light-mode .database-advanced-panel-card {
 }
 
 .advanced-search-position-marker {
-    width: 34px;
+    width: 42px;
 }
 
 .advanced-search-position-marker .pitch-marker-core {
-    width: 26px;
-    height: 26px;
+    width: 28px;
+    height: 28px;
+    font-size: 0.68rem;
 }
 
 .advanced-search-position-marker.is-selected .pitch-marker-core {
     box-shadow: 0 0 0 3px rgba(255,255,255,0.16), 0 8px 18px rgba(0,0,0,0.2);
-}
-
-.advanced-search-position-state {
-    margin-top: 4px;
-    padding: 1px 6px;
-    border-radius: 999px;
-    background: rgba(12, 18, 28, 0.72);
-    border: 1px solid rgba(255,255,255,0.08);
-    color: #f4f7fb;
-    font-size: 0.63rem;
-    font-weight: 800;
-    line-height: 1.2;
-}
-
-body.light-mode .advanced-search-position-state {
-    background: rgba(255,255,255,0.94);
-    border-color: rgba(76, 79, 105, 0.12);
-    color: #4c4f69;
 }
 
 .database-advanced-groups {
