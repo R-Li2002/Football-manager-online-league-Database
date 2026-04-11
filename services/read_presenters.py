@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from schemas_read import (
@@ -206,6 +207,18 @@ def _coerce_int(value: Any, default: int = 0) -> int:
     return int(value)
 
 
+def _coerce_birth_date(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    match = re.match(r"^(\d{4}-\d{2}-\d{2})", text)
+    if match:
+        return match.group(1)
+    return text
+
+
 def build_attribute_search_response(player: Any, *, data_version: str, heigo_club: str) -> AttributeSearchResponse:
     return AttributeSearchResponse(
         uid=player.uid,
@@ -251,6 +264,7 @@ def build_player_attribute_detail_response(
     payload = {field_name: getattr(attr, field_name) for field_name in ATTRIBUTE_DETAIL_FIELDS}
     payload["ca"] = _coerce_int(payload.get("ca"))
     payload["pa"] = _coerce_int(payload.get("pa"))
+    payload["birth_date"] = _coerce_birth_date(payload.get("birth_date"))
     payload.update(
         data_version=getattr(attr, "data_version", data_version),
         heigo_club=heigo_club,

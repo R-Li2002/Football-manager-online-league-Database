@@ -147,6 +147,17 @@ def test_attribute_detail_presenter_coerces_null_ca_pa_to_zero():
     assert payload.pa == 0
 
 
+def test_attribute_detail_presenter_trims_birth_date_time():
+    payload = build_player_attribute_detail_response(
+        _detail_attr(birth_date="2000-07-21 00:00:00"),
+        data_version="2630",
+        heigo_club="Man City",
+        reaction_summary={},
+    )
+
+    assert payload.birth_date == "2000-07-21"
+
+
 def test_reaction_leaderboard_presenter_coerces_null_ca_pa_to_zero():
     payload = build_player_reaction_leaderboard_item_response(
         SimpleNamespace(
