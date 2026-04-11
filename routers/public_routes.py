@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from schemas_read import (
+    AdvancedAttributeSearchResponse,
     AttributeSearchResponse,
     AttributeVersionsResponse,
     DataFeedbackSubmitResponse,
@@ -18,7 +19,7 @@ from schemas_read import (
     TeamResponse,
     WageDetailResponse,
 )
-from schemas_write import DataFeedbackRequest
+from schemas_write import AdvancedAttributeSearchRequest, DataFeedbackRequest
 from services import data_feedback_service, export_service, project_update_service, read_service, reaction_service
 
 REACTION_VISITOR_COOKIE_NAME = "heigo_reaction_visitor"
@@ -72,6 +73,13 @@ def build_public_router(get_db):
         db: Session = Depends(get_db),
     ):
         return read_service.search_player_attributes(db, player_name, data_version=version)
+
+    @router.post("/api/attributes/advanced-search", response_model=AdvancedAttributeSearchResponse)
+    def search_player_attributes_advanced(
+        request: AdvancedAttributeSearchRequest,
+        db: Session = Depends(get_db),
+    ):
+        return read_service.search_player_attributes_advanced_service(db, request)
 
     @router.get("/api/attributes/versions", response_model=AttributeVersionsResponse)
     def get_attribute_versions(db: Session = Depends(get_db)):

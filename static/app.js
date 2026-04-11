@@ -9,6 +9,12 @@ const AppModules = {
         if (typeof refreshAttributeVersionBanner === 'function') {
             refreshAttributeVersionBanner();
         }
+        if (typeof renderAdvancedSearchTriggerState === 'function') {
+            renderAdvancedSearchTriggerState();
+        }
+        if (typeof renderDatabaseSearchSummary === 'function') {
+            renderDatabaseSearchSummary();
+        }
         if (typeof syncDatabaseSubtabUI === 'function') {
             syncDatabaseSubtabUI();
         }
@@ -86,6 +92,7 @@ function captureDatabaseHistoryState() {
     return {
         query: document.getElementById('dbPlayerSearch')?.value.trim() || '',
         attributeVersion: typeof getCurrentAttributeVersion === 'function' ? getCurrentAttributeVersion() : '',
+        advancedFilters: typeof captureAdvancedDatabaseFilters === 'function' ? captureAdvancedDatabaseFilters() : {},
         sort: normalizeSortState(currentDbSort, 'number'),
         subtab: currentDatabaseSubtab === 'leaderboard' ? 'leaderboard' : 'search',
         leaderboardMetric: document.getElementById('dbReactionMetricSelect')?.value || 'flowers',
@@ -133,6 +140,9 @@ function normalizeHistoryState(rawState, index = appHistoryIndex) {
         database: {
             query: typeof baseState.database?.query === 'string' ? baseState.database.query : '',
             attributeVersion: typeof baseState.database?.attributeVersion === 'string' ? baseState.database.attributeVersion : '',
+            advancedFilters: baseState.database?.advancedFilters && typeof baseState.database.advancedFilters === 'object'
+                ? baseState.database.advancedFilters
+                : {},
             sort: normalizeSortState(baseState.database?.sort, 'number'),
             subtab: baseState.database?.subtab === 'leaderboard' ? 'leaderboard' : 'search',
             leaderboardMetric: typeof baseState.database?.leaderboardMetric === 'string' ? baseState.database.leaderboardMetric : 'flowers',
@@ -236,6 +246,9 @@ async function restoreDatabaseHistoryState(databaseState) {
     if (typeof setCurrentAttributeVersion === 'function') {
         setCurrentAttributeVersion(databaseState.attributeVersion);
     }
+    if (typeof applyAdvancedDatabaseFiltersState === 'function') {
+        applyAdvancedDatabaseFiltersState(databaseState.advancedFilters, {renderPanel: false});
+    }
     currentDbSort = normalizeSortState(databaseState.sort, 'number');
     currentDatabaseSubtab = databaseState.subtab === 'leaderboard' ? 'leaderboard' : 'search';
     dbDetailReturnState = {
@@ -274,19 +287,23 @@ async function restoreDatabaseHistoryState(databaseState) {
     }
     currentDetailPlayer = null;
 
-    if (databaseState.query && typeof searchDatabase === 'function') {
+    if ((databaseState.query || (typeof hasActiveAdvancedFilters === 'function' && hasActiveAdvancedFilters())) && typeof searchDatabase === 'function') {
         await searchDatabase(databaseState.query, {pushHistory: false});
         return;
     }
 
     currentDbPlayers = [];
-    const dbTableTitle = document.getElementById('dbTableTitle');
-    const dbPlayersTable = document.getElementById('dbPlayersTable');
-    if (dbTableTitle) {
-        dbTableTitle.textContent = '\u7403\u5458\u5e93\u641c\u7d22\u7ed3\u679c';
-    }
-    if (dbPlayersTable) {
-        dbPlayersTable.innerHTML = '<div class="no-data">\u8bf7\u8f93\u5165\u7403\u5458\u59d3\u540d\u6216 UID \u8fdb\u884c\u641c\u7d22</div>';
+    if (typeof renderDatabaseSearchPlaceholder === 'function') {
+        renderDatabaseSearchPlaceholder('请输入球员姓名或 UID，或打开高级搜索配置筛选条件。');
+    } else {
+        const dbTableTitle = document.getElementById('dbTableTitle');
+        const dbPlayersTable = document.getElementById('dbPlayersTable');
+        if (dbTableTitle) {
+            dbTableTitle.textContent = '\u7403\u5458\u5e93\u641c\u7d22\u7ed3\u679c';
+        }
+        if (dbPlayersTable) {
+            dbPlayersTable.innerHTML = '<div class="no-data">\u8bf7\u8f93\u5165\u7403\u5458\u59d3\u540d\u6216 UID \u8fdb\u884c\u641c\u7d22</div>';
+        }
     }
 }
 

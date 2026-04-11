@@ -180,6 +180,14 @@ class AttributeSearchResponse(BaseModel):
     heigo_club: str
 
 
+class AdvancedAttributeSearchResponse(BaseModel):
+    items: list[AttributeSearchResponse] = Field(default_factory=list)
+    data_version: str
+    limit: int
+    truncated: bool = False
+    applied_filters_summary: list[str] = Field(default_factory=list)
+
+
 class PositionScoreResponse(BaseModel):
     position: str
     score: int

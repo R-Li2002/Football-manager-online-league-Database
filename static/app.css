@@ -3575,6 +3575,330 @@
     font-variant-numeric: tabular-nums;
 }
 
+.database-advanced-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 50px;
+    min-width: 124px;
+    position: relative;
+}
+
+.database-advanced-trigger.is-active {
+    border-color: color-mix(in srgb, var(--accent-primary) 28%, transparent);
+    background: var(--accent-bg);
+    color: var(--text-primary);
+}
+
+.database-advanced-trigger-icon {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.database-advanced-trigger-count {
+    min-width: 22px;
+    min-height: 22px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--accent-gradient);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+body:not(.light-mode) .database-advanced-trigger-count {
+    color: #16161e;
+}
+
+.database-advanced-panel-shell {
+    position: relative;
+}
+
+.database-advanced-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 15, 25, 0.38);
+    backdrop-filter: blur(4px);
+    z-index: 95;
+}
+
+.database-advanced-panel {
+    position: absolute;
+    top: calc(100% + 14px);
+    right: 0;
+    width: min(1080px, calc(100vw - 64px));
+    z-index: 110;
+}
+
+.database-advanced-panel-card {
+    border-radius: 24px;
+    padding: 22px;
+    background: linear-gradient(180deg, rgba(19, 28, 45, 0.98), rgba(14, 22, 34, 0.98));
+    border: 1px solid rgba(122, 162, 247, 0.18);
+    box-shadow: 0 28px 60px rgba(6, 11, 20, 0.34);
+    display: grid;
+    gap: 18px;
+}
+
+body.light-mode .database-advanced-panel-card {
+    background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(246,248,252,0.98));
+    border-color: rgba(76, 79, 105, 0.1);
+    box-shadow: 0 24px 44px rgba(76, 79, 105, 0.14);
+}
+
+.database-advanced-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.database-advanced-head h3 {
+    margin: 6px 0 0;
+}
+
+.database-advanced-close {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 1.6rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 6px;
+}
+
+.database-advanced-helper {
+    margin: 8px 0 0;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    font-size: 0.92rem;
+}
+
+.database-advanced-summary-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.database-advanced-section {
+    display: grid;
+    gap: 14px;
+    padding-top: 2px;
+}
+
+.database-advanced-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+}
+
+.database-advanced-section-head h4 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.database-advanced-section-head span {
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+}
+
+.database-advanced-field-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.database-advanced-field-grid-base {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.database-advanced-range-field {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+.database-advanced-range-label {
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.database-advanced-range-inputs {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+}
+
+.database-advanced-range-inputs input {
+    min-width: 0;
+    min-height: 44px;
+}
+
+.database-advanced-range-separator {
+    color: var(--text-secondary);
+    font-weight: 700;
+}
+
+.database-position-filter-card {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+.advanced-search-position-marker {
+    width: 34px;
+}
+
+.advanced-search-position-marker .pitch-marker-core {
+    width: 26px;
+    height: 26px;
+}
+
+.advanced-search-position-marker.is-selected .pitch-marker-core {
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.16), 0 8px 18px rgba(0,0,0,0.2);
+}
+
+.advanced-search-position-state {
+    margin-top: 4px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(12, 18, 28, 0.72);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #f4f7fb;
+    font-size: 0.63rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+body.light-mode .advanced-search-position-state {
+    background: rgba(255,255,255,0.94);
+    border-color: rgba(76, 79, 105, 0.12);
+    color: #4c4f69;
+}
+
+.database-advanced-groups {
+    display: grid;
+    gap: 12px;
+}
+
+.database-advanced-group {
+    border-radius: 18px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    overflow: hidden;
+}
+
+body.light-mode .database-advanced-group {
+    background: rgba(255,255,255,0.78);
+    border-color: rgba(76, 79, 105, 0.08);
+}
+
+.database-advanced-group summary {
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    padding: 14px 16px;
+    font-weight: 700;
+}
+
+.database-advanced-group summary::-webkit-details-marker {
+    display: none;
+}
+
+.database-advanced-group-count {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.database-advanced-group .database-advanced-field-grid {
+    padding: 0 16px 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.database-advanced-actions {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.database-table-heading {
+    display: grid;
+    gap: 6px;
+}
+
+.database-table-meta {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    font-size: 0.92rem;
+}
+
+.query-chip-action {
+    cursor: pointer;
+    font: inherit;
+    color: var(--text-primary);
+}
+
+@media (max-width: 1024px) {
+    .database-advanced-field-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 780px) {
+    .database-advanced-panel {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        top: auto;
+        width: 100%;
+        max-height: calc(100vh - 48px);
+        overflow-y: auto;
+        z-index: 110;
+    }
+
+    .database-advanced-panel-card {
+        border-radius: 24px 24px 0 0;
+        padding: 18px 16px 22px;
+        min-height: min(78vh, 720px);
+    }
+
+    .database-advanced-field-grid,
+    .database-advanced-field-grid-base,
+    .database-advanced-group .database-advanced-field-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .database-advanced-actions .btn,
+    .database-advanced-trigger {
+        width: 100%;
+    }
+
+    .database-advanced-head,
+    .database-advanced-section-head {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .database-advanced-summary-row,
+    .database-advanced-actions {
+        width: 100%;
+    }
+}
+
 @media (max-width: 780px) {
     .overview-summary-head {
         flex-direction: column;

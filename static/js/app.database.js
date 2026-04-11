@@ -1178,12 +1178,13 @@ async function handleAttributeVersionChange(version) {
     const nextVersion = setCurrentAttributeVersion(version);
     refreshAttributeVersionBanner();
     const currentQuery = document.getElementById('dbPlayerSearch')?.value.trim() || '';
+    const shouldRefreshSearch = currentQuery || (typeof hasActiveAdvancedFilters === 'function' && hasActiveAdvancedFilters());
     if (document.getElementById('dbReactionLeaderboardView')?.classList.contains('active')) {
         await loadReactionLeaderboard({pushHistory: true, historyMode: 'replace'});
         return;
     }
     if (document.getElementById('dbListView')?.classList.contains('active')) {
-        if (currentQuery) {
+        if (shouldRefreshSearch) {
             await searchDatabase(currentQuery, {pushHistory: true, historyMode: 'replace'});
         } else if (typeof syncAppHistory === 'function') {
             syncAppHistory('replace');
@@ -1191,8 +1192,19 @@ async function handleAttributeVersionChange(version) {
         return;
     }
     if (!currentDetailPlayer) return;
-    if (currentQuery) {
-        currentDbPlayers = await fetchDatabaseSearchResults(currentQuery, {version: nextVersion});
+    if (shouldRefreshSearch && typeof executeDatabaseSearchRequest === 'function') {
+        const result = await executeDatabaseSearchRequest(currentQuery, {version: nextVersion});
+        currentDbPlayers = Array.isArray(result?.items) ? result.items : [];
+        if (typeof setCurrentDbSearchMeta === 'function') {
+            setCurrentDbSearchMeta({
+                mode: result?.mode || 'basic',
+                query: currentQuery,
+                truncated: Boolean(result?.truncated),
+                limit: Number(result?.limit) || 200,
+                applied_filters_summary: Array.isArray(result?.applied_filters_summary) ? result.applied_filters_summary : [],
+                data_version: result?.data_version || nextVersion,
+            });
+        }
         renderDbPlayers(currentDbPlayers);
     }
     await showPlayerDetail(currentDetailPlayer.uid, {
@@ -1335,5 +1347,9 @@ document.getElementById('comparisonOverlay')?.addEventListener('click', event =>
 document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && comparisonModalOpen) {
         closeComparisonWorkspace();
+        return;
+    }
+    if (event.key === 'Escape' && typeof isAdvancedSearchPanelOpen === 'function' && isAdvancedSearchPanelOpen()) {
+        toggleAdvancedSearchPanel(false);
     }
 });

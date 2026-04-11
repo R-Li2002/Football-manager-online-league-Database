@@ -204,13 +204,42 @@
                                 </select>
                             </div>
                         </div>
+                        <button
+                            class="btn btn-secondary database-advanced-trigger"
+                            id="dbAdvancedSearchToggle"
+                            type="button"
+                            onclick="toggleAdvancedSearchPanel()"
+                            aria-expanded="false"
+                            aria-controls="dbAdvancedSearchPanel"
+                        >
+                            <span class="database-advanced-trigger-icon" aria-hidden="true">⌕</span>
+                            <span class="database-advanced-trigger-text">高级搜索</span>
+                            <span class="database-advanced-trigger-count" id="dbAdvancedSearchCount" hidden>0</span>
+                        </button>
                         <button class="btn btn-primary" onclick="searchDatabase()">搜索</button>
+                    </div>
+                    <div class="database-advanced-panel-shell" id="dbAdvancedSearchShell">
+                        <div class="database-advanced-overlay" id="dbAdvancedSearchOverlay" hidden></div>
+                        <div
+                            class="database-advanced-panel"
+                            id="dbAdvancedSearchPanel"
+                            role="dialog"
+                            aria-modal="false"
+                            aria-labelledby="dbAdvancedSearchTitle"
+                            hidden
+                        ></div>
                     </div>
                 </div>
 
                 <div class="table-container">
                     <div class="table-header-row">
-                        <h2 id="dbTableTitle" class="table-title">球员库搜索结果</h2>
+                        <div class="database-table-heading">
+                            <h2 id="dbTableTitle" class="table-title">球员库搜索结果</h2>
+                            <p id="dbTableMeta" class="database-table-meta">请输入球员姓名或 UID 进行搜索</p>
+                        </div>
+                        <div class="query-chip-row" id="dbQueryChips">
+                            <span class="query-chip is-muted">未应用筛选</span>
+                        </div>
                     </div>
                     <div id="dbPlayersTable"><div class="no-data">请输入球员姓名或 UID 进行搜索</div></div>
                 </div>

@@ -151,3 +151,24 @@ class DataFeedbackRequest(BaseModel):
     contact: Optional[str] = None
     source_page: Optional[str] = None
     website: Optional[str] = ""
+
+
+class AdvancedAttributeRangeRequest(BaseModel):
+    min: Optional[int] = None
+    max: Optional[int] = None
+
+
+class AdvancedAttributePositionRequest(BaseModel):
+    position: str
+    min_score: int
+
+
+class AdvancedAttributeSearchRequest(BaseModel):
+    query: str = ""
+    version: Optional[str] = None
+    age: Optional[AdvancedAttributeRangeRequest] = None
+    ca: Optional[AdvancedAttributeRangeRequest] = None
+    pa: Optional[AdvancedAttributeRangeRequest] = None
+    attributes: dict[str, AdvancedAttributeRangeRequest] = Field(default_factory=dict)
+    positions: list[AdvancedAttributePositionRequest] = Field(default_factory=list)
+    limit: int = 200

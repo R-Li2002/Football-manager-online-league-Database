@@ -5,7 +5,12 @@ from sqlalchemy.orm import sessionmaker
 
 from database import Base
 from models import Player, PlayerAttribute, PlayerAttributeVersion
-from repositories.attribute_repository import search_player_attributes_by_name
+from repositories.attribute_repository import (
+    AttributeRangeFilter,
+    PositionScoreFilter,
+    search_player_attributes_advanced,
+    search_player_attributes_by_name,
+)
 from repositories.player_repository import search_players_by_name
 from search_normalization import build_search_normalized_keys, normalize_search_text, normalize_search_text_loose
 
@@ -61,9 +66,10 @@ class SearchRepositoryTests(unittest.TestCase):
         )
         self.db.add_all(
             [
-                PlayerAttributeVersion(uid=11, data_version="2620", name="Benjamin Šeško", position="ST", age=22, ca=150, pa=170, nationality="SI", club="Test"),
-                PlayerAttributeVersion(uid=12, data_version="2620", name="Viktor Gyökeres", position="ST", age=27, ca=160, pa=165, nationality="SE", club="Test"),
-                PlayerAttributeVersion(uid=13, data_version="2620", name="Αλέξανδρος", position="MC", age=25, ca=130, pa=140, nationality="GR", club="Test"),
+                PlayerAttributeVersion(uid=11, data_version="2620", name="Benjamin Šeško", position="ST", age=22, ca=150, pa=170, nationality="SI", club="Test", pos_st=20, finishing=16, passing=9),
+                PlayerAttributeVersion(uid=12, data_version="2620", name="Viktor Gyökeres", position="ST", age=27, ca=160, pa=165, nationality="SE", club="Test", pos_st=18, pos_amc=12, finishing=17, passing=11),
+                PlayerAttributeVersion(uid=13, data_version="2620", name="Αλέξανδρος", position="MC", age=25, ca=130, pa=140, nationality="GR", club="Test", pos_mc=18, pos_dm=10, passing=17, decisions=15),
+                PlayerAttributeVersion(uid=14, data_version="2620", name="Keeper Prime", position="GK", age=28, ca=148, pa=155, nationality="BR", club="Test", pos_gk=18, reflexes=17, handling=16),
             ]
         )
         self.db.commit()
@@ -94,3 +100,45 @@ class SearchRepositoryTests(unittest.TestCase):
     def test_attribute_search_matches_base_latin_query_for_umlaut_name(self):
         results = search_player_attributes_by_name(self.db, "gyokeres", data_version="2620")
         self.assertEqual([player.name for player in results], ["Viktor Gyökeres"])
+
+    def test_advanced_attribute_search_supports_query_and_range_filters(self):
+        result = search_player_attributes_advanced(
+            self.db,
+            query_text="gyokeres",
+            range_filters=[AttributeRangeFilter(field="ca", minimum=155)],
+            data_version="2620",
+        )
+        self.assertEqual([player.uid for player in result.items], [12])
+        self.assertFalse(result.truncated)
+
+    def test_advanced_attribute_search_supports_filters_without_query(self):
+        result = search_player_attributes_advanced(
+            self.db,
+            range_filters=[
+                AttributeRangeFilter(field="age", maximum=25),
+                AttributeRangeFilter(field="passing", minimum=15),
+            ],
+            data_version="2620",
+        )
+        self.assertEqual([player.uid for player in result.items], [13])
+
+    def test_advanced_attribute_search_uses_or_for_positions(self):
+        result = search_player_attributes_advanced(
+            self.db,
+            position_filters=[
+                PositionScoreFilter(position="ST", minimum_score=18),
+                PositionScoreFilter(position="MC", minimum_score=18),
+            ],
+            data_version="2620",
+        )
+        self.assertEqual([player.uid for player in result.items], [12, 11, 13])
+
+    def test_advanced_attribute_search_reports_truncation(self):
+        result = search_player_attributes_advanced(
+            self.db,
+            range_filters=[AttributeRangeFilter(field="ca", minimum=120)],
+            limit=2,
+            data_version="2620",
+        )
+        self.assertEqual(len(result.items), 2)
+        self.assertTrue(result.truncated)

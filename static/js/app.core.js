@@ -22,6 +22,14 @@ var dbDetailReturnState = {tab: 'database'};
 var playerCompareSlots = [null, null];
 var comparisonModalOpen = false;
 var currentDetailMobileSection = 'overview';
+var currentDbAdvancedFilters = null;
+var currentDbSearchMeta = {
+    mode: 'basic',
+    query: '',
+    truncated: false,
+    limit: 200,
+    applied_filters_summary: [],
+};
 
 window.AppState = window.AppState || {};
 Object.defineProperties(window.AppState, {
@@ -48,6 +56,8 @@ Object.defineProperties(window.AppState, {
     playerCompareSlots: {enumerable: true, get: () => playerCompareSlots, set: value => { playerCompareSlots = value; }},
     comparisonModalOpen: {enumerable: true, get: () => comparisonModalOpen, set: value => { comparisonModalOpen = value; }},
     currentDetailMobileSection: {enumerable: true, get: () => currentDetailMobileSection, set: value => { currentDetailMobileSection = value; }},
+    currentDbAdvancedFilters: {enumerable: true, get: () => currentDbAdvancedFilters, set: value => { currentDbAdvancedFilters = value; }},
+    currentDbSearchMeta: {enumerable: true, get: () => currentDbSearchMeta, set: value => { currentDbSearchMeta = value; }},
 });
 
 function syncThemeToggleState() {
@@ -110,6 +120,24 @@ async function fetchDatabaseSearchResults(name, options = {}) {
     const version = normalizeAttributeVersion(options.version || getCurrentAttributeVersion());
     const res = await fetch(buildAttributeVersionedPath(`/api/attributes/search/${encodeURIComponent(name)}`, version));
     return await res.json();
+}
+
+async function fetchDatabaseAdvancedSearchResults(payload) {
+    const response = await fetch('/api/attributes/advanced-search', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+    });
+    let data = null;
+    try {
+        data = await response.json();
+    } catch (error) {
+        data = null;
+    }
+    if (!response.ok) {
+        throw new Error(data?.detail || data?.message || `HTTP ${response.status}`);
+    }
+    return data;
 }
 
 function toggleTheme() {
@@ -349,6 +377,7 @@ function closeModal() {
 
 window.AppCore = {
     fetchDatabaseSearchResults,
+    fetchDatabaseAdvancedSearchResults,
     loadAttributeVersionCatalog,
     getCurrentAttributeVersion,
     setCurrentAttributeVersion,

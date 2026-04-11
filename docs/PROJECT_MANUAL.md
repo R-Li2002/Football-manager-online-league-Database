@@ -424,6 +424,12 @@ HEIGOOA/
   - `static/js/app.database.js`
   - `static/js/database.search.js`
   - `static/js/database.compare.js`
+- 当前数据库页的搜索区已扩展为“双层模式”：
+  - 默认保留原有关键词搜索入口，继续支持姓名 / UID 搜索与直接进入详情
+  - 新增高级搜索面板，由搜索框右侧图标按钮打开
+  - 高级搜索面板支持 `CA / PA / 年龄` 上下限、全属性范围、位置熟练度图筛选
+  - 位置筛选当前固定按 OR 逻辑处理；单个位置点击按 `>=10 -> >=15 -> >=18 -> 关闭` 循环
+  - 桌面端使用锚定搜索区的弹出层，移动端与窄屏缩放下切换为底部抽屉式全宽面板
 
 当前这轮拆分的目标是缩小热点文件职责，而不是改变现有页面行为、导入流程或部署方式。
 
@@ -639,5 +645,33 @@ HEIGOOA/
 - `player_attributes` 与 `player_attribute_versions` 仍按属性版本库语义维护，不因为联赛名单缺少某个 UID 就删除历史属性记录。
 
 这一约定的目的，是避免旧名单球员残留在 `players` 表中，继续污染球队名单页、球队人数和工资统计。
+
+## 补充：球员库高级搜索模式（2026-04）
+
+当前球员库公开查询已在原有 `GET /api/attributes/search/{player_name}` 之外，新增高级搜索接口：
+
+- `POST /api/attributes/advanced-search`
+- 请求体支持：
+  - `query`
+  - `version`
+  - `age / ca / pa` 的 `{min,max}`
+  - `attributes` 范围字典
+  - `positions` 列表，每项为 `{position,min_score}`
+  - `limit`
+- 响应当前返回：
+  - `items`
+  - `data_version`
+  - `limit`
+  - `truncated`
+  - `applied_filters_summary`
+
+当前实现约定如下：
+
+- 空关键词允许搜索，但必须至少存在一个高级筛选条件；不允许“空关键词 + 无条件”直接全库拉取
+- 仓库层对高级筛选字段使用 allowlist，只允许对白名单属性字段和位置字段生成过滤条件
+- 位置筛选当前固定按 OR 语义处理；例如同时要求 `ST >= 15` 与 `AMC >= 15` 时，只要命中任一位置即可
+- 为避免一次返回过大结果集，高级搜索当前默认上限为 `200`；命中过多时响应会返回 `truncated=true`
+- 数据库页会把高级搜索条件纳入 SPA history capture / restore；切换属性版本、从详情页返回和浏览器前进后退时，都应保留高级筛选上下文
+- 当前结果区会显示关键词 / 高级条件 chips，并提供“一键清空高级条件”入口；这部分属于数据库页搜索体验的一部分，不应绕开 `database.search.js` 再做平行实现
 
 

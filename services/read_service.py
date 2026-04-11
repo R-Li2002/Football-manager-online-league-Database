@@ -2,12 +2,17 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from repositories.attribute_repository import (
+    ATTRIBUTE_RANGE_FIELD_ALLOWLIST,
+    POSITION_SCORE_FIELD_ALLOWLIST,
+    AttributeRangeFilter,
+    PositionScoreFilter,
     get_attribute_model_for_versions,
     get_default_attribute_version,
     get_player_attribute_by_uid,
     list_available_attribute_versions,
     map_attribute_uid_to_primary_nationality,
     resolve_attribute_version,
+    search_player_attributes_advanced,
     search_player_attributes_by_name,
 )
 from repositories.league_info_repository import list_league_info
@@ -21,6 +26,7 @@ from repositories.player_repository import (
 )
 from repositories.team_repository import get_team_by_name, list_visible_teams
 from schemas_read import (
+    AdvancedAttributeSearchResponse,
     AttributeSearchResponse,
     AttributeVersionsResponse,
     PlayerAttributeDetailResponse,
@@ -30,6 +36,7 @@ from schemas_read import (
     TeamResponse,
     WageDetailResponse,
 )
+from schemas_write import AdvancedAttributeRangeRequest, AdvancedAttributeSearchRequest
 from services.league_service import calculate_player_wage_payload
 from services.read_presenters import (
     build_attribute_search_response,
@@ -46,6 +53,71 @@ LEVEL_ORDER = {"超级": 1, "甲级": 2, "乙级": 3}
 VISIBLE_LEVEL = "隐藏"
 SEA_TEAM_NAME = "85大海"
 ATTRIBUTE_FALLBACK_TEAM = "大海"
+ADVANCED_SEARCH_FIELD_LABELS = {
+    "age": "年龄",
+    "ca": "CA",
+    "pa": "PA",
+    "corner": "角球",
+    "crossing": "传中",
+    "dribbling": "盘带",
+    "finishing": "射门",
+    "first_touch": "停球",
+    "free_kick": "任意球",
+    "heading": "头球",
+    "long_shots": "远射",
+    "long_throws": "界外球",
+    "marking": "盯人",
+    "passing": "传球",
+    "penalty": "点球",
+    "tackling": "抢断",
+    "technique": "技术",
+    "aggression": "侵略性",
+    "anticipation": "预判",
+    "bravery": "勇敢",
+    "composure": "镇定",
+    "concentration": "集中",
+    "decisions": "决断",
+    "determination": "意志力",
+    "flair": "想象力",
+    "leadership": "领导力",
+    "off_the_ball": "无球跑动",
+    "positioning": "站位",
+    "teamwork": "团队合作",
+    "vision": "视野",
+    "work_rate": "工作投入",
+    "acceleration": "爆发力",
+    "agility": "灵活",
+    "balance": "平衡",
+    "jumping": "弹跳",
+    "natural_fitness": "体质",
+    "pace": "速度",
+    "stamina": "耐力",
+    "strength": "强壮",
+    "consistency": "稳定性",
+    "dirtiness": "肮脏",
+    "important_matches": "大赛发挥",
+    "injury_proneness": "受伤倾向",
+    "versatility": "多样性",
+    "adaptability": "适应性",
+    "ambition": "野心",
+    "controversy": "争议",
+    "loyalty": "忠诚",
+    "pressure": "抗压",
+    "professionalism": "职业素养",
+    "sportsmanship": "体育精神",
+    "temperament": "情绪控制",
+    "aerial_ability": "制空能力",
+    "command_of_area": "拦截传中",
+    "communication": "指挥防守",
+    "eccentricity": "神经指数",
+    "handling": "手控球",
+    "kicking": "大脚开球",
+    "one_on_ones": "一对一",
+    "reflexes": "反应",
+    "rushing_out": "出击",
+    "tendency_to_punch": "击球倾向",
+    "throwing": "手抛球",
+}
 
 
 def get_league_info(db: Session):
@@ -106,6 +178,97 @@ def search_player_attributes(
         )
         for player in players
     ]
+
+
+def _normalize_range_request(field_name: str, value: AdvancedAttributeRangeRequest | None) -> AttributeRangeFilter | None:
+    if value is None:
+        return None
+    minimum = value.min if value.min is not None else None
+    maximum = value.max if value.max is not None else None
+    if minimum is None and maximum is None:
+        return None
+    if minimum is not None and maximum is not None and minimum > maximum:
+        raise HTTPException(status_code=400, detail=f"{field_name} 的最小值不能大于最大值")
+    return AttributeRangeFilter(field=field_name, minimum=minimum, maximum=maximum)
+
+
+def _build_range_summary(field_name: str, range_filter: AttributeRangeFilter | None) -> str | None:
+    if range_filter is None:
+        return None
+    label = ADVANCED_SEARCH_FIELD_LABELS.get(field_name, field_name)
+    if range_filter.minimum is not None and range_filter.maximum is not None:
+        return f"{label} {range_filter.minimum}-{range_filter.maximum}"
+    if range_filter.minimum is not None:
+        return f"{label} ≥ {range_filter.minimum}"
+    return f"{label} ≤ {range_filter.maximum}"
+
+
+def search_player_attributes_advanced_service(
+    db: Session,
+    request: AdvancedAttributeSearchRequest,
+) -> AdvancedAttributeSearchResponse:
+    resolved_version = resolve_attribute_version(db, request.version)
+    query_text = str(request.query or "").strip()
+    range_filters: list[AttributeRangeFilter] = []
+    applied_filters_summary: list[str] = []
+
+    for field_name, range_value in (("age", request.age), ("ca", request.ca), ("pa", request.pa)):
+        normalized = _normalize_range_request(field_name, range_value)
+        if normalized is not None:
+            range_filters.append(normalized)
+            applied_filters_summary.append(_build_range_summary(field_name, normalized))
+
+    attribute_field_allowlist = set(ATTRIBUTE_RANGE_FIELD_ALLOWLIST) - {"age", "ca", "pa"}
+    invalid_attribute_fields = sorted(set(request.attributes or {}) - attribute_field_allowlist)
+    if invalid_attribute_fields:
+        raise HTTPException(status_code=400, detail=f"不支持的属性筛选字段: {', '.join(invalid_attribute_fields)}")
+
+    for field_name, range_value in (request.attributes or {}).items():
+        normalized = _normalize_range_request(field_name, range_value)
+        if normalized is not None:
+            range_filters.append(normalized)
+            applied_filters_summary.append(_build_range_summary(field_name, normalized))
+
+    position_filters: list[PositionScoreFilter] = []
+    invalid_positions = []
+    for item in request.positions or []:
+        normalized_position = str(item.position or "").strip().upper()
+        if normalized_position not in POSITION_SCORE_FIELD_ALLOWLIST:
+            invalid_positions.append(normalized_position or "<empty>")
+            continue
+        if item.min_score < 1 or item.min_score > 20:
+            raise HTTPException(status_code=400, detail=f"{normalized_position} 的熟练度下限必须在 1-20 之间")
+        position_filters.append(PositionScoreFilter(position=normalized_position, minimum_score=item.min_score))
+        applied_filters_summary.append(f"{normalized_position} ≥ {item.min_score}")
+    if invalid_positions:
+        raise HTTPException(status_code=400, detail=f"不支持的位置筛选字段: {', '.join(sorted(set(invalid_positions)))}")
+
+    if not query_text and not range_filters and not position_filters:
+        raise HTTPException(status_code=400, detail="请至少输入关键词或配置一个高级筛选条件")
+
+    result = search_player_attributes_advanced(
+        db,
+        query_text=query_text,
+        range_filters=range_filters,
+        position_filters=position_filters,
+        limit=request.limit,
+        data_version=resolved_version,
+    )
+    heigo_players = map_player_uid_to_team_name(db)
+    return AdvancedAttributeSearchResponse(
+        items=[
+            build_attribute_search_response(
+                player,
+                data_version=resolved_version,
+                heigo_club=heigo_players.get(player.uid, ATTRIBUTE_FALLBACK_TEAM),
+            )
+            for player in result.items
+        ],
+        data_version=resolved_version,
+        limit=max(1, min(200, int(request.limit or 200))),
+        truncated=result.truncated,
+        applied_filters_summary=[item for item in applied_filters_summary if item],
+    )
 
 
 def get_player_attribute_detail(
