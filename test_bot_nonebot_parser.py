@@ -30,6 +30,24 @@ class BotNoneBotParserTests(unittest.TestCase):
         self.assertEqual(command.team_name, "Barcelona")
         self.assertEqual(command.page, 1)
 
+    def test_parse_roster_command_with_page(self):
+        command = parse_command("名单 Barcelona 第2页")
+        self.assertEqual(command.command_type, "roster_text")
+        self.assertEqual(command.team_name, "Barcelona")
+        self.assertEqual(command.page, 2)
+
+    def test_parse_roster_image_command_with_short_page(self):
+        command = parse_command("名单图 巴萨 2页")
+        self.assertEqual(command.command_type, "roster_image")
+        self.assertEqual(command.team_name, "巴萨")
+        self.assertEqual(command.page, 2)
+
+    def test_parse_roster_command_with_p_page_suffix(self):
+        command = parse_command("名单 巴萨 p3")
+        self.assertEqual(command.command_type, "roster_text")
+        self.assertEqual(command.team_name, "巴萨")
+        self.assertEqual(command.page, 3)
+
     def test_parse_help_when_empty(self):
         command = parse_command("")
         self.assertEqual(command.command_type, "help")

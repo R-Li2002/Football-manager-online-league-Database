@@ -5,7 +5,8 @@ import re
 from .models import CommandSpec
 
 
-PAGE_PATTERN = re.compile(r"第\s*(\d+)\s*页")
+PAGE_PATTERN = re.compile(r"(?:第\s*)?(\d+)\s*页")
+TRAILING_PAGE_PATTERN = re.compile(r"\bp\s*(\d+)$", re.IGNORECASE)
 VERSION_PATTERN = re.compile(r"(?:\bv|版本)\s*([A-Za-z0-9._-]+)", re.IGNORECASE)
 STEP_PATTERN = re.compile(r"(?:(?:成长|预览)\s*)?\+([1-5])(?=\s|$)", re.IGNORECASE)
 
@@ -13,9 +14,11 @@ STEP_PATTERN = re.compile(r"(?:(?:成长|预览)\s*)?\+([1-5])(?=\s|$)", re.IGNO
 def _extract_page(text: str) -> tuple[str, int]:
     match = PAGE_PATTERN.search(text)
     if not match:
-        return text, 1
+        match = TRAILING_PAGE_PATTERN.search(text)
+        if not match:
+            return text, 1
     page = max(1, int(match.group(1)))
-    return PAGE_PATTERN.sub(" ", text).strip(), page
+    return text[: match.start()].strip() + " " + text[match.end() :].strip(), page
 
 
 def _extract_version(text: str) -> tuple[str, str | None]:

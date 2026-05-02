@@ -1,21 +1,33 @@
-﻿function normalizeCompareSlots() {
-    if (!Array.isArray(playerCompareSlots) || playerCompareSlots.length !== 2) {
-        playerCompareSlots = [null, null];
+const COMPARE_SLOT_COUNT = 4;
+const COMPARE_ACCENT_CLASSES = ['is-blue', 'is-red', 'is-gold', 'is-mint'];
+
+function createEmptyCompareSlots() {
+    return Array.from({length: COMPARE_SLOT_COUNT}, () => null);
+}
+
+function getCompareAccentClass(slotIndex) {
+    return COMPARE_ACCENT_CLASSES[slotIndex] || COMPARE_ACCENT_CLASSES[slotIndex % COMPARE_ACCENT_CLASSES.length] || 'is-blue';
+}
+
+function normalizeCompareSlots() {
+    const normalized = createEmptyCompareSlots();
+    if (Array.isArray(playerCompareSlots)) {
+        playerCompareSlots.slice(0, COMPARE_SLOT_COUNT).forEach((slot, index) => {
+            if (!slot || !slot.player) return;
+            const player = {
+                ...slot.player,
+                data_version: slot.player.data_version || slot.data_version || getCurrentAttributeVersion(),
+            };
+            normalized[index] = {
+                uid: slot.uid ?? player.uid,
+                data_version: slot.data_version || getPlayerDataVersion(player),
+                version_key: slot.version_key || getPlayerVersionKey(player),
+                player,
+                step: clampGrowthPreviewStep(slot.step),
+            };
+        });
     }
-    playerCompareSlots = playerCompareSlots.map(slot => {
-        if (!slot || !slot.player) return null;
-        const player = {
-            ...slot.player,
-            data_version: slot.player.data_version || slot.data_version || getCurrentAttributeVersion(),
-        };
-        return {
-            uid: slot.uid ?? player.uid,
-            data_version: slot.data_version || getPlayerDataVersion(player),
-            version_key: slot.version_key || getPlayerVersionKey(player),
-            player,
-            step: clampGrowthPreviewStep(slot.step),
-        };
-    });
+    playerCompareSlots = normalized;
     return playerCompareSlots;
 }
 
@@ -66,7 +78,7 @@ function queuePlayerForCompare(player) {
     if (emptyIndex === -1) {
         compareDockExpanded = true;
         renderCompareDock();
-        showModal('对比夹已满', '最多同时对比 2 名球员，请先从右侧对比夹移除一名后再加入。');
+        showModal('对比夹已满', '最多同时对比 4 名球员，请先从对比夹中移除一名后再加入。');
         return;
     }
 
@@ -80,11 +92,12 @@ function queuePlayerForCompare(player) {
     compareDockExpanded = true;
     renderCompareDock();
     if (currentDetailPlayer) renderGrowthPreviewToolbar(currentDetailPlayer);
+    if (comparisonModalOpen) renderComparisonWorkspace();
 }
 
 function removePlayerFromCompare(slotIndex) {
     normalizeCompareSlots();
-    if (slotIndex < 0 || slotIndex > 1) return;
+    if (slotIndex < 0 || slotIndex >= COMPARE_SLOT_COUNT) return;
     playerCompareSlots[slotIndex] = null;
     if (!playerCompareSlots.some(Boolean)) {
         compareDockExpanded = false;
@@ -101,7 +114,7 @@ function removePlayerFromCompare(slotIndex) {
 }
 
 function clearCompareSlots() {
-    playerCompareSlots = [null, null];
+    playerCompareSlots = createEmptyCompareSlots();
     compareDockExpanded = false;
     renderCompareDock();
     if (currentDetailPlayer) renderGrowthPreviewToolbar(currentDetailPlayer);
@@ -113,6 +126,41 @@ function clearCompareSlots() {
 function toggleCompareDock() {
     compareDockExpanded = !compareDockExpanded;
     renderCompareDock();
+}
+
+function buildComparisonEntry(slot, slotIndex) {
+    const previewPlayer = buildPreviewPlayer(slot.player, slot.step);
+    return {
+        slot,
+        slotIndex,
+        accentClass: getCompareAccentClass(slotIndex),
+        previewPlayer,
+        weakFootPreview: getWeakFootPreview(slot.player, slot.step),
+        collections: getPlayerFieldCollections(previewPlayer),
+    };
+}
+
+function buildCompareSlotMarkup(slot, index, detailReturnTab, detailReturnSubtab) {
+    if (!slot) {
+        return `
+            <div class="compare-slot is-empty">
+                <span class="compare-slot-index">槽位 ${index + 1}</span>
+                <p>在球员详情页点击“加入对比”</p>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="compare-slot is-filled ${getCompareAccentClass(index)}">
+            <span class="compare-slot-index">槽位 ${index + 1}</span>
+            <div class="compare-slot-name">${escapeHtml(slot.player.name)}</div>
+            <div class="compare-slot-meta">${escapeHtml(slot.player.position || '-')} · ${escapeHtml(getAttributeVersionLabel(getPlayerDataVersion(slot.player)))} · 成长预览 +${clampGrowthPreviewStep(slot.step)}</div>
+            <div class="compare-slot-actions">
+                <button class="compare-slot-action" type="button" onclick="showPlayerDetail(${slot.player.uid}, {returnTab: '${detailReturnTab}', returnSubtab: '${detailReturnSubtab}', version: '${escapeHtml(getPlayerDataVersion(slot.player))}'})">查看球员</button>
+                <button class="compare-slot-action is-danger" type="button" onclick="removePlayerFromCompare(${index})">移除</button>
+            </div>
+        </div>
+    `;
 }
 
 function renderCompareDock() {
@@ -142,33 +190,12 @@ function renderCompareDock() {
                         <div>
                             <span class="panel-kicker">Compare Folder</span>
                             <h4>对比夹</h4>
-                            <div class="compare-dock-summary">${compareNames.length ? compareNames.join(' vs ') : '还没有加入对比球员'}</div>
+                            <div class="compare-dock-summary">${compareNames.length ? compareNames.join(' · ') : '还没有加入对比球员'}</div>
                         </div>
                         ${filledCount ? '<button class="compare-dock-clear" type="button" onclick="clearCompareSlots()">清空</button>' : ''}
                     </div>
                     <div class="compare-slot-list">
-                        ${playerCompareSlots.map((slot, index) => {
-                            if (!slot) {
-                                return `
-                                    <div class="compare-slot is-empty">
-                                        <span class="compare-slot-index">槽位 ${index + 1}</span>
-                                        <p>在球员详情页点击“加入对比”</p>
-                                    </div>
-                                `;
-                            }
-                            const previewPlayer = buildPreviewPlayer(slot.player, slot.step);
-                            return `
-                                <div class="compare-slot is-filled is-${index === 0 ? 'blue' : 'red'}">
-                                    <span class="compare-slot-index">槽位 ${index + 1}</span>
-                                    <div class="compare-slot-name">${escapeHtml(slot.player.name)}</div>
-                                    <div class="compare-slot-meta">${escapeHtml(slot.player.position || '-')} 路 ${escapeHtml(getPlayerDataVersion(slot.player))} 路 成长预览 +${clampGrowthPreviewStep(slot.step)}</div>
-                                    <div class="compare-slot-actions">
-                                        <button class="compare-slot-action" type="button" onclick="showPlayerDetail(${slot.player.uid}, {returnTab: '${detailReturnTab}', returnSubtab: '${detailReturnSubtab}', version: '${escapeHtml(getPlayerDataVersion(slot.player))}'})">查看球员</button>
-                                        <button class="compare-slot-action is-danger" type="button" onclick="removePlayerFromCompare(${index})">移除</button>
-                                    </div>
-                                </div>
-                            `;
-                        }).join('')}
+                        ${playerCompareSlots.map((slot, index) => buildCompareSlotMarkup(slot, index, detailReturnTab, detailReturnSubtab)).join('')}
                     </div>
                     <div class="compare-dock-actions">
                         <button class="btn btn-primary compare-run-button" type="button" onclick="openComparisonWorkspace()" ${filledCount < 2 ? 'disabled' : ''}>查看对比页</button>
@@ -184,15 +211,14 @@ function renderCompareDock() {
             >
                 <span class="compare-dock-handle-dot">${filledCount ? filledCount : '+'}</span>
                 <span class="compare-dock-handle-label">${compareDockExpanded ? '收起' : '对比夹'}</span>
-                <span class="compare-dock-handle-meta">${filledCount}/2</span>
+                <span class="compare-dock-handle-meta">${filledCount}/${COMPARE_SLOT_COUNT}</span>
             </button>
         </div>
     `;
 }
 
-function buildComparisonSlider(slotIndex, slot) {
+function buildComparisonSlider(slotIndex, slot, accentClass) {
     const labels = ['当前', '+1', '+2', '+3', '+4', '+5'];
-    const accentClass = slotIndex === 0 ? 'is-blue' : 'is-red';
     return `
         <div class="comparison-slider-box ${accentClass}">
             <div class="comparison-slider-labels">
@@ -212,126 +238,167 @@ function buildComparisonSlider(slotIndex, slot) {
     `;
 }
 
-function buildComparisonPlayerCard(slot, slotIndex) {
-    const previewPlayer = buildPreviewPlayer(slot.player, slot.step);
-    const accentClass = slotIndex === 0 ? 'is-blue' : 'is-red';
-    const weakFootPreview = getWeakFootPreview(slot.player, slot.step);
-
+function buildComparisonPlayerCard(entry) {
+    const {slot, slotIndex, accentClass, previewPlayer, weakFootPreview} = entry;
     return `
         <section class="comparison-player-card ${accentClass}">
             <div class="comparison-player-head">
                 <div>
                     <div class="comparison-player-name">${escapeHtml(slot.player.name)}</div>
-                    <div class="comparison-player-version">UID ${escapeHtml(slot.player.uid)} 路 ${escapeHtml(getPlayerDataVersion(slot.player))}</div>
+                    <div class="comparison-player-version">UID ${escapeHtml(slot.player.uid)} · ${escapeHtml(getAttributeVersionLabel(getPlayerDataVersion(slot.player)))}</div>
                 </div>
                 <div class="comparison-player-tag">${escapeHtml(slot.player.position || '-')}</div>
             </div>
             <div class="comparison-player-club">${escapeHtml(slot.player.heigo_club || '-')} / ${escapeHtml(slot.player.club || '-')}</div>
-            ${buildComparisonSlider(slotIndex, slot)}
+            ${buildComparisonSlider(slotIndex, slot, accentClass)}
             <div class="comparison-player-badges">
                 <span class="foot-badge">成长预览 <strong>+${clampGrowthPreviewStep(slot.step)}</strong></span>
-                <span class="foot-badge">PA <strong>${escapeHtml(slot.player.pa ?? '-')}</strong></span>
-                <span class="foot-badge">宸﹁剼 <strong>${escapeHtml(previewPlayer.left_foot ?? '-')}</strong></span>
-                <span class="foot-badge">鍙宠剼 <strong>${escapeHtml(previewPlayer.right_foot ?? '-')}</strong></span>
-                ${weakFootPreview ? `<span class="foot-badge">${weakFootPreview.label}閫嗚冻 <strong>+1</strong></span>` : ''}
+                <span class="foot-badge">CA <strong>${escapeHtml(previewPlayer.ca ?? '-')}</strong></span>
+                <span class="foot-badge">PA <strong>${escapeHtml(previewPlayer.pa ?? '-')}</strong></span>
+                <span class="foot-badge">左脚 <strong>${escapeHtml(previewPlayer.left_foot ?? '-')}</strong></span>
+                <span class="foot-badge">右脚 <strong>${escapeHtml(previewPlayer.right_foot ?? '-')}</strong></span>
+                ${weakFootPreview ? `<span class="foot-badge">${weakFootPreview.label}逆足 <strong>+1</strong></span>` : ''}
             </div>
         </section>
     `;
 }
 
-function buildComparisonMetaCard(leftPreview, rightPreview) {
-    const rows = [
-        ['UID', leftPreview.uid, rightPreview.uid],
-        ['鐗堟湰', getPlayerDataVersion(leftPreview) || '-', getPlayerDataVersion(rightPreview) || '-'],
-        ['鍥界睄', leftPreview.nationality || '-', rightPreview.nationality || '-'],
-        ['鐢熸棩', leftPreview.birth_date || '鏈煡', rightPreview.birth_date || '鏈煡'],
-        ['骞撮緞', leftPreview.age ?? '-', rightPreview.age ?? '-'],
-        ['浣嶇疆', leftPreview.position || '-', rightPreview.position || '-'],
-        ['CA / PA', `${leftPreview.ca ?? '-'} / ${leftPreview.pa ?? '-'}`, `${rightPreview.ca ?? '-'} / ${rightPreview.pa ?? '-'}`],
-        ['韬珮', formatHeight(leftPreview.height), formatHeight(rightPreview.height)],
-        ['宸﹁剼', leftPreview.left_foot ?? '-', rightPreview.left_foot ?? '-'],
-        ['鍙宠剼', leftPreview.right_foot ?? '-', rightPreview.right_foot ?? '-'],
-        ['HEIGO', leftPreview.heigo_club || '-', rightPreview.heigo_club || '-'],
-    ];
-
+function getComparisonLegendMarkup(entries, options = {}) {
     return `
-        <section class="comparison-meta-card">
-            <h4>鍩虹淇℃伅</h4>
-            <div class="comparison-meta-list">
-                ${rows.map(([label, leftValue, rightValue]) => `
-                    <div class="comparison-meta-row">
-                        <span class="comparison-meta-value is-blue">${escapeHtml(leftValue)}</span>
-                        <span class="comparison-meta-label">${escapeHtml(label)}</span>
-                        <span class="comparison-meta-value is-red">${escapeHtml(rightValue)}</span>
-                    </div>
-                `).join('')}
-            </div>
-        </section>
-    `;
-}
-
-function mergeCompareItems(leftItems, rightItems) {
-    const registry = new Map();
-    const merged = [];
-
-    leftItems.forEach(item => {
-        const entry = {key: item.key, label: item.label, left: Number(item.value) || 0, right: 0};
-        registry.set(item.key, entry);
-        merged.push(entry);
-    });
-
-    rightItems.forEach(item => {
-        const rightValue = Number(item.value) || 0;
-        if (registry.has(item.key)) {
-            registry.get(item.key).right = rightValue;
-            return;
-        }
-        const entry = {key: item.key, label: item.label, left: 0, right: rightValue};
-        registry.set(item.key, entry);
-        merged.push(entry);
-    });
-
-    return merged;
-}
-
-function renderComparisonMetricRow(item) {
-    const leftValue = Math.max(0, Number(item.left) || 0);
-    const rightValue = Math.max(0, Number(item.right) || 0);
-    const delta = Math.abs(leftValue - rightValue);
-    const leftLead = leftValue > rightValue;
-    const rightLead = rightValue > leftValue;
-    const leftWidth = leftLead ? Math.min(50, (delta / 20) * 50) : 0;
-    const rightWidth = rightLead ? Math.min(50, (delta / 20) * 50) : 0;
-    const leftDisplay = leftLead ? `+${delta}` : '';
-    const rightDisplay = rightLead ? `+${delta}` : '';
-    const rowState = delta === 0 ? 'is-even' : leftLead ? 'is-blue-win' : 'is-red-win';
-
-    return `
-        <div class="compare-row ${rowState}">
-            <div class="compare-value is-blue ${leftLead ? 'is-lead' : 'is-muted'}">${leftDisplay || '&nbsp;'}</div>
-            <div class="compare-track-wrap">
-                <div class="compare-track-label">${escapeHtml(item.label)}</div>
-                <div class="compare-track">
-                    <span class="compare-track-center"></span>
-                    <span class="compare-track-fill compare-track-fill-blue" style="width:${leftWidth}%;"></span>
-                    <span class="compare-track-fill compare-track-fill-red" style="width:${rightWidth}%;"></span>
-                </div>
-            </div>
-            <div class="compare-value is-red ${rightLead ? 'is-lead' : 'is-muted'}">${rightDisplay || '&nbsp;'}</div>
+        <div class="comparison-legend-row ${options.compact ? 'is-compact' : ''}">
+            ${entries.map(entry => `
+                <span class="comparison-legend-chip ${entry.accentClass}">
+                    <span class="comparison-legend-dot"></span>
+                    <span class="comparison-legend-text">${escapeHtml(entry.slot.player.name)}</span>
+                </span>
+            `).join('')}
         </div>
     `;
 }
 
-function renderComparisonMetricPanel(title, leftItems, rightItems, options = {}) {
-    const merged = mergeCompareItems(leftItems, rightItems).filter(item => options.includeLowValues || item.left > 0 || item.right > 0);
-    if (!merged.length) return '';
+function getHighlightIndexes(values) {
+    const numericValues = values
+        .map((value, index) => ({value: Number(value), index}))
+        .filter(item => Number.isFinite(item.value));
+    if (numericValues.length < 2) return new Set();
+
+    const maxValue = Math.max(...numericValues.map(item => item.value));
+    const minValue = Math.min(...numericValues.map(item => item.value));
+    if (maxValue === minValue) return new Set();
+
+    return new Set(numericValues.filter(item => item.value === maxValue).map(item => item.index));
+}
+
+function renderComparisonMetaRow(row, entries) {
+    const highlightIndexes = getHighlightIndexes(row.highlightValues || row.values);
+    return `
+        <div class="comparison-meta-stack-row">
+            <div class="comparison-meta-stack-label">${escapeHtml(row.label)}</div>
+            <div class="comparison-meta-stack-values">
+                ${row.values.map((value, index) => {
+                    const displayValue = value === null || value === undefined || value === '' ? '-' : String(value);
+                    return `
+                        <div class="comparison-meta-stack-value ${entries[index].accentClass} ${highlightIndexes.has(index) ? 'is-max' : ''}">
+                            <span class="comparison-meta-stack-player">${escapeHtml(entries[index].slot.player.name)}</span>
+                            <span class="comparison-meta-stack-copy">${escapeHtml(displayValue)}</span>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function buildComparisonMetaRows(entries) {
+    return [
+        {label: 'UID', values: entries.map(entry => entry.previewPlayer.uid)},
+        {label: '版本', values: entries.map(entry => getAttributeVersionLabel(getPlayerDataVersion(entry.previewPlayer)) || '-')},
+        {label: '国籍', values: entries.map(entry => entry.previewPlayer.nationality || '-')},
+        {label: '生日', values: entries.map(entry => entry.previewPlayer.birth_date || '未知')},
+        {label: '年龄', values: entries.map(entry => entry.previewPlayer.age ?? '-'), highlightValues: entries.map(entry => Number(entry.previewPlayer.age) || null)},
+        {label: '位置', values: entries.map(entry => entry.previewPlayer.position || '-')},
+        {label: 'CA', values: entries.map(entry => entry.previewPlayer.ca ?? '-'), highlightValues: entries.map(entry => Number(entry.previewPlayer.ca) || null)},
+        {label: 'PA', values: entries.map(entry => entry.previewPlayer.pa ?? '-'), highlightValues: entries.map(entry => Number(entry.previewPlayer.pa) || null)},
+        {label: '身高', values: entries.map(entry => formatHeight(entry.previewPlayer.height)), highlightValues: entries.map(entry => Number(entry.previewPlayer.height) || null)},
+        {label: '左脚', values: entries.map(entry => entry.previewPlayer.left_foot ?? '-'), highlightValues: entries.map(entry => Number(entry.previewPlayer.left_foot) || null)},
+        {label: '右脚', values: entries.map(entry => entry.previewPlayer.right_foot ?? '-'), highlightValues: entries.map(entry => Number(entry.previewPlayer.right_foot) || null)},
+        {label: 'HEIGO', values: entries.map(entry => entry.previewPlayer.heigo_club || '-')},
+        {label: '现实俱乐部', values: entries.map(entry => entry.previewPlayer.club || '-')},
+    ];
+}
+
+function buildComparisonMetaCard(entries) {
+    const rows = buildComparisonMetaRows(entries);
+    return `
+        <section class="comparison-meta-card comparison-panel-wide">
+            <div class="comparison-panel-head">
+                <h4>基础信息</h4>
+                <div class="comparison-panel-note">显示具体数值，数值字段自动高亮最高值</div>
+            </div>
+            <div class="comparison-meta-stack">
+                ${rows.map(row => renderComparisonMetaRow(row, entries)).join('')}
+            </div>
+        </section>
+    `;
+}
+
+function mergeComparisonItems(entries, picker, options = {}) {
+    const registry = new Map();
+    entries.forEach((entry, entryIndex) => {
+        picker(entry).forEach(item => {
+            if (!registry.has(item.key)) {
+                registry.set(item.key, {
+                    key: item.key,
+                    label: item.label,
+                    values: Array(entries.length).fill(null),
+                });
+            }
+            const row = registry.get(item.key);
+            const numericValue = Number(item.value);
+            row.values[entryIndex] = Number.isFinite(numericValue) ? numericValue : null;
+        });
+    });
+
+    return [...registry.values()].filter(row => {
+        if (options.includeLowValues) return true;
+        return row.values.some(value => Number(value) > 0);
+    });
+}
+
+function renderComparisonMetricRow(row, entries) {
+    const highlightIndexes = getHighlightIndexes(row.highlightValues || row.values);
+    return `
+        <div class="comparison-metric-row">
+            <div class="comparison-metric-label">${escapeHtml(row.label)}</div>
+            <div class="comparison-metric-bars">
+                ${row.values.map((value, index) => {
+                    const numericValue = Number(row.highlightValues?.[index] ?? value);
+                    const hasNumericValue = Number.isFinite(numericValue) && numericValue > 0;
+                    const displayValue = value === null || value === undefined || value === '' ? '-' : String(value);
+                    const width = hasNumericValue ? Math.max(8, Math.min(100, (numericValue / 20) * 100)) : 0;
+                    return `
+                        <div class="comparison-metric-bar-row ${entries[index].accentClass} ${highlightIndexes.has(index) ? 'is-max' : ''}">
+                            <div class="comparison-metric-track">
+                                <span class="comparison-metric-fill ${entries[index].accentClass}" style="width:${width}%"></span>
+                            </div>
+                            <span class="comparison-metric-bar-value">${escapeHtml(displayValue)}</span>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function renderComparisonMetricPanel(title, rows, entries, options = {}) {
+    if (!rows.length) return '';
     return `
         <section class="comparison-panel ${options.wide ? 'comparison-panel-wide' : ''}">
             <div class="comparison-panel-head">
                 <h4>${escapeHtml(title)}</h4>
             </div>
             <div class="comparison-metric-list">
-                ${merged.map(renderComparisonMetricRow).join('')}
+                ${rows.map(row => renderComparisonMetricRow(row, entries)).join('')}
             </div>
         </section>
     `;
@@ -350,7 +417,7 @@ function setCompareSlotGrowthStep(slotIndex, step) {
 function openComparisonWorkspace() {
     normalizeCompareSlots();
     if (playerCompareSlots.filter(Boolean).length < 2) {
-        showModal('无法开始对比', '请先在球员详情页加入两名球员，再打开对比界面。');
+        showModal('无法开始对比', '请先在球员详情页加入至少两名球员，再打开对比界面。');
         return;
     }
     comparisonModalOpen = true;
@@ -372,40 +439,50 @@ function renderComparisonWorkspace() {
     if (!content) return;
 
     normalizeCompareSlots();
-    const leftSlot = playerCompareSlots[0];
-    const rightSlot = playerCompareSlots[1];
-    if (!leftSlot || !rightSlot) {
-        content.innerHTML = '<div class="no-data">对比夹中需要同时存在两名球员。</div>';
+    const activeEntries = playerCompareSlots
+        .map((slot, index) => slot ? buildComparisonEntry(slot, index) : null)
+        .filter(Boolean);
+
+    if (activeEntries.length < 2) {
+        content.innerHTML = '<div class="no-data">对比夹中需要至少两名球员才能打开对比页。</div>';
         return;
     }
 
-    const leftPreview = buildPreviewPlayer(leftSlot.player, leftSlot.step);
-    const rightPreview = buildPreviewPlayer(rightSlot.player, rightSlot.step);
-    const leftCollections = getPlayerFieldCollections(leftPreview);
-    const rightCollections = getPlayerFieldCollections(rightPreview);
-    const technicalTitle = leftCollections.isGoalkeeper || rightCollections.isGoalkeeper ? '技术 / 门将' : '技术 / 定位球';
-    const positionItemsLeft = leftCollections.positions.filter(item => item.value > 1);
-    const positionItemsRight = rightCollections.positions.filter(item => item.value > 1);
+    const technicalTitle = activeEntries.some(entry => entry.collections.isGoalkeeper) ? '技术 / 门将' : '技术';
+    const technicalRows = mergeComparisonItems(
+        activeEntries,
+        entry => entry.collections.technical,
+        {includeLowValues: false}
+    );
+    const setPieceRows = mergeComparisonItems(activeEntries, entry => entry.collections.setPieces, {includeLowValues: false});
+    const mentalRows = mergeComparisonItems(activeEntries, entry => entry.collections.mental, {includeLowValues: false});
+    const physicalRows = mergeComparisonItems(activeEntries, entry => entry.collections.physical, {includeLowValues: false});
+    const hiddenRows = mergeComparisonItems(activeEntries, entry => entry.collections.hidden, {includeLowValues: false});
+    const positionRows = mergeComparisonItems(
+        activeEntries,
+        entry => entry.collections.positions.filter(item => Number(item.value) > 1),
+        {includeLowValues: false}
+    );
 
     content.innerHTML = `
-        <div class="comparison-stage">
-            <div class="comparison-hero-grid">
-                ${buildComparisonPlayerCard(leftSlot, 0)}
-                <div class="comparison-center-stack">
-                    ${buildComparisonRadarSvg(leftPreview, rightPreview)}
-                    ${buildComparisonMetaCard(leftPreview, rightPreview)}
-                </div>
-                ${buildComparisonPlayerCard(rightSlot, 1)}
+        <div class="comparison-stage" style="--compare-player-count:${activeEntries.length};">
+            <div class="comparison-player-grid">
+                ${activeEntries.map(buildComparisonPlayerCard).join('')}
             </div>
+            ${getComparisonLegendMarkup(activeEntries)}
             <div class="comparison-grid">
-                ${renderComparisonMetricPanel(technicalTitle, leftCollections.technical.concat(leftCollections.setPieces), rightCollections.technical.concat(rightCollections.setPieces))}
-                ${renderComparisonMetricPanel('精神', leftCollections.mental, rightCollections.mental)}
-                ${renderComparisonMetricPanel('身体', leftCollections.physical, rightCollections.physical)}
-                ${renderComparisonMetricPanel('隐藏', leftCollections.hidden, rightCollections.hidden, {wide: true})}
-                ${renderComparisonMetricPanel('位置熟练度', positionItemsLeft, positionItemsRight, {wide: true})}
+                <div class="comparison-core-grid comparison-panel-wide">
+                    ${renderComparisonMetricPanel(technicalTitle, technicalRows, activeEntries)}
+                    ${renderComparisonMetricPanel('定位球', setPieceRows, activeEntries)}
+                    ${renderComparisonMetricPanel('精神', mentalRows, activeEntries)}
+                    ${renderComparisonMetricPanel('身体', physicalRows, activeEntries)}
+                </div>
+                <div class="comparison-secondary-grid comparison-panel-wide">
+                    ${buildComparisonMetaCard(activeEntries)}
+                    ${renderComparisonMetricPanel('隐藏', hiddenRows, activeEntries, {wide: true})}
+                    ${renderComparisonMetricPanel('位置熟练度', positionRows, activeEntries, {wide: true})}
+                </div>
             </div>
         </div>
     `;
 }
-
-

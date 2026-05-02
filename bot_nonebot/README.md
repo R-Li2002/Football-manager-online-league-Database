@@ -16,14 +16,18 @@
 
 - `球员图 <名字或UID> [+1~+5]`
 - `工资图 <名字或UID>`
-- `名单图 <球队名>`
+- `名单 <球队名> [第N页]`
+- `名单图 <球队名> [第N页]`
 
 示例：
 
 - `球员图 梅西`
 - `球员图 梅西 +2`
 - `工资图 贝林厄姆`
+- `名单 巴萨`
+- `名单 巴萨 第2页`
 - `名单图 巴萨`
+- `名单图 巴萨 第2页`
 
 ## 运行方式
 
@@ -55,3 +59,4 @@ docker compose -f docker-compose.yml -f docker-compose.bot.yml up -d --build
 - `QQ_BOT_ALLOW_ALL_GROUPS`
 - `BOT_USER_COOLDOWN_SECONDS`
 - `BOT_GROUP_LIMIT_PER_MINUTE`
+- `BOT_ROSTER_PAGE_SIZE`
