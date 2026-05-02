@@ -17,6 +17,13 @@ def _parse_csv(value: str | None) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
 
 
+def _parse_int(value: str | None, default: int) -> int:
+    try:
+        return int(value or default)
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass(frozen=True)
 class BotSettings:
     heigo_base_url: str
@@ -38,13 +45,13 @@ class BotSettings:
             heigo_base_url=heigo_base_url,
             heigo_render_base_url=render_base_url,
             internal_render_signing_key=os.environ.get("INTERNAL_RENDER_SIGNING_KEY", "").strip(),
-            heigo_render_ttl_seconds=int(os.environ.get("HEIGO_RENDER_TTL_SECONDS", "90")),
+            heigo_render_ttl_seconds=_parse_int(os.environ.get("HEIGO_RENDER_TTL_SECONDS"), 90),
             bot_default_theme=os.environ.get("BOT_DEFAULT_THEME", "dark").strip() or "dark",
-            bot_roster_page_size=max(20, min(20, int(os.environ.get("BOT_ROSTER_PAGE_SIZE", "20")))),
+            bot_roster_page_size=max(1, min(30, _parse_int(os.environ.get("BOT_ROSTER_PAGE_SIZE"), 20))),
             qq_bot_allowed_groups=_parse_csv(os.environ.get("QQ_BOT_ALLOWED_GROUPS")),
             qq_bot_allow_all_groups=_parse_bool(os.environ.get("QQ_BOT_ALLOW_ALL_GROUPS"), default=False),
-            bot_user_cooldown_seconds=int(os.environ.get("BOT_USER_COOLDOWN_SECONDS", "5")),
-            bot_group_limit_per_minute=int(os.environ.get("BOT_GROUP_LIMIT_PER_MINUTE", "20")),
+            bot_user_cooldown_seconds=_parse_int(os.environ.get("BOT_USER_COOLDOWN_SECONDS"), 5),
+            bot_group_limit_per_minute=_parse_int(os.environ.get("BOT_GROUP_LIMIT_PER_MINUTE"), 20),
         )
 
     def is_group_allowed(self, group_id: str | None) -> bool:

@@ -2,6 +2,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 BOT_PLUGIN_PARENT = Path(__file__).resolve().parent / "bot_nonebot" / "src" / "plugins"
@@ -78,7 +79,7 @@ class BotNoneBotServiceTests(unittest.TestCase):
             internal_render_signing_key="secret",
             heigo_render_ttl_seconds=90,
             bot_default_theme="dark",
-            bot_roster_page_size=20,
+            bot_roster_page_size=2,
             qq_bot_allowed_groups=(),
             qq_bot_allow_all_groups=False,
             bot_user_cooldown_seconds=5,
@@ -114,8 +115,8 @@ class BotNoneBotServiceTests(unittest.TestCase):
     def test_handle_roster_image(self):
         reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="roster_image", raw_text="", normalized_text="", team_name="Barcelona", page=2)))
         self.assertEqual(reply.reply_type, "image")
-        self.assertIn("roster/Barcelona/1.png", reply.image_url)
-        self.assertEqual(reply.text, "Barcelona 名单图")
+        self.assertIn("roster/Barcelona/2.png", reply.image_url)
+        self.assertEqual(reply.text, "Barcelona 名单图 第 2/2 页")
 
     def test_handle_roster_image_supports_alias(self):
         reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="roster_image", raw_text="", normalized_text="", team_name="巴萨", page=1)))
@@ -158,8 +159,22 @@ class BotNoneBotServiceTests(unittest.TestCase):
     def test_handle_roster_text(self):
         reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="roster_text", raw_text="", normalized_text="", team_name="Barcelona", page=1)))
         self.assertEqual(reply.reply_type, "text")
-        self.assertIn("Barcelona 名单", reply.text)
+        self.assertIn("Barcelona 名单 第 1/2 页，共 3 人", reply.text)
         self.assertIn("1. Player 1 | GK | 20岁 | CA/PA 140 / 155 | 工资 0.500M | 名额 8M", reply.text)
+        self.assertIn("发送“名单 Barcelona 第2页”查看下一页。", reply.text)
+        self.assertNotIn("3. Player 3", reply.text)
+
+    def test_handle_roster_text_uses_requested_page(self):
+        reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="roster_text", raw_text="", normalized_text="", team_name="Barcelona", page=2)))
+        self.assertEqual(reply.reply_type, "text")
+        self.assertIn("Barcelona 名单 第 2/2 页，共 3 人", reply.text)
+        self.assertIn("3. Player 3 | MC | 22岁 | CA/PA 142 / 157 | 工资 0.520M | 名额 -", reply.text)
+        self.assertNotIn("Player 1", reply.text)
+
+    def test_settings_from_env_honors_roster_page_size(self):
+        with patch.dict("os.environ", {"BOT_ROSTER_PAGE_SIZE": "16"}, clear=False):
+            settings = BotSettings.from_env()
+        self.assertEqual(settings.bot_roster_page_size, 16)
 
     def test_handle_help(self):
         reply = asyncio.run(self.service.handle_text("帮助"))

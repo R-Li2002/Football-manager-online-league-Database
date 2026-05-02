@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+from math import ceil
 import re
 
 from .config import BotSettings
@@ -12,14 +13,15 @@ HELP_TEXT = (
     "球员图 <名字或UID> [+1~+5]\n"
     "工资 <名字或UID>\n"
     "工资图 <名字或UID>\n"
-    "名单 <球队名>\n"
-    "名单图 <球队名>\n"
+    "名单 <球队名> [第N页]\n"
+    "名单图 <球队名> [第N页]\n"
     "\n"
     "示例:\n"
     "球员图 梅西\n"
     "球员图 梅西 +2\n"
     "工资图 贝林厄姆\n"
-    "名单图 巴萨"
+    "名单图 巴萨\n"
+    "名单 巴萨 第2页"
 )
 
 TEAM_ALIASES = {
@@ -193,8 +195,9 @@ class HeigoBotService:
         players = await self.api_client.get_players_by_team(team_name)
         if not players:
             return ReplySpec(reply_type="text", text=f"未找到球队“{team_name}”的名单。")
-        url = self.signer.build_roster_png_url(team_name, page=1, theme=self.settings.bot_default_theme)
-        return ReplySpec(reply_type="image", text=f"{team_name} 名单图", image_url=url)
+        page, total_pages, _ = self._paginate_players(players, command.page)
+        url = self.signer.build_roster_png_url(team_name, page=page, theme=self.settings.bot_default_theme)
+        return ReplySpec(reply_type="image", text=f"{team_name} 名单图 第 {page}/{total_pages} 页", image_url=url)
 
     async def _handle_roster_text(self, command: CommandSpec) -> ReplySpec:
         team_name, error = await self._resolve_team_name(command.team_name or "")
@@ -207,15 +210,25 @@ class HeigoBotService:
         if not players:
             return ReplySpec(reply_type="text", text=f"未找到球队“{team_name}”的名单。")
 
-        visible_players = players[: self.settings.bot_roster_page_size]
-        lines = [f"{team_name} 名单"]
-        for index, player in enumerate(visible_players, start=1):
+        page, total_pages, visible_players = self._paginate_players(players, command.page)
+        start_index = (page - 1) * self.settings.bot_roster_page_size
+        lines = [f"{team_name} 名单 第 {page}/{total_pages} 页，共 {len(players)} 人"]
+        for index, player in enumerate(visible_players, start=start_index + 1):
             lines.append(
                 f"{index}. {player.get('name', '-') } | {player.get('position', '-')} | "
                 f"{player.get('age', '-')}岁 | CA/PA {player.get('ca', '-')} / {player.get('pa', '-')} | "
                 f"工资 {self._format_money(player.get('wage'))} | 名额 {self._format_slot_label(player.get('slot_type'))}"
             )
+        if page < total_pages:
+            lines.append(f"发送“名单 {team_name} 第{page + 1}页”查看下一页。")
         return ReplySpec(reply_type="text", text="\n".join(lines))
+
+    def _paginate_players(self, players: list[dict], requested_page: int | None) -> tuple[int, int, list[dict]]:
+        page_size = max(1, int(self.settings.bot_roster_page_size or 20))
+        total_pages = max(1, int(ceil(len(players) / page_size))) if players else 1
+        page = max(1, min(total_pages, int(requested_page or 1)))
+        start = (page - 1) * page_size
+        return page, total_pages, players[start : start + page_size]
 
     @staticmethod
     def _normalize_team_key(value: str) -> str:
