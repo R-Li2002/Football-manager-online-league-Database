@@ -1,5 +1,6 @@
 const COMPARE_SLOT_COUNT = 4;
 const COMPARE_ACCENT_CLASSES = ['is-blue', 'is-red', 'is-gold', 'is-mint'];
+const COMPARISON_ADVANTAGE_FULL_DIFF = 10;
 
 function createEmptyCompareSlots() {
     return Array.from({length: COMPARE_SLOT_COUNT}, () => null);
@@ -289,6 +290,29 @@ function getHighlightIndexes(values) {
     return new Set(numericValues.filter(item => item.value === maxValue).map(item => item.index));
 }
 
+function formatComparisonDifference(diff) {
+    if (!Number.isFinite(diff)) return '';
+    return Number.isInteger(diff) ? String(diff) : diff.toFixed(1).replace(/\.0$/, '');
+}
+
+function getComparisonAdvantage(row) {
+    const numericValues = (row.highlightValues || row.values)
+        .map((value, index) => ({value: Number(value), index}))
+        .filter(item => Number.isFinite(item.value));
+    if (numericValues.length < 2) return null;
+
+    numericValues.sort((left, right) => right.value - left.value);
+    const [leader, runnerUp] = numericValues;
+    const diff = leader.value - runnerUp.value;
+    if (diff <= 0) return null;
+
+    return {
+        index: leader.index,
+        diff,
+        width: Math.max(18, Math.min(100, (diff / COMPARISON_ADVANTAGE_FULL_DIFF) * 100)),
+    };
+}
+
 function renderComparisonMetaRow(row, entries) {
     const highlightIndexes = getHighlightIndexes(row.highlightValues || row.values);
     return `
@@ -366,39 +390,42 @@ function mergeComparisonItems(entries, picker, options = {}) {
 }
 
 function renderComparisonMetricRow(row, entries) {
-    const highlightIndexes = getHighlightIndexes(row.highlightValues || row.values);
+    const advantage = getComparisonAdvantage(row);
+    if (!advantage) return '';
+    const entry = entries[advantage.index];
+    const value = row.values[advantage.index];
+    const displayValue = value === null || value === undefined || value === '' ? '-' : String(value);
+    const diffText = formatComparisonDifference(advantage.diff);
     return `
         <div class="comparison-metric-row">
             <div class="comparison-metric-label">${escapeHtml(row.label)}</div>
-            <div class="comparison-metric-bars">
-                ${row.values.map((value, index) => {
-                    const numericValue = Number(row.highlightValues?.[index] ?? value);
-                    const hasNumericValue = Number.isFinite(numericValue) && numericValue > 0;
-                    const displayValue = value === null || value === undefined || value === '' ? '-' : String(value);
-                    const width = hasNumericValue ? Math.max(8, Math.min(100, (numericValue / 20) * 100)) : 0;
-                    return `
-                        <div class="comparison-metric-bar-row ${entries[index].accentClass} ${highlightIndexes.has(index) ? 'is-max' : ''}">
-                            <div class="comparison-metric-track">
-                                <span class="comparison-metric-fill ${entries[index].accentClass}" style="width:${width}%"></span>
-                            </div>
-                            <span class="comparison-metric-bar-value">${escapeHtml(displayValue)}</span>
-                        </div>
-                    `;
-                }).join('')}
+            <div class="comparison-metric-bars is-advantage">
+                <div class="comparison-metric-bar-row comparison-metric-advantage-row ${entry.accentClass} is-max">
+                    <div class="comparison-metric-track" title="领先 ${escapeHtml(diffText)}">
+                        <span class="comparison-metric-fill ${entry.accentClass}" style="width:${advantage.width}%"></span>
+                    </div>
+                    <span class="comparison-metric-bar-value">
+                        <span class="comparison-metric-player">${escapeHtml(entry.slot.player.name)}</span>
+                        <strong>${escapeHtml(displayValue)}</strong>
+                        <span class="comparison-metric-diff">+${escapeHtml(diffText)}</span>
+                    </span>
+                </div>
             </div>
         </div>
     `;
 }
 
 function renderComparisonMetricPanel(title, rows, entries, options = {}) {
-    if (!rows.length) return '';
+    const advantageRows = rows.filter(row => getComparisonAdvantage(row));
+    if (!advantageRows.length) return '';
     return `
         <section class="comparison-panel ${options.wide ? 'comparison-panel-wide' : ''}">
             <div class="comparison-panel-head">
                 <h4>${escapeHtml(title)}</h4>
+                <div class="comparison-panel-note">仅显示优势项</div>
             </div>
             <div class="comparison-metric-list">
-                ${rows.map(row => renderComparisonMetricRow(row, entries)).join('')}
+                ${advantageRows.map(row => renderComparisonMetricRow(row, entries)).join('')}
             </div>
         </section>
     `;
