@@ -118,6 +118,9 @@
         .detail-column {
             width: 62px;
         }
+        .copy-column {
+            width: 54px;
+        }
         .players-list-table {
             table-layout: fixed;
         }
@@ -131,7 +134,9 @@
         .players-list-table .position-cell,
         .players-list-table .nationality-cell,
         .players-list-table .slot-cell,
-        .players-list-table .detail-column {
+        .players-list-table .detail-column,
+        .players-list-table .copy-column,
+        .players-list-table .copy-cell {
             white-space: nowrap;
         }
         .players-list-table .numeric-column,
@@ -3311,6 +3316,37 @@
     max-width: 98px;
 }
 
+.copy-column,
+.copy-cell {
+    min-width: 54px;
+    width: 54px;
+    max-width: 54px;
+    text-align: center;
+}
+
+.roster-copy-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+    width: 42px;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--accent-primary) 28%, transparent);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--accent-bg) 72%, transparent);
+    color: var(--accent-primary);
+    font-size: 0.74rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.roster-copy-button:hover,
+.roster-copy-button:focus-visible {
+    border-color: color-mix(in srgb, var(--accent-primary) 48%, transparent);
+    background: color-mix(in srgb, var(--accent-primary) 14%, transparent);
+}
+
 .players-list-table th,
 .players-list-table td {
     padding-inline: 6px;
@@ -3456,6 +3492,87 @@
 .players-list-table tr[data-player-uid]:focus-visible {
     outline: 2px solid var(--accent-primary);
     outline-offset: -2px;
+}
+
+@media (min-width: 901px) and (max-width: 1500px) {
+    .players-list-table {
+        table-layout: fixed;
+        min-width: 1038px;
+        font-size: 0.86rem;
+    }
+
+    .uid-column {
+        width: 84px;
+    }
+
+    .name-column {
+        width: 158px;
+    }
+
+    .age-column {
+        width: 52px;
+    }
+
+    .ca-column {
+        width: 62px;
+    }
+
+    .position-column {
+        width: 70px;
+    }
+
+    .nation-column {
+        width: 82px;
+    }
+
+    .team-column {
+        width: 108px;
+    }
+
+    .wage-column {
+        width: 74px;
+    }
+
+    .table-slot-col,
+    .slot-column,
+    .slot-cell {
+        min-width: 76px;
+        width: 76px;
+        max-width: 76px;
+    }
+
+    .copy-column,
+    .copy-cell {
+        min-width: 48px;
+        width: 48px;
+        max-width: 48px;
+    }
+
+    .players-list-table th,
+    .players-list-table td {
+        padding-inline: 4px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .players-list-table .name-cell,
+    .players-list-table .team-name-cell,
+    .players-list-table .roster-player-link {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .slot-badge {
+        min-width: 52px;
+        width: 52px;
+        padding: 0 7px;
+        font-size: 0.68rem;
+    }
+
+    .roster-copy-button {
+        width: 38px;
+        font-size: 0.7rem;
+    }
 }
 
 .home-search-empty,

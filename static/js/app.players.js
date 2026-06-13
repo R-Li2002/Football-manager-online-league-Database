@@ -130,6 +130,79 @@ function sortPlayers() {
     renderPlayers(currentPlayers);
 }
 
+function buildRosterPlayerCopyText(player) {
+    return [
+        player.uid,
+        player.name,
+        player.age,
+        player.initial_ca,
+        player.ca,
+        player.pa,
+        player.position,
+    ].map(value => String(value ?? '').trim()).join(' ');
+}
+
+function findRosterPlayerByUid(uid) {
+    const normalizedUid = Number(uid);
+    return [...(currentPlayers || []), ...(allPlayers || [])]
+        .find(player => Number(player.uid) === normalizedUid);
+}
+
+function fallbackCopyRosterText(text) {
+    if (typeof document.execCommand !== 'function') {
+        return false;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-1000px';
+    textarea.style.left = '-1000px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+        return document.execCommand('copy');
+    } catch (error) {
+        return false;
+    } finally {
+        document.body.removeChild(textarea);
+    }
+}
+
+function showRosterCopyStatus(message, tone = 'success') {
+    if (typeof showDetailExportToast === 'function') {
+        showDetailExportToast(message, tone);
+        return;
+    }
+    window.alert(message);
+}
+
+async function copyRosterPlayerInfo(event, uid) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const player = findRosterPlayerByUid(uid);
+    if (!player) {
+        showRosterCopyStatus('未找到球员数据，无法复制', 'warning');
+        return;
+    }
+
+    const text = buildRosterPlayerCopyText(player);
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+        } else if (!fallbackCopyRosterText(text)) {
+            throw new Error('copy-failed');
+        }
+        showRosterCopyStatus('已复制球员信息');
+    } catch (error) {
+        if (fallbackCopyRosterText(text)) {
+            showRosterCopyStatus('已复制球员信息');
+            return;
+        }
+        showRosterCopyStatus('浏览器未允许写入剪贴板，请手动复制', 'warning');
+    }
+}
+
 function renderPlayers(players) {
     renderPlayerQueryState();
     if (players.length === 0) {
@@ -152,8 +225,9 @@ function renderPlayers(players) {
             <col class="wage-column">
             <col class="table-slot-col">
             ${isAdmin ? '<col class="detail-column">' : ''}
+            <col class="copy-column">
         </colgroup>
-        <thead><tr>${buildRosterHeader('UID', 'uid', true)}${buildRosterHeader('姓名', 'name')}${buildRosterHeader('年龄', 'age', true)}${buildRosterHeader('初始CA', 'initial_ca', true)}${buildRosterHeader('当前CA', 'ca', true)}${buildRosterHeader('PA', 'pa', true)}${buildRosterHeader('位置', 'position')}${buildRosterHeader('国籍', 'nationality')}${buildRosterHeader('所属球队', 'team_name')}${buildRosterHeader('工资', 'wage', true)}${buildRosterHeader('名额', 'slot_type')}${isAdmin ? '<th class="detail-column">详情</th>' : ''}</tr></thead><tbody>${sortedPlayers.map(player => {
+        <thead><tr>${buildRosterHeader('UID', 'uid', true)}${buildRosterHeader('姓名', 'name')}${buildRosterHeader('年龄', 'age', true)}${buildRosterHeader('初始CA', 'initial_ca', true)}${buildRosterHeader('当前CA', 'ca', true)}${buildRosterHeader('PA', 'pa', true)}${buildRosterHeader('位置', 'position')}${buildRosterHeader('国籍', 'nationality')}${buildRosterHeader('所属球队', 'team_name')}${buildRosterHeader('工资', 'wage', true)}${buildRosterHeader('名额', 'slot_type')}${isAdmin ? '<th class="detail-column">详情</th>' : ''}<th class="copy-column">复制</th></tr></thead><tbody>${sortedPlayers.map(player => {
             const uidCell = isAdmin
                 ? `<td class="numeric-cell"><input type="number" class="editable-input" value="${player.uid}" onchange="updatePlayerUidConfirm(${player.uid}, this.value, this)" style="background:rgba(0,0,0,0.2);border:2px solid #e74c3c;padding:4px 6px;border-radius:4px;color:#fff;width:50px;font-weight:bold;" title="修改 UID 需要谨慎，请确认无误！"></td>`
                 : `<td class="numeric-cell">${player.uid}</td>`;
@@ -177,12 +251,13 @@ function renderPlayers(players) {
             const detailCell = isAdmin
                 ? `<td><button class="btn btn-secondary" style="padding:4px 8px;font-size:0.8rem;" onclick="togglePlayerDetail(${player.uid})">📊</button></td>`
                 : '';
+            const copyCell = `<td class="copy-cell"><button type="button" class="roster-copy-button" onclick="copyRosterPlayerInfo(event, ${player.uid})" title="复制 UID 姓名 年龄 初始CA 当前CA PA 位置">复制</button></td>`;
 
             const isSelected = Number(currentSelectedRosterUid) === Number(player.uid);
-            const mainRow = `<tr id="player-row-${player.uid}" class="${isSelected ? 'row-selected' : ''}" data-player-uid="${player.uid}" tabindex="0" onclick="selectRosterPlayer(${player.uid})" onkeydown="handleRosterRowKeydown(event, ${player.uid})">${uidCell}${nameCell}${ageCell}<td class="numeric-cell">${player.initial_ca}</td><td class="numeric-cell"><strong>${player.ca}</strong></td><td class="numeric-cell">${player.pa}</td>${positionCell}${nationalityCell}<td class="team-name-cell"><span class="player-link roster-player-link" onclick="viewTeamPlayers('${player.team_name.replace(/'/g, "\\'")}')">${player.team_name}</span></td><td class="numeric-cell">${player.wage.toFixed(3)}M</td><td class="slot-cell">${getSlotBadge(player.slot_type)}</td>${detailCell}</tr>`;
+            const mainRow = `<tr id="player-row-${player.uid}" class="${isSelected ? 'row-selected' : ''}" data-player-uid="${player.uid}" tabindex="0" onclick="selectRosterPlayer(${player.uid})" onkeydown="handleRosterRowKeydown(event, ${player.uid})">${uidCell}${nameCell}${ageCell}<td class="numeric-cell">${player.initial_ca}</td><td class="numeric-cell"><strong>${player.ca}</strong></td><td class="numeric-cell">${player.pa}</td>${positionCell}${nationalityCell}<td class="team-name-cell"><span class="player-link roster-player-link" onclick="viewTeamPlayers('${player.team_name.replace(/'/g, "\\'")}')">${player.team_name}</span></td><td class="numeric-cell">${player.wage.toFixed(3)}M</td><td class="slot-cell">${getSlotBadge(player.slot_type)}</td>${detailCell}${copyCell}</tr>`;
 
             const detailRow = isAdmin
-                ? `<tr id="player-detail-${player.uid}" class="player-detail-row" style="display:none;background:var(--bg-tertiary);"><td colspan="12"><div style="padding:15px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+                ? `<tr id="player-detail-${player.uid}" class="player-detail-row" style="display:none;background:var(--bg-tertiary);"><td colspan="13"><div style="padding:15px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
                     <div><strong>初始身价:</strong> <span id="detail-initial-value-${player.uid}">加载中...</span></div>
                     <div><strong>当前身价:</strong> <span id="detail-current-value-${player.uid}">加载中...</span></div>
                     <div><strong>潜力身价:</strong> <span id="detail-potential-value-${player.uid}">加载中...</span></div>
@@ -210,6 +285,7 @@ function selectRosterPlayer(uid) {
 }
 
 function handleRosterRowKeydown(event, uid) {
+    if (event.target?.closest?.('button,input,select,textarea,a')) return;
     if (event.key === 'Enter') {
         event.preventDefault();
         viewPlayerInDatabase(uid);

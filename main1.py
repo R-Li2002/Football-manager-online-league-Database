@@ -1,6 +1,12 @@
 import os
 
-from app_bootstrap import LOG_FILE, load_bootstrap_admin_accounts_from_env, shutdown_app_state, write_to_log
+from app_bootstrap import (
+    LOG_FILE,
+    initialize_app_state,
+    load_bootstrap_admin_accounts_from_env,
+    shutdown_app_state,
+    write_to_log,
+)
 from app_factory import app, get_db, health_check, verify_admin
 from app_security import (
     clear_session_cookie,
@@ -50,7 +56,11 @@ def run_local_server():
     import uvicorn
 
     os.environ.setdefault("ALLOW_MANUAL_RUNTIME_FALLBACK", "1")
-    uvicorn.run("main1:app", host=LOCAL_DEV_HOST, port=LOCAL_DEV_PORT, reload=False)
+    initialize_app_state()
+    try:
+        uvicorn.run(app, host=LOCAL_DEV_HOST, port=LOCAL_DEV_PORT, reload=False, lifespan="off")
+    finally:
+        shutdown_app_state()
 
 
 if __name__ == "__main__":
