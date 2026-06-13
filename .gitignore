@@ -1,4 +1,6 @@
 __pycache__/
+.pytest_cache/
+.playwright-mcp/
 *.py[cod]
 *$py.class
 *.so
@@ -28,6 +30,8 @@ test_export_*.xlsx
 data/
 imports/
 tmp_*.png
+tmp/
+*~*.tmp
 .cc-connect-debug*.log
 bg_test*.txt
 output/

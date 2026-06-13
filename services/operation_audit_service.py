@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 
-from operation_audit_store import persist_operation_audit
+from operation_audit_store import persist_operation_audit, serialize_audit_details
 
 AUDIT_SOURCE_ADMIN_UI = "admin_ui"
 AUDIT_SOURCE_LEGACY_LOG = "legacy_log_file"
@@ -146,7 +147,7 @@ def import_legacy_admin_log_to_operation_audits(target_bind, log_path: str | Pat
     if not parsed_lines:
         return {"imported": 0, "skipped": 0}
 
-    with target_bind.connect() as conn:
+    with target_bind.begin() as conn:
         if not inspect(conn).has_table(OPERATION_AUDIT_TABLE):
             return {"imported": 0, "skipped": 0}
         rows = conn.execute(
@@ -159,39 +160,67 @@ def import_legacy_admin_log_to_operation_audits(target_bind, log_path: str | Pat
             )
         ).fetchall()
 
-    existing_signatures = {
-        (
-            created_at.strftime("%Y-%m-%d %H:%M:%S") if hasattr(created_at, "strftime") else str(created_at).split(".")[0],
-            operator or "",
-            action,
-        )
-        for created_at, operator, action in rows
-    }
+        existing_signatures = {
+            (
+                created_at.strftime("%Y-%m-%d %H:%M:%S")
+                if hasattr(created_at, "strftime")
+                else str(created_at).split(".")[0],
+                operator or "",
+                action,
+            )
+            for created_at, operator, action in rows
+        }
 
-    imported = 0
-    skipped = 0
-    for parsed in parsed_lines:
-        created_at_text = parsed["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
-        signature = (
-            created_at_text,
-            parsed["operator"] or "",
-            parsed["action"],
+        imported = 0
+        skipped = 0
+        insert_sql = text(
+            """
+            INSERT INTO operation_audits (
+                category, action, status, source, operator, summary, details_json, created_at
+            ) VALUES (
+                :category, :action, :status, :source, :operator, :summary, :details_json, :created_at
+            )
+            """
         )
-        if signature in existing_signatures:
-            skipped += 1
-            continue
-        persist_admin_log_file_event(
-            target_bind,
-            operation_label=parsed["operation_label"],
-            operator=parsed["operator"],
-            details_text=parsed["details_text"],
-            source=AUDIT_SOURCE_LEGACY_LOG,
-            created_at=parsed["timestamp"],
-            status=parsed["status"],
-            extra_details={"legacy_log_path": str(path)},
-        )
-        existing_signatures.add(signature)
-        imported += 1
+        for parsed in parsed_lines:
+            created_at_text = parsed["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+            signature = (
+                created_at_text,
+                parsed["operator"] or "",
+                parsed["action"],
+            )
+            if signature in existing_signatures:
+                skipped += 1
+                continue
+            details_json = serialize_audit_details(
+                {
+                    "operation_label": parsed["operation_label"],
+                    "details_text": parsed["details_text"],
+                    "legacy_log_path": str(path),
+                }
+            )
+            created_at_param = parsed["timestamp"]
+            if getattr(conn.dialect, "name", "") == "sqlite":
+                created_at_param = created_at_text
+            try:
+                conn.execute(
+                    insert_sql,
+                    {
+                        "category": parsed["category"],
+                        "action": parsed["action"],
+                        "status": parsed["status"],
+                        "source": AUDIT_SOURCE_LEGACY_LOG,
+                        "operator": parsed["operator"],
+                        "summary": parsed["details_text"],
+                        "details_json": details_json,
+                        "created_at": created_at_param,
+                    },
+                )
+            except SQLAlchemyError:
+                skipped += 1
+                continue
+            existing_signatures.add(signature)
+            imported += 1
 
     return {"imported": imported, "skipped": skipped}
 

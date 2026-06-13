@@ -5,6 +5,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from sqlalchemy import create_engine, event
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -77,13 +78,16 @@ def _describe_engine(active_engine) -> str:
 
 def record_schema_bootstrap_event(event: str, target_engine=None, detail: str = "") -> None:
     active_engine = target_engine or engine
-    BOOTSTRAP_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     message = f"[{timestamp}] {event} engine={_describe_engine(active_engine)}"
     if detail:
         message = f"{message} detail={detail}"
-    with BOOTSTRAP_LOG_PATH.open("a", encoding="utf-8") as log_file:
-        log_file.write(message + "\n")
+    try:
+        BOOTSTRAP_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with BOOTSTRAP_LOG_PATH.open("a", encoding="utf-8") as log_file:
+            log_file.write(message + "\n")
+    except OSError:
+        pass
 
     if event.endswith("_failed"):
         status = "failed"
@@ -95,16 +99,19 @@ def record_schema_bootstrap_event(event: str, target_engine=None, detail: str = 
         status = "success"
 
     source = "manual_repair" if event.startswith("manual_") else "startup"
-    persist_operation_audit(
-        active_engine,
-        category="schema_bootstrap",
-        action=event,
-        status=status,
-        summary=message,
-        source=source,
-        details={"detail": detail, "engine": _describe_engine(active_engine)},
-        created_at=datetime.now(),
-    )
+    try:
+        persist_operation_audit(
+            active_engine,
+            category="schema_bootstrap",
+            action=event,
+            status=status,
+            summary=message,
+            source=source,
+            details={"detail": detail, "engine": _describe_engine(active_engine)},
+            created_at=datetime.now(),
+        )
+    except SQLAlchemyError:
+        pass
 
 
 def run_schema_migrations(target_engine=None) -> bool:

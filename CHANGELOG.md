@@ -4,6 +4,13 @@ All notable changes to HEIGO are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- 修正本地 `python main1.py` 在部分 Windows / Python 3.14 环境下卡在 Uvicorn lifespan startup 的问题；本地脚本入口会先执行应用初始化，再以关闭 Uvicorn lifespan 的方式启动服务。
+- 调整 schema bootstrap 文件日志、启动审计记录和历史后台日志导入为尽力写入，避免本地日志/审计写入权限或占用问题阻断主站启动。
+- 将历史后台日志导入审计表的启动补齐改为单事务批量写入，避免日志较多时拖慢 Uvicorn startup。
+- 修正名单页复制按钮在浏览器不支持剪贴板降级接口时可能无法显示失败提示的问题。
+
 ### Added
 
 - 新增维护脚本 `scripts/maintenance/rename_teams_from_workbook.py`，可先按新工作簿批量对齐数据库中的球队名，再执行正式导入，减少球队重命名导致的严格模式失败。
@@ -36,6 +43,7 @@ All notable changes to HEIGO are documented here.
 - 新增高级搜索后端回归测试，覆盖“仅筛选条件搜索、位置组合筛选、结果截断”等属性库高级筛选场景。
 - 新增数据库页前端回归测试，覆盖高级搜索按钮状态、位置点击循环、版本切换重搜以及历史恢复对高级筛选的保留行为。
 - 补充 NoneBot 名单查询分页回归测试，覆盖 `第N页`、`N页`、`pN` 解析、文字分页和名单图页码传递。
+- 新增名单页复制按钮前端回归测试，覆盖复制内容、行点击隔离、Clipboard API 与降级失败提示。
 
 ### Docs
 
