@@ -450,6 +450,64 @@ function updateStats() {
     }
 }
 
+const HEIGO_QQ_GROUPS = ['796068353'];
+const HEIGO_QQ_JOIN_URL = 'https://qm.qq.com/q/iJlazr0QSI';
+
+function buildQqGroupCard(groupNumber, index) {
+    const label = HEIGO_QQ_GROUPS.length > 1 ? `QQ群 ${index + 1}` : '官方 QQ 群';
+    return `
+        <div class="join-heigo-group-card">
+            <div class="join-heigo-group-main">
+                <div class="join-heigo-group-label">${label}</div>
+                <div class="join-heigo-group-number">${groupNumber}</div>
+            </div>
+            <div class="join-heigo-group-actions">
+                <a class="btn btn-primary join-heigo-action join-heigo-primary-action" href="${HEIGO_QQ_JOIN_URL}" target="_blank" rel="noopener noreferrer">申请加入</a>
+                <button class="btn btn-secondary join-heigo-action" type="button" onclick="copyHeigoGroupNumber('${groupNumber}')">复制群号</button>
+            </div>
+        </div>
+    `;
+}
+
+function showJoinHeigoModal() {
+    showModal('加入 Heigo', `
+        <div class="join-heigo-modal">
+            <div class="join-heigo-hero">
+                <div class="join-heigo-icon" aria-hidden="true">H</div>
+                <div class="join-heigo-copy">
+                    <div class="join-heigo-title">Heigo联机FM群</div>
+                    <p class="join-heigo-intro">加入历史悠久的FM联机联赛群，与众多教练一起纵横联机。</p>
+                </div>
+            </div>
+            <div class="join-heigo-group-list">
+                ${HEIGO_QQ_GROUPS.map(buildQqGroupCard).join('')}
+            </div>
+        </div>
+    `);
+}
+
+async function copyHeigoGroupNumber(groupNumber) {
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(groupNumber);
+        } else {
+            const input = document.createElement('textarea');
+            input.value = groupNumber;
+            input.setAttribute('readonly', '');
+            input.style.position = 'fixed';
+            input.style.left = '-9999px';
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand('copy');
+            document.body.removeChild(input);
+        }
+        showModal('已复制群号', `QQ群号 ${groupNumber} 已复制。`);
+    } catch (error) {
+        console.error('复制群号失败:', error);
+        showModal('复制失败', `请手动复制 QQ 群号：${groupNumber}`);
+    }
+}
+
 async function exportData() {
     try {
         const response = await fetch('/api/export/excel');

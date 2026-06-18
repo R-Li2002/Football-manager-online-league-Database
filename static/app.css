@@ -2190,13 +2190,135 @@
         .op-rejuvenate { background: #9b59b6; color: #fff; }
         .op-batch { background: #1abc9c; color: #fff; }
         
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15,23,42,0.38); z-index: 1000; justify-content: center; align-items: center; padding: 18px; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
         .modal.active { display: flex; }
         .modal-content { background: #1a1a2e; border-radius: 16px; padding: 30px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; border: 1px solid #00d9ff; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .modal-header h3 { color: #00d9ff; }
         .modal-close { background: none; border: none; color: #8892b0; font-size: 1.5rem; cursor: pointer; }
         .modal-body { max-height: 60vh; overflow-y: auto; }
+
+        .join-heigo-modal {
+            display: grid;
+            gap: 16px;
+        }
+
+        .join-heigo-hero {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 4px 2px 2px;
+        }
+
+        .join-heigo-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 52px;
+            height: 52px;
+            border-radius: 18px;
+            background: var(--accent-gradient);
+            color: #ffffff;
+            font-size: 1.24rem;
+            font-weight: 850;
+            box-shadow: 0 16px 30px rgba(30,102,245,0.24);
+            flex-shrink: 0;
+        }
+
+        body:not(.light-mode) .join-heigo-icon {
+            color: #16161e;
+            box-shadow: 0 16px 30px rgba(122,162,247,0.18);
+        }
+
+        .join-heigo-copy {
+            min-width: 0;
+        }
+
+        .join-heigo-title {
+            color: var(--text-primary);
+            font-size: 1.08rem;
+            font-weight: 800;
+            line-height: 1.35;
+        }
+
+        .join-heigo-intro {
+            margin: 3px 0 0;
+            color: var(--text-secondary);
+            line-height: 1.55;
+            font-size: 0.92rem;
+        }
+
+        .join-heigo-group-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .join-heigo-group-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 16px 16px 16px 18px;
+            border: 1px solid var(--border-color);
+            border-radius: 22px;
+            background: linear-gradient(180deg, var(--surface-strong), var(--surface-muted));
+            box-shadow: var(--shadow-float);
+        }
+
+        .join-heigo-group-main {
+            min-width: 0;
+        }
+
+        .join-heigo-group-label {
+            margin-bottom: 6px;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .join-heigo-group-number {
+            color: var(--text-primary);
+            font-size: 1.44rem;
+            font-weight: 800;
+            letter-spacing: 0;
+            line-height: 1.1;
+        }
+
+        .join-heigo-group-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .join-heigo-action {
+            min-height: 42px;
+            padding: 10px 18px;
+            text-align: center;
+            text-decoration: none;
+            white-space: nowrap;
+            box-shadow: none;
+        }
+
+        .join-heigo-primary-action {
+            min-width: 108px;
+        }
+
+        @media (max-width: 560px) {
+            .join-heigo-group-card {
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .join-heigo-group-actions {
+                justify-content: stretch;
+            }
+
+            .join-heigo-action {
+                flex: 1 1 160px;
+            }
+        }
         
         .growth-indicator { font-size: 0.8rem; margin-left: 5px; }
         .growth-positive { color: #00ff88; }
@@ -2422,6 +2544,56 @@
         .modal-content {
             border: 1px solid var(--border-color);
             box-shadow: var(--shadow-soft);
+        }
+
+        .modal-content {
+            width: min(92vw, 520px);
+            padding: 22px;
+            border-radius: 30px;
+            background: color-mix(in srgb, var(--surface-strong) 88%, transparent);
+            border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+            box-shadow: 0 28px 70px rgba(76,79,105,0.18);
+            backdrop-filter: blur(28px) saturate(1.25);
+            -webkit-backdrop-filter: blur(28px) saturate(1.25);
+        }
+
+        body:not(.light-mode) .modal-content {
+            background: color-mix(in srgb, var(--surface-strong) 88%, rgba(22,22,30,0.72));
+            box-shadow: 0 30px 78px rgba(0,0,0,0.42);
+        }
+
+        .modal-header {
+            margin-bottom: 14px;
+            padding: 0 2px;
+        }
+
+        .modal-header h3 {
+            color: var(--text-primary);
+            font-size: 1.12rem;
+            font-weight: 800;
+            letter-spacing: 0;
+        }
+
+        .modal-close {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 34px;
+            border-radius: 999px;
+            background: var(--surface-muted);
+            color: var(--text-secondary);
+            font-size: 1.25rem;
+            line-height: 1;
+        }
+
+        .modal-close:hover {
+            color: var(--text-primary);
+            transform: translateY(-1px);
+        }
+
+        .modal-body {
+            max-height: min(68vh, 620px);
         }
 
         .glass-card {
