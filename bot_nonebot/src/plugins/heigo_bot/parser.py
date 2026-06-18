@@ -48,6 +48,12 @@ def parse_command(text: str) -> CommandSpec:
     if not working or working in {"帮助", "help", "?"}:
         return CommandSpec(command_type="help", raw_text=text, normalized_text=normalized_text, step=step, page=page, version=version)
 
+    if working in {"新闻", "足球新闻", "懂球帝", "懂球帝新闻"}:
+        return CommandSpec(command_type="football_news", raw_text=text, normalized_text=normalized_text, step=step, page=page, version=version)
+
+    if working in {"早报", "足球早报", "懂球帝早报"}:
+        return CommandSpec(command_type="football_daily", raw_text=text, normalized_text=normalized_text, step=step, page=page, version=version)
+
     for prefix in ("球员图", "球员"):
         if working.startswith(prefix):
             keyword = working.removeprefix(prefix).strip()

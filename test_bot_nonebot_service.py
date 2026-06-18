@@ -11,6 +11,7 @@ if str(BOT_PLUGIN_PARENT) not in sys.path:
 
 from heigo_bot.config import BotSettings  # noqa: E402
 from heigo_bot.models import CommandSpec  # noqa: E402
+from heigo_bot.news_service import NewsItem  # noqa: E402
 from heigo_bot.service import HeigoBotService  # noqa: E402
 
 
@@ -71,6 +72,17 @@ class _FakeSigner:
         return f"https://example.com/roster/{team_name}/{page}.png"
 
 
+class _FakeNewsService:
+    async def get_top_news(self):
+        return [
+            NewsItem(title="转会窗口开启", link="https://example.com/news/1", published="06-19 09:00"),
+            NewsItem(title="欧冠抽签完成", link="https://example.com/news/2", published="06-19 09:30"),
+        ]
+
+    async def get_daily(self):
+        return [NewsItem(title="懂球帝早报标题", link="https://example.com/daily/1", published="06-19 08:00")]
+
+
 class BotNoneBotServiceTests(unittest.TestCase):
     def setUp(self):
         settings = BotSettings(
@@ -85,7 +97,7 @@ class BotNoneBotServiceTests(unittest.TestCase):
             bot_user_cooldown_seconds=5,
             bot_group_limit_per_minute=20,
         )
-        self.service = HeigoBotService(_FakeApiClient(), _FakeSigner(), settings)
+        self.service = HeigoBotService(_FakeApiClient(), _FakeSigner(), settings, _FakeNewsService())
 
     def test_handle_player_image(self):
         reply = asyncio.run(self.service.handle_command(CommandSpec(command_type="player_image", raw_text="", normalized_text="", keyword="Dani")))
@@ -175,6 +187,35 @@ class BotNoneBotServiceTests(unittest.TestCase):
         with patch.dict("os.environ", {"BOT_ROSTER_PAGE_SIZE": "16"}, clear=False):
             settings = BotSettings.from_env()
         self.assertEqual(settings.bot_roster_page_size, 16)
+
+    def test_settings_from_env_defaults_news_broadcast_groups_to_allowed_groups(self):
+        with patch.dict("os.environ", {"QQ_BOT_ALLOWED_GROUPS": "123,456", "NEWS_BROADCAST_GROUPS": ""}, clear=False):
+            settings = BotSettings.from_env()
+        self.assertEqual(settings.news_broadcast_groups, ("123", "456"))
+
+    def test_settings_from_env_honors_news_schedule(self):
+        with patch.dict(
+            "os.environ",
+            {"NEWS_DAILY_HOUR": "9", "NEWS_HEADLINE_HOURS": "12,15,18", "NEWS_BROADCAST_GROUPS": "796068353"},
+            clear=False,
+        ):
+            settings = BotSettings.from_env()
+        self.assertEqual(settings.news_daily_hour, 9)
+        self.assertEqual(settings.news_headline_hours, (12, 15, 18))
+        self.assertEqual(settings.news_broadcast_groups, ("796068353",))
+
+    def test_handle_football_news(self):
+        reply = asyncio.run(self.service.handle_text("新闻"))
+        self.assertEqual(reply.reply_type, "text")
+        self.assertIn("懂球帝足球新闻", reply.text)
+        self.assertIn("转会窗口开启", reply.text)
+        self.assertIn("https://example.com/news/1", reply.text)
+
+    def test_handle_football_daily(self):
+        reply = asyncio.run(self.service.handle_text("早报"))
+        self.assertEqual(reply.reply_type, "text")
+        self.assertIn("懂球帝早报", reply.text)
+        self.assertIn("懂球帝早报标题", reply.text)
 
     def test_handle_help(self):
         reply = asyncio.run(self.service.handle_text("帮助"))

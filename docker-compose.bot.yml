@@ -1,4 +1,15 @@
 ﻿services:
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: heigo-rsshub
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+    expose:
+      - "1200"
+
   napcat:
     image: mlikiowa/napcat-docker:latest
     container_name: heigo-napcat
@@ -36,11 +47,21 @@
       QQ_BOT_ALLOW_ALL_GROUPS: "${QQ_BOT_ALLOW_ALL_GROUPS:-false}"
       BOT_USER_COOLDOWN_SECONDS: "${BOT_USER_COOLDOWN_SECONDS:-5}"
       BOT_GROUP_LIMIT_PER_MINUTE: "${BOT_GROUP_LIMIT_PER_MINUTE:-20}"
+      NEWS_RSSHUB_BASE_URL: "${NEWS_RSSHUB_BASE_URL:-http://rsshub:1200}"
+      NEWS_CACHE_TTL_SECONDS: "${NEWS_CACHE_TTL_SECONDS:-600}"
+      NEWS_ITEM_LIMIT: "${NEWS_ITEM_LIMIT:-5}"
+      NEWS_BROADCAST_GROUPS: "${NEWS_BROADCAST_GROUPS:-796068353}"
+      NEWS_DAILY_HOUR: "${NEWS_DAILY_HOUR:-9}"
+      NEWS_HEADLINE_HOURS: "${NEWS_HEADLINE_HOURS:-12,15,18}"
+      NEWS_SEEN_STORE_PATH: "${NEWS_SEEN_STORE_PATH:-/app/data/bot-news-state.json}"
     ports:
       - "127.0.0.1:8090:8090"
+    volumes:
+      - ./data/bot-nonebot:/app/data
     depends_on:
       - heigo
       - napcat
+      - rsshub
     healthcheck:
       test:
         - CMD

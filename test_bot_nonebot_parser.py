@@ -62,6 +62,18 @@ class BotNoneBotParserTests(unittest.TestCase):
         self.assertEqual(command.command_type, "wage_image")
         self.assertEqual(command.keyword, "梅西")
 
+    def test_parse_football_news_command(self):
+        for text in ("新闻", "足球新闻", "懂球帝", "懂球帝新闻"):
+            with self.subTest(text=text):
+                command = parse_command(text)
+                self.assertEqual(command.command_type, "football_news")
+
+    def test_parse_football_daily_command(self):
+        for text in ("早报", "足球早报", "懂球帝早报"):
+            with self.subTest(text=text):
+                command = parse_command(text)
+                self.assertEqual(command.command_type, "football_daily")
+
     def test_parse_roster_image_command(self):
         command = parse_command("名单图 Barcelona")
         self.assertEqual(command.command_type, "roster_image")

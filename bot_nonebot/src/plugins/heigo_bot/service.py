@@ -5,6 +5,7 @@ import re
 
 from .config import BotSettings
 from .models import CommandSpec, ReplySpec
+from .news_service import FootballNewsService, NewsItem
 from .parser import parse_command
 
 
@@ -15,13 +16,17 @@ HELP_TEXT = (
     "工资图 <名字或UID>\n"
     "名单 <球队名> [第N页]\n"
     "名单图 <球队名> [第N页]\n"
+    "新闻 / 足球新闻\n"
+    "早报 / 懂球帝早报\n"
     "\n"
     "示例:\n"
     "球员图 梅西\n"
     "球员图 梅西 +2\n"
     "工资图 贝林厄姆\n"
     "名单图 巴萨\n"
-    "名单 巴萨 第2页"
+    "名单 巴萨 第2页\n"
+    "新闻\n"
+    "早报"
 )
 
 TEAM_ALIASES = {
@@ -76,10 +81,11 @@ TEAM_ALIASES = {
 
 
 class HeigoBotService:
-    def __init__(self, api_client, signer, settings: BotSettings):
+    def __init__(self, api_client, signer, settings: BotSettings, news_service: FootballNewsService | None = None):
         self.api_client = api_client
         self.signer = signer
         self.settings = settings
+        self.news_service = news_service or FootballNewsService(settings)
 
     async def handle_text(self, text: str) -> ReplySpec:
         command = parse_command(text)
@@ -98,9 +104,39 @@ class HeigoBotService:
             return await self._handle_roster_text(command)
         if command.command_type == "roster_image":
             return await self._handle_roster_image(command)
+        if command.command_type == "football_news":
+            return await self._handle_football_news()
+        if command.command_type == "football_daily":
+            return await self._handle_football_daily()
         if command.command_type == "unknown":
             return ReplySpec(reply_type="text", text=HELP_TEXT)
         return ReplySpec(reply_type="noop")
+
+    @staticmethod
+    def _format_news_items(title: str, items: list[NewsItem], limit: int) -> str:
+        if not items:
+            return f"{title}\n暂时没有读取到新闻。"
+        lines = [title]
+        for index, item in enumerate(items[:limit], start=1):
+            published = f"（{item.published}）" if item.published else ""
+            lines.append(f"{index}. {item.title}{published}\n{item.link}")
+        return "\n\n".join(lines)
+
+    async def _handle_football_news(self) -> ReplySpec:
+        try:
+            items = await self.news_service.get_top_news()
+        except Exception as exc:
+            return ReplySpec(reply_type="text", text=f"懂球帝新闻暂时读取失败：{type(exc).__name__}")
+        text = self._format_news_items("懂球帝足球新闻", items, self.settings.news_item_limit)
+        return ReplySpec(reply_type="text", text=text)
+
+    async def _handle_football_daily(self) -> ReplySpec:
+        try:
+            items = await self.news_service.get_daily()
+        except Exception as exc:
+            return ReplySpec(reply_type="text", text=f"懂球帝早报暂时读取失败：{type(exc).__name__}")
+        text = self._format_news_items("懂球帝早报", items, self.settings.news_item_limit)
+        return ReplySpec(reply_type="text", text=text)
 
     async def _resolve_player(self, command: CommandSpec) -> tuple[dict | None, ReplySpec | None]:
         if command.uid:
