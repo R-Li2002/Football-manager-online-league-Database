@@ -8,14 +8,21 @@ from schemas_write import (
     BatchReleaseRequest,
     BatchTransferRequest,
     ConsumeRequest,
+    CupMatchResultUpdateRequest,
+    CupMatchTeamsUpdateRequest,
     FishPlayerRequest,
+    MatchBatchUpdateRequest,
+    MatchUpdateRequest,
     PlayerUpdateRequest,
     RejuvenateRequest,
+    ScheduleImportResponse,
+    SiteNoteUpdateRequest,
+    SuspensionRecordUpdateRequest,
     TeamUpdateRequest,
     TransferRequest,
     UpdateUidRequest,
 )
-from services import import_service, roster_service, transfer_service, wage_service
+from services import cup_service, import_service, match_service, roster_service, site_note_service, suspension_service, transfer_service, wage_service
 from services.admin_action_runner import execute_admin_action, to_payload
 
 TRADE_LABEL = "\u4ea4\u6613"
@@ -33,6 +40,14 @@ UID_UPDATE_LABEL = "UID\u4fee\u6539"
 RECALCULATE_WAGES_LABEL = "\u91cd\u65b0\u8ba1\u7b97\u5de5\u8d44"
 REBUILD_TEAM_STATS_LABEL = "\u7403\u961f\u7f13\u5b58\u91cd\u7b97"
 FORMAL_IMPORT_LABEL = "\u6b63\u5f0f\u5bfc\u5165\u8054\u8d5b\u6570\u636e"
+SCHEDULE_IMPORT_LABEL = "\u8d5b\u7a0b\u5bfc\u5165"
+MATCH_RESULT_UPDATE_LABEL = "\u8d5b\u7a0b\u6bd4\u5206\u7f16\u8f91"
+MATCH_BATCH_UPDATE_LABEL = "\u8d5b\u7a0b\u6bd4\u5206\u6279\u91cf\u7f16\u8f91"
+SUSPENSION_UPDATE_LABEL = "\u4f24\u505c\u8bb0\u5f55\u7ef4\u62a4"
+SITE_NOTE_UPDATE_LABEL = "\u9875\u9762\u6ce8\u91ca\u66f4\u65b0"
+CUP_INITIALIZE_LABEL = "\u676f\u8d5b\u521d\u59cb\u5316"
+CUP_TEAMS_UPDATE_LABEL = "\u676f\u8d5b\u7403\u961f\u7f16\u8f91"
+CUP_RESULT_UPDATE_LABEL = "\u676f\u8d5b\u6bd4\u5206\u7f16\u8f91"
 
 
 def transfer_player(
@@ -303,4 +318,151 @@ def import_current_league_data(
         executor=lambda: import_service.import_current_league_data(db, admin, write_to_log),
         response_model=AdminImportResponse,
         bind_override=bind,
+    )
+
+
+def import_latest_schedule(
+    db: Session,
+    admin: str | None,
+    write_to_log,
+) -> ScheduleImportResponse:
+    return execute_admin_action(
+        db,
+        category="competition",
+        action="import_schedule",
+        operation_label=SCHEDULE_IMPORT_LABEL,
+        operator=admin,
+        request_payload=None,
+        executor=lambda: match_service.import_latest_schedule(db, admin, write_to_log),
+        response_model=ScheduleImportResponse,
+    )
+
+
+def update_match_result(
+    db: Session,
+    admin: str | None,
+    match_id: int,
+    request: MatchUpdateRequest,
+    write_to_log,
+) -> AdminActionResponse:
+    return execute_admin_action(
+        db,
+        category="competition",
+        action="update_match_result",
+        operation_label=MATCH_RESULT_UPDATE_LABEL,
+        operator=admin,
+        request_payload={"match_id": match_id, **to_payload(request)},
+        executor=lambda: match_service.update_match_result(db, admin, match_id, request, write_to_log),
+        response_model=AdminActionResponse,
+    )
+
+
+def batch_update_match_results(
+    db: Session,
+    admin: str | None,
+    request: MatchBatchUpdateRequest,
+    write_to_log,
+) -> AdminActionResponse:
+    return execute_admin_action(
+        db,
+        category="competition",
+        action="batch_update_match_results",
+        operation_label=MATCH_BATCH_UPDATE_LABEL,
+        operator=admin,
+        request_payload=to_payload(request),
+        executor=lambda: match_service.batch_update_match_results(db, admin, request, write_to_log),
+        response_model=AdminActionResponse,
+    )
+
+
+def update_suspension_record(
+    db: Session,
+    admin: str | None,
+    request: SuspensionRecordUpdateRequest,
+    write_to_log,
+) -> AdminActionResponse:
+    return execute_admin_action(
+        db,
+        category="competition",
+        action="update_suspension_record",
+        operation_label=SUSPENSION_UPDATE_LABEL,
+        operator=admin,
+        request_payload=to_payload(request),
+        executor=lambda: suspension_service.update_suspension_record(db, admin, request, write_to_log),
+        response_model=AdminActionResponse,
+    )
+
+
+def update_site_note(
+    db: Session,
+    admin: str | None,
+    note_key: str,
+    request: SiteNoteUpdateRequest,
+    write_to_log,
+) -> AdminActionResponse:
+    return execute_admin_action(
+        db,
+        category="competition",
+        action="update_site_note",
+        operation_label=SITE_NOTE_UPDATE_LABEL,
+        operator=admin,
+        request_payload={"note_key": note_key, **to_payload(request)},
+        executor=lambda: site_note_service.update_site_note(db, admin, note_key, request, write_to_log),
+        response_model=AdminActionResponse,
+    )
+
+
+def initialize_cup_bracket(
+    db: Session,
+    admin: str | None,
+    competition: str,
+    write_to_log,
+) -> AdminActionResponse:
+    return execute_admin_action(
+        db,
+        category="competition",
+        action="initialize_cup_bracket",
+        operation_label=CUP_INITIALIZE_LABEL,
+        operator=admin,
+        request_payload={"competition": competition},
+        executor=lambda: cup_service.initialize_cup_bracket(db, admin, competition, write_to_log),
+        response_model=AdminActionResponse,
+    )
+
+
+def update_cup_match_teams(
+    db: Session,
+    admin: str | None,
+    match_id: int,
+    request: CupMatchTeamsUpdateRequest,
+    write_to_log,
+) -> AdminActionResponse:
+    return execute_admin_action(
+        db,
+        category="competition",
+        action="update_cup_match_teams",
+        operation_label=CUP_TEAMS_UPDATE_LABEL,
+        operator=admin,
+        request_payload={"match_id": match_id, **to_payload(request)},
+        executor=lambda: cup_service.update_cup_match_teams(db, admin, match_id, request, write_to_log),
+        response_model=AdminActionResponse,
+    )
+
+
+def update_cup_match_result(
+    db: Session,
+    admin: str | None,
+    match_id: int,
+    request: CupMatchResultUpdateRequest,
+    write_to_log,
+) -> AdminActionResponse:
+    return execute_admin_action(
+        db,
+        category="competition",
+        action="update_cup_match_result",
+        operation_label=CUP_RESULT_UPDATE_LABEL,
+        operator=admin,
+        request_payload={"match_id": match_id, **to_payload(request)},
+        executor=lambda: cup_service.update_cup_match_result(db, admin, match_id, request, write_to_log),
+        response_model=AdminActionResponse,
     )

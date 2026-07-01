@@ -38,15 +38,41 @@ def _persist_auth_audit(
     )
 
 
-def seed_default_admins(db: Session, admin_accounts: list[tuple[str, str]]) -> None:
+FULL_ADMIN_ROLE = "admin"
+SCHEDULE_EDITOR_ROLE = "schedule_editor"
+ROLE_LABELS = {
+    FULL_ADMIN_ROLE: "完整管理员",
+    SCHEDULE_EDITOR_ROLE: "赛程维护",
+}
+
+
+def normalize_admin_role(role: str | None) -> str:
+    normalized = str(role or "").strip().lower()
+    return normalized if normalized in ROLE_LABELS else FULL_ADMIN_ROLE
+
+
+def can_manage_admin(role: str | None) -> bool:
+    return normalize_admin_role(role) == FULL_ADMIN_ROLE
+
+
+def can_manage_schedule(role: str | None) -> bool:
+    return normalize_admin_role(role) in {FULL_ADMIN_ROLE, SCHEDULE_EDITOR_ROLE}
+
+
+def seed_default_admins(db: Session, admin_accounts: list[tuple[str, str] | tuple[str, str, str]]) -> None:
     cleanup_expired_sessions(db)
     created = False
 
-    for username, password in admin_accounts:
+    for account in admin_accounts:
+        username, password = account[0], account[1]
+        role = normalize_admin_role(account[2] if len(account) >= 3 else FULL_ADMIN_ROLE)
         existing_admin = get_admin_by_username(db, username)
         if existing_admin:
+            if not getattr(existing_admin, "role", None):
+                existing_admin.role = role
+                created = True
             continue
-        db.add(AdminUser(username=username, password_hash=password))
+        db.add(AdminUser(username=username, password_hash=password, role=role))
         created = True
 
     if created:
@@ -84,7 +110,14 @@ def login_admin(
     db.commit()
     set_session_cookie(response, session_token, request=request)
     write_to_log("登录", "管理员登录成功", admin.username)
-    payload = LoginResponse(success=True, username=admin.username)
+    role = normalize_admin_role(admin.role)
+    payload = LoginResponse(
+        success=True,
+        username=admin.username,
+        role=role,
+        can_manage_admin=can_manage_admin(role),
+        can_manage_schedule=can_manage_schedule(role),
+    )
     _persist_auth_audit(
         db,
         action="login",
@@ -125,7 +158,24 @@ def logout_admin(
     return payload
 
 
-def get_auth_status(admin: str | None) -> AuthStatusResponse:
+def get_auth_status(db: Session, username: str | None) -> AuthStatusResponse:
+    if not username:
+        return AuthStatusResponse(authenticated=False)
+    admin = get_admin_by_username(db, username)
     if not admin:
         return AuthStatusResponse(authenticated=False)
-    return AuthStatusResponse(authenticated=True, username=admin)
+    role = normalize_admin_role(admin.role)
+    return AuthStatusResponse(
+        authenticated=True,
+        username=username,
+        role=role,
+        can_manage_admin=can_manage_admin(role),
+        can_manage_schedule=can_manage_schedule(role),
+    )
+
+
+def get_admin_role(db: Session, username: str | None) -> str | None:
+    if not username:
+        return None
+    admin = get_admin_by_username(db, username)
+    return normalize_admin_role(admin.role) if admin else None

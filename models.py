@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 from sqlalchemy import CheckConstraint, Column, DateTime, Float, ForeignKey, Integer, String, Text
 
@@ -53,6 +54,16 @@ class LeagueInfo(Base):
         return self
 
 
+class SiteNote(Base):
+    __tablename__ = "site_notes"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String, unique=True, index=True, nullable=False)
+    text = Column(Text, nullable=False, default="")
+    updated_by = Column(String)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class Team(Base):
     __tablename__ = "teams"
 
@@ -60,6 +71,7 @@ class Team(Base):
     name = Column(String, unique=True, index=True)
     manager = Column(String)
     level = Column(String)
+    logo_path = Column(String)
     wage = Column(Float)
     team_size = Column(Integer, default=0)
     gk_count = Column(Integer, default=0)
@@ -95,6 +107,175 @@ class Player(Base):
     team_name = Column(String, index=True)
     wage = Column(Float)
     slot_type = Column(String)
+
+
+class Match(Base):
+    __tablename__ = "matches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    season_label = Column(String, index=True)
+    level = Column(String, index=True, nullable=False)
+    round_no = Column(Integer, index=True, nullable=False)
+    home_team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), index=True)
+    home_team_name = Column(String, index=True, nullable=False)
+    away_team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), index=True)
+    away_team_name = Column(String, index=True, nullable=False)
+    home_score = Column(Integer)
+    away_score = Column(Integer)
+    status = Column(String, index=True, nullable=False, default="scheduled")
+    match_date = Column(DateTime)
+    notes = Column(Text)
+    source_file = Column(String)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class CupMatch(Base):
+    __tablename__ = "cup_matches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    competition = Column(String, index=True, nullable=False)
+    stage = Column(String, index=True, nullable=False)
+    slot_no = Column(Integer, index=True, nullable=False)
+    home_team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), index=True)
+    home_team_name = Column(String)
+    away_team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), index=True)
+    away_team_name = Column(String)
+    home_score = Column(Integer)
+    away_score = Column(Integer)
+    winner_team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), index=True)
+    winner_team_name = Column(String)
+    status = Column(String, index=True, nullable=False, default="scheduled")
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class PlayerCompetitionStat(Base):
+    __tablename__ = "player_competition_stats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    player_uid = Column(Integer, ForeignKey("players.uid", ondelete="SET NULL"), index=True)
+    player_name = Column(String, index=True, nullable=False)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), index=True)
+    team_name = Column(String, index=True, nullable=False)
+    level = Column(String, index=True, nullable=False)
+    goals = Column(Integer, default=0)
+    assists = Column(Integer, default=0)
+    appearances = Column(Integer, default=0)
+    notes = Column(Text)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class PlayerSuspensionRecord(Base):
+    __tablename__ = "player_suspension_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    player_uid = Column(Integer, ForeignKey("players.uid", ondelete="CASCADE"), index=True, unique=True, nullable=False)
+    player_name = Column(String, index=True, nullable=False)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), index=True)
+    team_name = Column(String, index=True, nullable=False)
+    level = Column(String, index=True, nullable=False)
+    yellow_cards = Column(Integer, default=0)
+    red_card_suspended = Column(Integer, default=0)
+    red_injury_suspended = Column(Integer, default=0)
+    notes = Column(Text)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class Coach(Base):
+    __tablename__ = "coaches"
+
+    uid = Column(String, primary_key=True, index=True)
+    nickname = Column(String, index=True, nullable=False)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), index=True)
+    team_name = Column(String, index=True)
+    level = Column(String, index=True)
+    avatar_path = Column(String)
+    title = Column(String)
+    title_color = Column(String, default="white")
+    bio = Column(Text)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class CoachHonor(Base):
+    __tablename__ = "coach_honors"
+
+    id = Column(Integer, primary_key=True, index=True)
+    coach_uid = Column(String, ForeignKey("coaches.uid", ondelete="CASCADE"), index=True, nullable=False)
+    edition = Column(Integer)
+    season = Column(String)
+    competition = Column(String)
+    placement = Column(String)
+    honor = Column(String, nullable=False)
+    description = Column(Text)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class CoachAssistant(Base):
+    __tablename__ = "coach_assistants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    coach_uid = Column(String, ForeignKey("coaches.uid", ondelete="CASCADE"), index=True, nullable=False)
+    name = Column(String, nullable=False)
+    level = Column(String, nullable=False)
+    note = Column(Text)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class CoachAccount(Base):
+    __tablename__ = "coach_accounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    coach_uid = Column(String, ForeignKey("coaches.uid", ondelete="CASCADE"), unique=True, index=True, nullable=False)
+    username = Column(String, unique=True, index=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    is_active = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    last_login_at = Column(DateTime)
+
+
+class CoachSession(Base):
+    __tablename__ = "coach_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String, unique=True, index=True, nullable=False)
+    coach_uid = Column(String, ForeignKey("coaches.uid", ondelete="CASCADE"), index=True, nullable=False)
+    username = Column(String, index=True, nullable=False)
+    created_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime, index=True, nullable=False)
+
+
+class CoachReactionSummary(Base):
+    __tablename__ = "coach_reaction_summaries"
+    __table_args__ = (
+        CheckConstraint("flowers >= 0", name="ck_coach_reaction_summaries_flowers_non_negative"),
+        CheckConstraint("eggs >= 0", name="ck_coach_reaction_summaries_eggs_non_negative"),
+    )
+
+    coach_uid = Column(String, ForeignKey("coaches.uid", ondelete="CASCADE"), primary_key=True, index=True)
+    flowers = Column(Integer, nullable=False, default=0)
+    eggs = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, index=True)
+
+
+class CoachReactionEvent(Base):
+    __tablename__ = "coach_reaction_events"
+    __table_args__ = (
+        CheckConstraint("reaction_type IN ('flower', 'egg')", name="ck_coach_reaction_events_type"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    coach_uid = Column(String, ForeignKey("coaches.uid", ondelete="CASCADE"), index=True, nullable=False)
+    visitor_token = Column(String, index=True, nullable=False)
+    reaction_type = Column(String, index=True, nullable=False)
+    created_at = Column(DateTime, index=True, nullable=False)
 
 
 class PlayerAttributeColumns:
@@ -258,6 +439,7 @@ class AdminUser(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     password_hash = Column(String)
+    role = Column(String, index=True, nullable=False, default="admin")
 
 
 class TransferLog(Base):

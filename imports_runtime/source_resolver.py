@@ -24,16 +24,25 @@ def resolve_explicit_path(path_value: str | Path, root_dir: Path, label: str) ->
         raise FileNotFoundError(f"{label}文件不存在: {resolved}")
     return resolved
 
-def resolve_input_files(workbook_path: str | Path | None, attributes_csv_path: str | Path | None, root_dir: Path) -> tuple[Path, Path, list[str]]:
+def resolve_input_files(
+    workbook_path: str | Path | None,
+    attributes_csv_path: str | Path | None,
+    root_dir: Path,
+    *,
+    skip_attributes: bool = False,
+) -> tuple[Path, Path | None, list[str]]:
     warnings: list[str] = []
     workbook = (
         resolve_explicit_path(workbook_path, root_dir, "league workbook")
         if workbook_path
         else choose_latest_file(root_dir, ["*HEIGO*.xlsx"], "league workbook", warnings)
     )
-    attributes_path = (
-        resolve_explicit_path(attributes_csv_path, root_dir, "player attributes")
-        if attributes_csv_path
-        else choose_latest_file(root_dir, ATTRIBUTE_SOURCE_PATTERNS, "player attributes", warnings)
-    )
+    if skip_attributes:
+        attributes_path = None
+    else:
+        attributes_path = (
+            resolve_explicit_path(attributes_csv_path, root_dir, "player attributes")
+            if attributes_csv_path
+            else choose_latest_file(root_dir, ATTRIBUTE_SOURCE_PATTERNS, "player attributes", warnings)
+        )
     return workbook, attributes_path, warnings

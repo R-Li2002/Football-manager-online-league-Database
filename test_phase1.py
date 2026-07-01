@@ -549,6 +549,33 @@ class Phase1Tests(unittest.TestCase):
         self.assertEqual(result["final_wage"], 9.0)
         self.assertEqual(result["status"], "normal")
 
+    def test_team_wage_cap_uses_league_info_value(self):
+        alpha = Team(name="Alpha FC", manager="A", level="超级", wage=0)
+        self.db.add(alpha)
+        self.db.flush()
+        self.db.add(Player(uid=2001, name="Alpha One", wage=9.5, position="MC", team_id=alpha.id, team_name=alpha.name))
+        cap_record = self.db.query(LeagueInfo).filter(LeagueInfo.key == "超级级工资帽").first()
+        if cap_record is None:
+            cap_record = create_league_info_record("超级级工资帽", 9.4)
+            self.db.add(cap_record)
+        cap_record.set_typed_value(9.6)
+        self.db.commit()
+
+        recalculate_team_stats(self.db, affected_team_ids={alpha.id}, stat_scopes={TEAM_STAT_SCOPE_WAGE})
+
+        self.assertEqual(alpha.final_wage, 9.5)
+
+    def test_wage_overflow_equal_to_point_three_is_penalty_not_auction(self):
+        alpha = Team(name="Alpha FC", manager="A", level="超级", wage=0)
+        players = [Player(uid=2001, name="Alpha One", wage=9.9, position="MC")]
+
+        result = calculate_team_final_wage(alpha, players, wage_caps={"超级": 9.6, "甲级": 9.1, "乙级": 8.8})
+
+        self.assertEqual(result["effective_cap"], 9.6)
+        self.assertEqual(result["total_wage"], 9.9)
+        self.assertEqual(result["status"], "penalty")
+        self.assertAlmostEqual(result["final_wage"], 12.9)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,10 @@ var recentOperationAudits = [];
 var currentOperationAuditCategory = '';
 var availableAttributeVersions = [];
 var currentAttributeVersion = '';
+var defaultAttributeVersionPlayerCount = 0;
 var isAdmin = false;
+var currentAdminRole = '';
+var canManageSchedule = false;
 var adminEntryUnlocked = false;
 var isDarkMode = false;
 const ADMIN_ENTRY_QUERY = 'heigomanage';
@@ -44,7 +47,10 @@ Object.defineProperties(window.AppState, {
     currentOperationAuditCategory: {enumerable: true, get: () => currentOperationAuditCategory, set: value => { currentOperationAuditCategory = value; }},
     availableAttributeVersions: {enumerable: true, get: () => availableAttributeVersions, set: value => { availableAttributeVersions = value; }},
     currentAttributeVersion: {enumerable: true, get: () => currentAttributeVersion, set: value => { currentAttributeVersion = value; }},
+    defaultAttributeVersionPlayerCount: {enumerable: true, get: () => defaultAttributeVersionPlayerCount, set: value => { defaultAttributeVersionPlayerCount = value; }},
     isAdmin: {enumerable: true, get: () => isAdmin, set: value => { isAdmin = value; }},
+    currentAdminRole: {enumerable: true, get: () => currentAdminRole, set: value => { currentAdminRole = value; }},
+    canManageSchedule: {enumerable: true, get: () => canManageSchedule, set: value => { canManageSchedule = value; }},
     adminEntryUnlocked: {enumerable: true, get: () => adminEntryUnlocked, set: value => { adminEntryUnlocked = value; }},
     isDarkMode: {enumerable: true, get: () => isDarkMode, set: value => { isDarkMode = value; }},
     currentDetailPlayer: {enumerable: true, get: () => currentDetailPlayer, set: value => { currentDetailPlayer = value; }},
@@ -98,12 +104,14 @@ async function loadAttributeVersionCatalog(options = {}) {
         return {
             available_versions: [...availableAttributeVersions],
             default_version: getCurrentAttributeVersion() || availableAttributeVersions[0] || '',
+            default_version_player_count: defaultAttributeVersionPlayerCount,
         };
     }
 
     const response = await fetch('/api/attributes/versions');
     const payload = await response.json();
     availableAttributeVersions = Array.isArray(payload.available_versions) ? payload.available_versions : [];
+    defaultAttributeVersionPlayerCount = Number(payload.default_version_player_count || 0);
     const activeVersion = normalizeAttributeVersion(currentAttributeVersion);
     setCurrentAttributeVersion(activeVersion || payload.default_version, {persist: false});
     return payload;

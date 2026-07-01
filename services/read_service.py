@@ -6,6 +6,7 @@ from repositories.attribute_repository import (
     POSITION_SCORE_FIELD_ALLOWLIST,
     AttributeRangeFilter,
     PositionScoreFilter,
+    count_attribute_players,
     get_attribute_model_for_versions,
     get_default_attribute_version,
     get_player_attribute_by_uid,
@@ -37,6 +38,7 @@ from schemas_read import (
     WageDetailResponse,
 )
 from schemas_write import AdvancedAttributeRangeRequest, AdvancedAttributeSearchRequest
+from services import match_service
 from services.league_service import calculate_player_wage_payload
 from services.read_presenters import (
     build_attribute_search_response,
@@ -160,6 +162,14 @@ def get_players_by_team(db: Session, team_name: str) -> list[PlayerResponse]:
 
 def search_player(db: Session, player_name: str) -> list[PlayerResponse]:
     return _build_player_responses(db, search_players_by_name(db, player_name))
+
+
+def get_schedule(db: Session, *, level: str | None = None, round_no: int | None = None):
+    return match_service.get_schedule(db, level=level, round_no=round_no)
+
+
+def get_standings(db: Session):
+    return match_service.get_standings(db)
 
 
 def search_player_attributes(
@@ -294,9 +304,11 @@ def get_player_attribute_detail(
 
 def get_attribute_versions(db: Session) -> AttributeVersionsResponse:
     available_versions = list_available_attribute_versions(db)
+    default_version = get_default_attribute_version(db)
     return AttributeVersionsResponse(
         available_versions=available_versions,
-        default_version=get_default_attribute_version(db),
+        default_version=default_version,
+        default_version_player_count=count_attribute_players(db, default_version),
     )
 
 

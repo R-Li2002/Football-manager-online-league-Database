@@ -593,7 +593,7 @@ def seed_default_admin(db: Session, report: ImportReport, username: str, passwor
     summary = dataset_summary(report, "admin_seed", Path("<runtime>"))
     existing = db.query(AdminUser).filter(AdminUser.username == username).first()
     if existing is None:
-        db.add(AdminUser(username=username, password_hash=hash_password(password)))
+        db.add(AdminUser(username=username, password_hash=hash_password(password), role="admin"))
         summary.created = 1
     else:
         summary.unchanged = 1
@@ -623,6 +623,7 @@ def run_import(
     admin_username: str = "admin",
     admin_password: str = "heigo85",
     strict_mode: bool = True,
+    skip_attributes: bool = False,
 ) -> ImportReport:
     active_engine = target_engine or engine
     init_database(target_engine=active_engine)
@@ -635,12 +636,18 @@ def run_import(
         if configured_root
         else Path(__file__).resolve().parents[1]
     )
-    resolved_workbook, resolved_attributes_csv, warnings = resolve_input_files(workbook_path, attributes_csv_path, workspace_root)
+    resolved_workbook, resolved_attributes_csv, warnings = resolve_input_files(
+        workbook_path,
+        attributes_csv_path,
+        workspace_root,
+        skip_attributes=skip_attributes,
+    )
     report = ImportReport(
         workbook_path=str(resolved_workbook),
-        attributes_csv_path=str(resolved_attributes_csv),
+        attributes_csv_path=str(resolved_attributes_csv) if resolved_attributes_csv else "",
         dry_run=dry_run,
         strict_mode=strict_mode,
+        skip_attributes=skip_attributes,
         warnings=warnings,
     )
 
@@ -651,7 +658,12 @@ def run_import(
         source_team_names = import_teams(db, resolved_workbook, report)
         source_player_uids = import_players(db, resolved_workbook, report, strict_mode=strict_mode)
         cleanup_stale_players(db, source_player_uids, report)
-        import_player_attributes(db, resolved_attributes_csv, report)
+        if skip_attributes:
+            summary = dataset_summary(report, "player_attributes", resolved_workbook)
+            summary.skipped = 1
+            summary.details["skipped_reason"] = "skip_attributes"
+        else:
+            import_player_attributes(db, resolved_attributes_csv, report)
         cleanup_stale_visible_teams(db, source_team_names, report)
 
         if seed_admin:

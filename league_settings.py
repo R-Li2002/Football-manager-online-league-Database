@@ -42,3 +42,20 @@ def get_growth_age_limit(db: Session, default: int = 24) -> int:
         return int(float(value))
     except (TypeError, ValueError):
         return default
+
+
+def get_league_wage_caps(db: Session) -> dict[str, float]:
+    defaults = {"超级": 9.4, "甲级": 8.9, "乙级": 8.6}
+    keys = {
+        "超级": "超级级工资帽",
+        "甲级": "甲级级工资帽",
+        "乙级": "乙级级工资帽",
+    }
+    caps = {}
+    for level, key in keys.items():
+        value = get_league_info_value(db, key, str(defaults[level]))
+        try:
+            caps[level] = float(value)
+        except (TypeError, ValueError):
+            caps[level] = defaults[level]
+    return caps

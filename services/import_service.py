@@ -75,6 +75,7 @@ def import_current_league_data(db: Session, admin: str | None, write_to_log: Log
         report = run_import(
             dry_run=False,
             strict_mode=True,
+            skip_attributes=True,
             target_engine=bind,
             root_dir=root_dir,
         )
@@ -90,6 +91,7 @@ def import_current_league_data(db: Session, admin: str | None, write_to_log: Log
     player_sync_summary = datasets.get("player_sync_cleanup")
     attribute_summary = datasets.get("player_attributes")
     imported_attribute_version = attribute_summary.details.get("data_version") if attribute_summary else None
+    skipped_attributes = bool(getattr(report, "skip_attributes", False))
     removed_team_count = cleanup_summary.details.get("removed_count", 0) if cleanup_summary else 0
     removed_player_count = player_sync_summary.details.get("removed_count", 0) if player_sync_summary else 0
 
@@ -105,6 +107,7 @@ def import_current_league_data(db: Session, admin: str | None, write_to_log: Log
             message=message,
             committed=report.committed,
             strict_mode=report.strict_mode,
+            skip_attributes=report.skip_attributes,
             workbook_path=report.workbook_path,
             attributes_csv_path=report.attributes_csv_path,
             backup_path=backup_path,
@@ -117,12 +120,14 @@ def import_current_league_data(db: Session, admin: str | None, write_to_log: Log
         message += f"，并全量同步清理 {removed_player_count} 名旧名单球员"
     if removed_team_count:
         message += f"，并清理 {removed_team_count} 支过期孤立球队"
+    if skipped_attributes:
+        message += "，已跳过球员属性导入"
     if backup_path:
         message += "。导入前备份已创建"
 
     write_to_log(
         "正式导入联赛数据",
-        f"workbook={Path(report.workbook_path).name}; backup={backup_path or 'none'}; cleaned_players={removed_player_count}; cleaned_teams={removed_team_count}; attributes_version={imported_attribute_version or 'unknown'}",
+        f"workbook={Path(report.workbook_path).name}; backup={backup_path or 'none'}; cleaned_players={removed_player_count}; cleaned_teams={removed_team_count}; skip_attributes={skipped_attributes}; attributes_version={imported_attribute_version or 'unknown'}",
         admin,
     )
     return AdminImportResponse(
@@ -130,6 +135,7 @@ def import_current_league_data(db: Session, admin: str | None, write_to_log: Log
         message=message,
         committed=report.committed,
         strict_mode=report.strict_mode,
+        skip_attributes=report.skip_attributes,
         workbook_path=report.workbook_path,
         attributes_csv_path=report.attributes_csv_path,
         backup_path=backup_path,

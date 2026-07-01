@@ -490,6 +490,34 @@ class ImportDataTests(unittest.TestCase):
             {"league_info": 0, "teams": 0, "players": 0, "player_attributes": 0, "player_attribute_versions": 0},
         )
 
+    def test_skip_attributes_imports_roster_without_attribute_file(self):
+        self.attributes_csv_path.unlink()
+
+        report = run_import(
+            workbook_path=self.workbook_path.name,
+            root_dir=self.root_dir,
+            target_engine=self.engine,
+            skip_attributes=True,
+        )
+
+        self.assertFalse(report.has_errors)
+        self.assertTrue(report.committed)
+        self.assertTrue(report.skip_attributes)
+        self.assertEqual(report.attributes_csv_path, "")
+        self.assertEqual(report.datasets["players"].created, 2)
+        self.assertEqual(report.datasets["player_attributes"].skipped, 1)
+        self.assertEqual(report.datasets["player_attributes"].details["skipped_reason"], "skip_attributes")
+        self.assertEqual(
+            self.count_rows(),
+            {
+                "league_info": len(DEFAULT_LEAGUE_INFO_VALUES),
+                "teams": 3,
+                "players": 2,
+                "player_attributes": 0,
+                "player_attribute_versions": 0,
+            },
+        )
+
     def test_default_cli_root_uses_project_root_for_auto_attribute_discovery(self):
         fake_runtime_dir = self.root_dir / "imports_runtime"
         fake_runtime_dir.mkdir(exist_ok=True)

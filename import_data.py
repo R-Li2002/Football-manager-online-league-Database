@@ -35,6 +35,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--admin-username", type=str, default="admin", help="legacy admin 用户名")
     parser.add_argument("--admin-password", type=str, default="heigo85", help="legacy admin 密码")
     parser.add_argument("--allow-legacy-fallback", action="store_true", help="允许使用球员对应球队、队名别名和俱乐部回退等兼容导入逻辑")
+    parser.add_argument("--skip-attributes", action="store_true", help="只导入联赛名单，跳过球员属性文件解析和写入")
     return parser
 
 
@@ -50,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         admin_username=args.admin_username,
         admin_password=args.admin_password,
         strict_mode=not args.allow_legacy_fallback,
+        skip_attributes=args.skip_attributes,
     )
     print_report(report)
 

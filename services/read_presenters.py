@@ -19,6 +19,7 @@ TEAM_RESPONSE_FIELDS = (
     "name",
     "manager",
     "level",
+    "logo_path",
     "wage",
     "team_size",
     "gk_count",

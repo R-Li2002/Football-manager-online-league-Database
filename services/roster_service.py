@@ -9,6 +9,7 @@ from repositories.team_repository import get_other_team_by_name, get_team_by_nam
 from repositories.transfer_log_repository import update_player_uid_references
 from services.admin_action_runner import AdminMutationResult, run_admin_mutation
 from services.admin_common import LogWriter
+from services.coach_service import refresh_coach_assignments
 from services.league_service import PERSISTED_TEAM_STAT_SCOPES, TEAM_STAT_SCOPE_WAGE, refresh_player_financials
 
 PLAYER_NOT_FOUND = "\u7403\u5458\u4e0d\u5b58\u5728"
@@ -54,7 +55,10 @@ def consume_player(db: Session, admin: str | None, request: Any, write_to_log: L
             ],
         )
 
-    return run_admin_mutation(db, admin, write_to_log, mutator=mutate)
+    response = run_admin_mutation(db, admin, write_to_log, mutator=mutate)
+    if request.manager is not None or request.name is not None or request.level is not None:
+        refresh_coach_assignments(db)
+    return response
 
 
 def rejuvenate_player(db: Session, admin: str | None, request: Any, write_to_log: LogWriter):

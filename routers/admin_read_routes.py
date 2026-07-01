@@ -18,7 +18,7 @@ from schemas_write import AdminImportResponse
 from services import admin_read_service, auth_service, read_service
 
 
-def build_admin_read_router(get_db, verify_admin, log_file: str):
+def build_admin_read_router(get_db, verify_authenticated_admin, verify_admin, log_file: str):
     router = APIRouter()
 
     def require_admin(admin: str | None) -> str:
@@ -27,8 +27,8 @@ def build_admin_read_router(get_db, verify_admin, log_file: str):
         return admin
 
     @router.get("/api/admin/check", response_model=AuthStatusResponse)
-    def check_admin(admin: str = Depends(verify_admin)):
-        return auth_service.get_auth_status(admin)
+    def check_admin(admin: str = Depends(verify_authenticated_admin), db: Session = Depends(get_db)):
+        return auth_service.get_auth_status(db, admin)
 
     @router.get("/api/admin/sea-players", response_model=list[PlayerResponse])
     def get_sea_players(db: Session = Depends(get_db), admin: str = Depends(verify_admin)):

@@ -1,12 +1,16 @@
 function updateHeroBadgeState() {
     const heroTeamCount = document.getElementById('heroTeamCount');
     const heroPlayerCount = document.getElementById('heroPlayerCount');
+    const heroDbPlayerCount = document.getElementById('heroDbPlayerCount');
     const heroModeBadge = document.getElementById('heroModeBadge');
     if (heroTeamCount) {
         heroTeamCount.textContent = teams.length;
     }
     if (heroPlayerCount) {
         heroPlayerCount.textContent = allPlayers.length;
+    }
+    if (heroDbPlayerCount) {
+        heroDbPlayerCount.textContent = Number(defaultAttributeVersionPlayerCount || 0).toLocaleString();
     }
     if (heroModeBadge) {
         heroModeBadge.textContent = isAdmin ? '管理员维护已启用' : '公开查询模式';
@@ -131,6 +135,31 @@ async function openDatabaseResultsFromHero(query = '', options = {}) {
     if (query) {
         await searchDatabase(query, {pushHistory: shouldSyncHistory, historyMode});
         return;
+    }
+    if (shouldSyncHistory && typeof syncAppHistory === 'function') {
+        syncAppHistory(historyMode);
+    }
+}
+
+async function openAdvancedDatabaseSearchFromHero(options = {}) {
+    const heroSearch = document.getElementById('heroPlayerSearch');
+    const query = heroSearch ? heroSearch.value.trim() : '';
+    const shouldSyncHistory = options.pushHistory !== false;
+    const historyMode = options.historyMode || 'push';
+    showTab('database', null, {syncHistory: false});
+    if (typeof activateDatabaseView === 'function') {
+        activateDatabaseView('list');
+    }
+    if (typeof showDatabaseSubtab === 'function') {
+        showDatabaseSubtab('search');
+    }
+    const dbSearch = document.getElementById('dbPlayerSearch');
+    if (dbSearch) {
+        dbSearch.value = query;
+    }
+    if (typeof toggleAdvancedSearchPanel === 'function') {
+        await loadAttributeVersionCatalog();
+        toggleAdvancedSearchPanel(true);
     }
     if (shouldSyncHistory && typeof syncAppHistory === 'function') {
         syncAppHistory(historyMode);

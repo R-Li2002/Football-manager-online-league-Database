@@ -5,7 +5,7 @@ from typing import Iterable, Optional
 from sqlalchemy.orm import Session
 
 from domain_types import SLOT_TYPE_7M, SLOT_TYPE_8M, SLOT_TYPE_FAKE, normalize_slot_type, normalize_transfer_operation
-from league_settings import get_growth_age_limit
+from league_settings import get_growth_age_limit, get_league_wage_caps
 from models import Player, Team, TransferLog
 from repositories.player_repository import load_players_grouped_by_teams
 from repositories.team_repository import get_team_by_name, list_visible_teams, list_visible_teams_by_ids
@@ -134,8 +134,8 @@ def create_transfer_log(
     return log
 
 
-def calculate_team_final_wage(team: Team, players: list[Player]):
-    level_wage_cap = {"超级": 9.4, "甲级": 8.9, "乙级": 8.6}
+def calculate_team_final_wage(team: Team, players: list[Player], wage_caps: dict[str, float] | None = None):
+    level_wage_cap = wage_caps or {"超级": 9.4, "甲级": 8.9, "乙级": 8.6}
     level_min_wage = {"超级": 8.0, "甲级": 7.5, "乙级": 6.5}
 
     base_cap = level_wage_cap.get(team.level, 9.4)
@@ -154,7 +154,7 @@ def calculate_team_final_wage(team: Team, players: list[Player]):
         final_wage = total_wage
         status = "normal"
     else:
-        overflow = total_wage - effective_cap
+        overflow = round(total_wage - effective_cap, 3)
         if overflow > 0.3:
             final_wage = total_wage
             status = "auction"
@@ -180,8 +180,8 @@ def update_team_roster_stats(team: Team, players: list[Player]):
     return roster_stats
 
 
-def update_team_wage_stats(team: Team, players: list[Player]):
-    wage_stats = calculate_team_wage_stats(team, players)
+def update_team_wage_stats(team: Team, players: list[Player], wage_caps: dict[str, float] | None = None):
+    wage_stats = calculate_team_wage_stats(team, players, wage_caps=wage_caps)
     team.wage = wage_stats["player_total_wage"]
     team.final_wage = wage_stats["final_wage"]
     return wage_stats
@@ -205,8 +205,8 @@ def calculate_team_roster_stats(players: list[Player]):
     }
 
 
-def calculate_team_wage_stats(team: Team, players: list[Player]):
-    return calculate_team_final_wage(team, players)
+def calculate_team_wage_stats(team: Team, players: list[Player], wage_caps: dict[str, float] | None = None):
+    return calculate_team_final_wage(team, players, wage_caps=wage_caps)
 
 
 def calculate_team_value_stats(players: list[Player]):
@@ -286,6 +286,7 @@ def collect_team_stat_overlays(db: Session, teams: list[Team], stat_scopes: Iter
         return {team.id: {} for team in teams}
 
     players_by_team_id = _load_players_grouped_by_team(db, teams)
+    wage_caps = get_league_wage_caps(db) if TEAM_STAT_SCOPE_WAGE in normalized_scopes else None
     overlays = {}
 
     for team in teams:
@@ -294,7 +295,7 @@ def collect_team_stat_overlays(db: Session, teams: list[Team], stat_scopes: Iter
         if TEAM_STAT_SCOPE_ROSTER in normalized_scopes:
             overlay.update(calculate_team_roster_stats(players))
         if TEAM_STAT_SCOPE_WAGE in normalized_scopes:
-            wage_stats = calculate_team_wage_stats(team, players)
+            wage_stats = calculate_team_wage_stats(team, players, wage_caps=wage_caps)
             overlay.update({"wage": wage_stats["player_total_wage"], "final_wage": wage_stats["final_wage"]})
         if TEAM_STAT_SCOPE_VALUE in normalized_scopes:
             overlay.update(calculate_team_value_stats(players))
@@ -303,14 +304,19 @@ def collect_team_stat_overlays(db: Session, teams: list[Team], stat_scopes: Iter
     return overlays
 
 
-def refresh_team_cached_stats(team: Team, players: list[Player], stat_scopes: Iterable[str] | None = None):
+def refresh_team_cached_stats(
+    team: Team,
+    players: list[Player],
+    stat_scopes: Iterable[str] | None = None,
+    wage_caps: dict[str, float] | None = None,
+):
     normalized_scopes = _normalize_stat_scopes(stat_scopes)
     stats = {}
 
     if TEAM_STAT_SCOPE_ROSTER in normalized_scopes:
         stats[TEAM_STAT_SCOPE_ROSTER] = update_team_roster_stats(team, players)
     if TEAM_STAT_SCOPE_WAGE in normalized_scopes:
-        stats[TEAM_STAT_SCOPE_WAGE] = update_team_wage_stats(team, players)
+        stats[TEAM_STAT_SCOPE_WAGE] = update_team_wage_stats(team, players, wage_caps=wage_caps)
     if TEAM_STAT_SCOPE_VALUE in normalized_scopes:
         stats[TEAM_STAT_SCOPE_VALUE] = update_team_value_stats(team, players)
 
@@ -332,10 +338,11 @@ def recalculate_team_stats(
     refreshed_at = datetime.now()
     teams = _load_teams_for_stats(db, normalized_team_ids)
     players_by_team_id = _load_players_grouped_by_team(db, teams)
+    wage_caps = get_league_wage_caps(db) if TEAM_STAT_SCOPE_WAGE in normalized_scopes else None
 
     for team in teams:
         players = players_by_team_id.get(team.id, [])
-        refresh_team_cached_stats(team, players, stat_scopes=normalized_scopes)
+        refresh_team_cached_stats(team, players, stat_scopes=normalized_scopes, wage_caps=wage_caps)
         _record_team_cache_refresh(
             team,
             refresh_mode=normalized_refresh_mode,

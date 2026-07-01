@@ -28,6 +28,7 @@ class ImportReport:
     attributes_csv_path: str
     dry_run: bool
     strict_mode: bool
+    skip_attributes: bool = False
     committed: bool = False
     fatal_error: str | None = None
     datasets: dict[str, DatasetSummary] = field(default_factory=dict)
@@ -45,6 +46,7 @@ class ImportReport:
             "attributes_csv_path": self.attributes_csv_path,
             "dry_run": self.dry_run,
             "strict_mode": self.strict_mode,
+            "skip_attributes": self.skip_attributes,
             "committed": self.committed,
             "fatal_error": self.fatal_error,
             "warnings": self.warnings,
@@ -62,6 +64,7 @@ def print_report(report: ImportReport) -> None:
     print(f"attributes_csv: {report.attributes_csv_path}")
     print(f"dry_run: {report.dry_run}")
     print(f"strict_mode: {report.strict_mode}")
+    print(f"skip_attributes: {report.skip_attributes}")
     print(f"committed: {report.committed}")
     if report.warnings:
         print("\nWarnings:")

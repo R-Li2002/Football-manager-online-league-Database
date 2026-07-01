@@ -36,6 +36,19 @@ ADMIN_OPERATION_MAP: dict[str, tuple[str, str]] = {
     "球队缓存重算": ("maintenance", "rebuild_team_stat_caches"),
     "正式导入联赛数据": ("import", "formal_import"),
     "正式导入失败": ("import", "formal_import"),
+    "赛程导入": ("competition", "import_schedule"),
+    "赛程比分编辑": ("competition", "update_match_result"),
+    "赛程比分批量编辑": ("competition", "batch_update_match_results"),
+    "页面注释更新": ("competition", "update_site_note"),
+    "杯赛初始化": ("competition", "initialize_cup_bracket"),
+    "杯赛球队编辑": ("competition", "update_cup_match_teams"),
+    "杯赛比分编辑": ("competition", "update_cup_match_result"),
+    "教练同步": ("coach", "sync_coaches"),
+    "教练资料更新": ("coach", "update_profile"),
+    "教练头像更新": ("coach", "update_avatar"),
+    "教练荣誉维护": ("coach", "upsert_honor"),
+    "教练荣誉删除": ("coach", "delete_honor"),
+    "球队队徽更新": ("team", "update_logo"),
 }
 
 

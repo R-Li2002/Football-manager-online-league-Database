@@ -12,6 +12,9 @@ class HealthResponse(BaseModel):
 class AuthStatusResponse(BaseModel):
     authenticated: bool
     username: Optional[str] = None
+    role: Optional[str] = None
+    can_manage_admin: bool = False
+    can_manage_schedule: bool = False
 
 
 class LogsResponse(BaseModel):
@@ -115,6 +118,7 @@ class TeamResponse(BaseModel):
     name: str
     manager: str
     level: str
+    logo_path: Optional[str] = None
     wage: float
     team_size: int
     gk_count: int
@@ -129,6 +133,148 @@ class TeamResponse(BaseModel):
     total_growth: int
     notes: Optional[str]
     stat_sources: TeamStatSourcesResponse
+
+
+class MatchResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    season_label: Optional[str] = None
+    level: str
+    round_no: int
+    home_team_id: Optional[int] = None
+    home_team_name: str
+    away_team_id: Optional[int] = None
+    away_team_name: str
+    home_score: Optional[int] = None
+    away_score: Optional[int] = None
+    status: Literal["scheduled", "played", "postponed", "cancelled"]
+    match_date: Optional[datetime] = None
+    notes: Optional[str] = None
+    source_file: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+
+class ScheduleResponse(BaseModel):
+    levels: list[str] = Field(default_factory=list)
+    rounds: list[int] = Field(default_factory=list)
+    matches: list[MatchResponse] = Field(default_factory=list)
+
+
+class CupMatchResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    competition: str
+    stage: str
+    slot_no: int
+    home_team_id: Optional[int] = None
+    home_team_name: Optional[str] = None
+    away_team_id: Optional[int] = None
+    away_team_name: Optional[str] = None
+    home_score: Optional[int] = None
+    away_score: Optional[int] = None
+    winner_team_id: Optional[int] = None
+    winner_team_name: Optional[str] = None
+    home_advancement: Literal["pending", "winner", "eliminated"] = "pending"
+    away_advancement: Literal["pending", "winner", "eliminated"] = "pending"
+    status: Literal["scheduled", "played"]
+    notes: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+
+class CupBracketResponse(BaseModel):
+    competition: str
+    title: str
+    trophy_url: str
+    stages: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class StandingRowResponse(BaseModel):
+    level: str
+    rank: int
+    team_id: Optional[int] = None
+    team_name: str
+    manager: Optional[str] = None
+    played: int = 0
+    wins: int = 0
+    draws: int = 0
+    losses: int = 0
+    goals_for: int = 0
+    goals_against: int = 0
+    goal_difference: int = 0
+    points: int = 0
+    goal_rate: float = 0.0
+    win_rate: float = 0.0
+    home_played: int = 0
+    home_wins: int = 0
+    home_draws: int = 0
+    home_losses: int = 0
+    home_goals_for: int = 0
+    home_goals_against: int = 0
+    home_goal_difference: int = 0
+    home_points: int = 0
+    home_win_rate: float = 0.0
+    away_played: int = 0
+    away_wins: int = 0
+    away_draws: int = 0
+    away_losses: int = 0
+    away_goals_for: int = 0
+    away_goals_against: int = 0
+    away_goal_difference: int = 0
+    away_points: int = 0
+    away_win_rate: float = 0.0
+
+
+class StandingsResponse(BaseModel):
+    levels: list[str] = Field(default_factory=list)
+    rows: list[StandingRowResponse] = Field(default_factory=list)
+
+
+class PlayerRankingRowResponse(BaseModel):
+    rank: int
+    level: str
+    player_uid: Optional[int] = None
+    player_name: str
+    team_id: Optional[int] = None
+    team_name: str
+    goals: int = 0
+    assists: int = 0
+    appearances: int = 0
+
+
+class PlayerRankingsResponse(BaseModel):
+    levels: list[str] = Field(default_factory=list)
+    rows: list[PlayerRankingRowResponse] = Field(default_factory=list)
+
+
+class SuspensionPlayerResponse(BaseModel):
+    player_uid: int
+    player_name: str
+    team_id: Optional[int] = None
+    team_name: str
+    level: str
+    yellow_cards: int = 0
+    red_card_suspended: bool = False
+    red_injury_suspended: bool = False
+    notes: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+
+class SuspensionTeamResponse(BaseModel):
+    team_id: int
+    team_name: str
+    manager: Optional[str] = None
+    level: str
+    one_yellow: list[SuspensionPlayerResponse] = Field(default_factory=list)
+    two_yellows: list[SuspensionPlayerResponse] = Field(default_factory=list)
+    suspended: list[SuspensionPlayerResponse] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class SuspensionsResponse(BaseModel):
+    levels: list[str] = Field(default_factory=list)
+    teams: list[SuspensionTeamResponse] = Field(default_factory=list)
 
 
 class LeagueInfoResponse(BaseModel):
@@ -211,6 +357,80 @@ class PlayerReactionActionResponse(BaseModel):
     reaction_type: Literal["flower", "egg"]
     message: str
     summary: PlayerReactionSummaryResponse
+
+
+class CoachHonorResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    coach_uid: str
+    edition: Optional[int] = None
+    season: Optional[str] = None
+    competition: Optional[str] = None
+    placement: Optional[str] = None
+    honor: str
+    description: Optional[str] = None
+    sort_order: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class CoachAssistantResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    coach_uid: str
+    name: str
+    level: str
+    note: Optional[str] = None
+    sort_order: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class CoachAccountPublicResponse(BaseModel):
+    authenticated: bool = False
+    coach_uid: Optional[str] = None
+    username: Optional[str] = None
+    nickname: Optional[str] = None
+    team_id: Optional[int] = None
+    team_name: Optional[str] = None
+
+
+class CoachAccountAdminResponse(BaseModel):
+    exists: bool = False
+    username: Optional[str] = None
+    is_active: bool = False
+    last_login_at: Optional[datetime] = None
+
+
+class CoachListItemResponse(BaseModel):
+    uid: str
+    nickname: str
+    team_id: Optional[int] = None
+    team_name: Optional[str] = None
+    level: Optional[str] = None
+    avatar_path: Optional[str] = None
+    title: Optional[str] = None
+    title_color: Optional[str] = "white"
+    bio: Optional[str] = None
+    reaction_summary: PlayerReactionSummaryResponse = Field(default_factory=PlayerReactionSummaryResponse)
+
+
+class CoachesResponse(BaseModel):
+    levels: list[str] = Field(default_factory=list)
+    coaches: list[CoachListItemResponse] = Field(default_factory=list)
+
+
+class CoachDetailResponse(CoachListItemResponse):
+    honors: list[CoachHonorResponse] = Field(default_factory=list)
+    assistants: list[CoachAssistantResponse] = Field(default_factory=list)
+    account: Optional[CoachAccountAdminResponse] = None
+    updated_at: Optional[datetime] = None
+
+
+class CoachReactionActionResponse(PlayerReactionActionResponse):
+    pass
 
 
 class PlayerReactionLeaderboardItemResponse(BaseModel):
@@ -348,6 +568,16 @@ class PlayerAttributeDetailResponse(BaseModel):
 class AttributeVersionsResponse(BaseModel):
     available_versions: list[str] = Field(default_factory=list)
     default_version: str
+    default_version_player_count: int = 0
+
+
+class SiteNoteResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    text: str = ""
+    updated_by: Optional[str] = None
+    updated_at: Optional[datetime] = None
 
 
 class WageDetailResponse(BaseModel):

@@ -1,5 +1,6 @@
 var currentOverviewSort = {field: '', order: '', type: 'number'};
 var overviewMetaExpanded = false;
+var currentTeamOverviewView = 'table';
 
 const TEAM_SORT_CONFIG = {
     level: {label: '级别', type: 'text'},
@@ -75,6 +76,21 @@ function getTeamExtraWageCap(notes) {
     const amount = Number.parseFloat(capMatch[1]);
     if (!Number.isFinite(amount) || amount <= 0) return 0;
     return amount;
+}
+
+function getLeagueInfoNumber(key, fallback) {
+    const record = (leagueInfo || []).find(item => item.key === key);
+    const rawValue = record?.value ?? record?.float_value ?? record?.int_value;
+    const value = Number.parseFloat(rawValue);
+    return Number.isFinite(value) ? value : fallback;
+}
+
+function getLevelWageCaps() {
+    return {
+        '超级': getLeagueInfoNumber('超级级工资帽', 9.4),
+        '甲级': getLeagueInfoNumber('甲级级工资帽', 8.9),
+        '乙级': getLeagueInfoNumber('乙级级工资帽', 8.6),
+    };
 }
 
 function renderTeamStatSourceDebugView() {
@@ -292,63 +308,243 @@ function sortTeams() {
 }
 
 function renderTeamsTable() {
+    if (window.matchMedia?.('(max-width: 780px)').matches) {
+        currentTeamOverviewView = 'card';
+    }
+    syncTeamOverviewViewButtons();
+    if (currentTeamOverviewView === 'card') {
+        renderTeamsCardViewWithData(teams);
+        return;
+    }
     renderTeamsTableWithData(teams);
 }
 
-function renderTeamsTableWithData(data) {
-    const levelWageCap = {'超级': 9.4, '甲级': 8.9, '乙级': 8.6};
+function setTeamOverviewView(view) {
+    currentTeamOverviewView = view === 'card' ? 'card' : 'table';
+    renderTeamsTable();
+    if (typeof syncAppHistory === 'function') {
+        syncAppHistory('replace');
+    }
+}
+
+function syncTeamOverviewViewButtons() {
+    const tableButton = document.getElementById('overviewTableViewButton');
+    const cardButton = document.getElementById('overviewCardViewButton');
+    if (!tableButton || !cardButton) return;
+    const isCard = currentTeamOverviewView === 'card';
+    tableButton.classList.toggle('is-active', !isCard);
+    cardButton.classList.toggle('is-active', isCard);
+    tableButton.setAttribute('aria-selected', isCard ? 'false' : 'true');
+    cardButton.setAttribute('aria-selected', isCard ? 'true' : 'false');
+}
+
+function buildTeamOverviewMetrics(team) {
+    const levelWageCap = getLevelWageCaps();
     const levelMinWage = {'超级': 8.0, '甲级': 7.5, '乙级': 6.5};
+    const baseWageCap = levelWageCap[team.level] || 0;
+    const minWage = levelMinWage[team.level] || 0;
+    const extraCap = getTeamExtraWageCap(team.notes);
+    const effectiveCap = baseWageCap + extraCap;
+
+    const playerTotalWage = team.wage || 0;
+    const extraWage = team.extra_wage || 0;
+    const totalWage = playerTotalWage + extraWage;
+
+    let finalWageDisplay = '';
+    let wageClass = '';
+
+    if (totalWage < minWage) {
+        finalWageDisplay = `${minWage.toFixed(3)}M (底线)`;
+        wageClass = 'compliant';
+    } else if (totalWage <= effectiveCap) {
+        finalWageDisplay = `${totalWage.toFixed(3)}M`;
+        wageClass = 'compliant';
+    } else {
+        const overflow = Number((totalWage - effectiveCap).toFixed(3));
+        if (overflow > 0.3) {
+            finalWageDisplay = '<span style="color:#e74c3c;font-weight:bold;">拍卖</span>';
+            wageClass = 'non-compliant';
+        } else {
+            const penaltyWage = overflow * 10 + playerTotalWage;
+            const finalWage = Math.max(totalWage, penaltyWage);
+            finalWageDisplay = `<span style="color:#f39c12;">${finalWage.toFixed(3)}M (惩罚)</span>`;
+            wageClass = 'non-compliant';
+        }
+    }
+
+    const sizeCompliant = team.team_size >= 16 && team.team_size <= 20;
+    const gkCompliant = team.gk_count === 2;
+    const notesDisplay = team.notes || '-';
+    return {
+        baseWageCap,
+        extraCap,
+        playerTotalWage,
+        extraWage,
+        totalWage,
+        finalWageDisplay,
+        wageClass,
+        sizeClass: sizeCompliant ? 'compliant' : 'non-compliant',
+        gkClass: gkCompliant ? 'compliant' : 'non-compliant',
+        notesDisplay,
+        notesClass: extraCap > 0 ? 'notes-cell has-extra' : 'notes-cell',
+        capDisplay: extraCap > 0 ? `${baseWageCap.toFixed(1)}M (+${extraCap.toFixed(1)}M)` : `${baseWageCap.toFixed(1)}M`,
+        playerWageDisplay: `${playerTotalWage.toFixed(3)}M`,
+        extraWageDisplay: extraWage > 0 ? `${extraWage.toFixed(3)}M` : '-',
+    };
+}
+
+function getOverviewTeamCrestTone(teamName) {
+    const name = String(teamName || '');
+    const sum = Array.from(name).reduce((total, char) => total + char.charCodeAt(0), 0);
+    return `crest-tone-${(sum % 6) + 1}`;
+}
+
+function getOverviewTeamCrestText(teamName) {
+    const compactName = String(teamName || '').replace(/\s+/g, '');
+    if (!compactName) return 'FC';
+    const asciiParts = String(teamName || '').match(/[A-Za-z0-9]+/g);
+    if (asciiParts && asciiParts.length > 1) {
+        return asciiParts.slice(0, 2).map(part => part[0]).join('').toUpperCase();
+    }
+    if (asciiParts && asciiParts[0] && asciiParts[0].length >= 2) {
+        return asciiParts[0].slice(0, 2).toUpperCase();
+    }
+    return compactName.slice(0, 2).toUpperCase();
+}
+
+function canUploadTeamLogo(team) {
+    if (!team) return false;
+    if (canManageSchedule) return true;
+    return Boolean(currentCoachAccount?.authenticated && Number(currentCoachAccount.team_id) === Number(team.id));
+}
+
+function getOverviewTeamLogoHtml(team, crestTone, crestText) {
+    const teamNameForClick = team.name.replace(/'/g, "\\'");
+    if (team.logo_path) {
+        return `
+            <button class="overview-team-crest has-logo" type="button" onclick="viewTeamPlayers('${teamNameForClick}')" aria-label="查看${escapeHtml(team.name)}球员">
+                <img src="${escapeHtml(team.logo_path)}" alt="${escapeHtml(team.name)}队徽">
+            </button>
+        `;
+    }
+    return `
+        <button class="overview-team-crest ${crestTone}" type="button" onclick="viewTeamPlayers('${teamNameForClick}')" aria-label="查看${escapeHtml(team.name)}球员">
+            <span>${escapeHtml(crestText)}</span>
+        </button>
+    `;
+}
+
+function openTeamLogoUploadModal(teamId) {
+    const team = teams.find(item => Number(item.id) === Number(teamId));
+    if (!team || !canUploadTeamLogo(team)) {
+        showModal('无法上传队徽', '只有工作账号或该球队绑定教练可以上传队徽。');
+        return;
+    }
+    showModal('上传队徽', `
+        <div class="coach-modal-form">
+            <div class="team-logo-upload-preview">
+                ${getOverviewTeamLogoHtml(team, getOverviewTeamCrestTone(team.name), getOverviewTeamCrestText(team.name))}
+                <strong>${escapeHtml(team.name)}</strong>
+            </div>
+            <input id="teamLogoInput" type="file" accept="image/png,image/jpeg,image/webp">
+            <span class="coach-upload-hint">JPG / PNG / WEBP，2MB 内，至少 128x128，自动等比放入 512x512 队徽画布。</span>
+            <button class="btn btn-primary" type="button" onclick="uploadTeamLogo(${Number(team.id)})">上传队徽</button>
+        </div>
+    `);
+}
+
+async function uploadTeamLogo(teamId) {
+    const team = teams.find(item => Number(item.id) === Number(teamId));
+    const input = document.getElementById('teamLogoInput');
+    const file = input?.files?.[0];
+    if (!team || !file) {
+        showModal('上传失败', '请先选择队徽图片。');
+        return;
+    }
+    const formData = new FormData();
+    formData.append('logo', file);
+    const endpoint = canManageSchedule
+        ? `/api/admin/teams/${encodeURIComponent(team.id)}/logo`
+        : '/api/coach/me/team-logo';
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: formData,
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || payload.message || '队徽上传失败');
+        await refreshTeamDataset();
+        if (typeof closeModal === 'function') closeModal();
+        showModal('上传成功', '队徽已更新。');
+    } catch (error) {
+        showModal('上传失败', escapeHtml(error.message || '队徽上传失败'));
+    }
+}
+
+function renderOverviewTeamCardStat(label, value, extraClass = '') {
+    return `<div class="overview-team-stat ${extraClass}"><span>${label}</span><strong>${value}</strong></div>`;
+}
+
+function renderTeamsCardViewWithData(data) {
+    const sortedData = getSortedTeams(data);
+    if (!sortedData.length) {
+        document.getElementById('teamsTable').innerHTML = '<div class="no-data">暂无球队数据。</div>';
+        return;
+    }
+
+    const html = `<div class="overview-team-card-grid">${sortedData.map(team => {
+        const metrics = buildTeamOverviewMetrics(team);
+        const teamNameForClick = team.name.replace(/'/g, "\\'");
+        const crestTone = getOverviewTeamCrestTone(team.name);
+        const crestText = getOverviewTeamCrestText(team.name);
+        return `
+            <article class="overview-team-card">
+                <div class="overview-team-crest-wrap">
+                    ${getOverviewTeamLogoHtml(team, crestTone, crestText)}
+                    ${canUploadTeamLogo(team) ? `<button class="team-logo-upload-button" type="button" onclick="openTeamLogoUploadModal(${Number(team.id)})" title="上传队徽">上传</button>` : ''}
+                </div>
+                <button class="overview-team-card-name" type="button" onclick="viewTeamPlayers('${teamNameForClick}')">${team.name}</button>
+                <div class="overview-team-card-meta">
+                    ${getLevelBadge(team.level)}
+                </div>
+                <div class="overview-team-card-bottom">
+                    <div class="overview-team-card-coach">
+                        <span>主教练</span>
+                        ${renderCoachProfileLink(team.manager, 'coach-profile-link overview-coach-link')}
+                    </div>
+                    <div class="overview-team-card-wage">
+                        <span>工资</span>
+                        <strong class="${metrics.wageClass}">${metrics.finalWageDisplay}</strong>
+                        <em>工资帽 ${metrics.capDisplay}</em>
+                    </div>
+                </div>
+                <div class="overview-team-stat-grid">
+                    ${renderOverviewTeamCardStat('人数', team.team_size, metrics.sizeClass)}
+                    ${renderOverviewTeamCardStat('门将', team.gk_count, metrics.gkClass)}
+                    ${renderOverviewTeamCardStat('8M', team.count_8m)}
+                    ${renderOverviewTeamCardStat('7M', team.count_7m)}
+                    ${renderOverviewTeamCardStat('伪名', team.count_fake)}
+                </div>
+            </article>
+        `;
+    }).join('')}</div>`;
+    document.getElementById('teamsTable').innerHTML = html;
+}
+
+function renderTeamsTableWithData(data) {
     const sortedData = getSortedTeams(data);
     const html = `<table><thead><tr>${renderTeamHeader('级别', 'level')}${renderTeamHeader('球队名', 'name')}${renderTeamHeader('主教', 'manager')}${renderTeamHeader('人数', 'team_size')}${renderTeamHeader('门将', 'gk_count')}${renderTeamHeader('球员总工资', 'wage')}${renderTeamHeader('额外工资', 'extra_wage')}${renderTeamHeader('最终工资', 'final_wage')}<th>工资帽</th>${renderTeamHeader('8M', 'count_8m')}${renderTeamHeader('7M', 'count_7m')}${renderTeamHeader('伪名', 'count_fake')}${renderTeamHeader('总身价', 'total_value')}${renderTeamHeader('平均CA', 'avg_ca')}${renderTeamHeader('平均PA', 'avg_pa')}${renderTeamHeader('成长', 'total_growth')}${renderTeamHeader('备注', 'notes')}</tr></thead><tbody>${sortedData.map(team => {
-        const baseWageCap = levelWageCap[team.level] || 0;
-        const minWage = levelMinWage[team.level] || 0;
-        const extraCap = getTeamExtraWageCap(team.notes);
-        const effectiveCap = baseWageCap + extraCap;
-
-        const playerTotalWage = team.wage || 0;
-        const extraWage = team.extra_wage || 0;
-        const totalWage = playerTotalWage + extraWage;
-
-        let finalWageDisplay = '';
-        let wageClass = '';
-
-        if (totalWage < minWage) {
-            finalWageDisplay = `${minWage.toFixed(3)}M (底线)`;
-            wageClass = 'compliant';
-        } else if (totalWage <= effectiveCap) {
-            finalWageDisplay = `${totalWage.toFixed(3)}M`;
-            wageClass = 'compliant';
-        } else {
-            const overflow = totalWage - effectiveCap;
-            if (overflow > 0.3) {
-                finalWageDisplay = '<span style="color:#e74c3c;font-weight:bold;">拍卖</span>';
-                wageClass = 'non-compliant';
-            } else {
-                const penaltyWage = overflow * 10 + playerTotalWage;
-                const finalWage = Math.max(totalWage, penaltyWage);
-                finalWageDisplay = `<span style="color:#f39c12;">${finalWage.toFixed(3)}M (惩罚)</span>`;
-                wageClass = 'non-compliant';
-            }
-        }
-
-        const sizeCompliant = team.team_size >= 16 && team.team_size <= 20;
-        const gkCompliant = team.gk_count === 2;
-        const sizeClass = sizeCompliant ? 'compliant' : 'non-compliant';
-        const gkClass = gkCompliant ? 'compliant' : 'non-compliant';
-        const notesDisplay = team.notes || '-';
-        const notesClass = extraCap > 0 ? 'notes-cell has-extra' : 'notes-cell';
-        const capDisplay = extraCap > 0 ? `${baseWageCap.toFixed(1)}M (+${extraCap.toFixed(1)}M)` : `${baseWageCap.toFixed(1)}M`;
-        const playerWageDisplay = `${playerTotalWage.toFixed(3)}M`;
-        const extraWageDisplay = extraWage > 0 ? `${extraWage.toFixed(3)}M` : '-';
+        const metrics = buildTeamOverviewMetrics(team);
 
         if (isAdmin) {
             const levelCell = `<td><select class="editable-input" onchange="updateTeamField('${team.name.replace(/'/g, "\\'")}', 'level', this.value)" style="background:rgba(0,0,0,0.2);border:1px solid rgba(0,217,255,0.3);padding:4px 8px;border-radius:4px;color:#fff;"><option value="超级" ${team.level === '超级' ? 'selected' : ''}>超级</option><option value="甲级" ${team.level === '甲级' ? 'selected' : ''}>甲级</option><option value="乙级" ${team.level === '乙级' ? 'selected' : ''}>乙级</option></select></td>`;
             const teamNameCell = `<td><input type="text" class="editable-input" value="${team.name.replace(/"/g, '&quot;')}" onchange="updateTeamField('${team.name.replace(/'/g, "\\'")}', 'name', this.value)" style="background:rgba(0,0,0,0.2);border:1px solid rgba(0,217,255,0.3);padding:4px 8px;border-radius:4px;color:#fff;width:150px;"></td>`;
             const managerCell = `<td><input type="text" class="editable-input" value="${(team.manager || '').replace(/"/g, '&quot;')}" onchange="updateTeamField('${team.name.replace(/'/g, "\\'")}', 'manager', this.value)" style="background:rgba(0,0,0,0.2);border:1px solid rgba(0,217,255,0.3);padding:4px 8px;border-radius:4px;color:#fff;width:100px;"></td>`;
-            return `<tr>${levelCell}${teamNameCell}${managerCell}<td class="${sizeClass}">${team.team_size}</td><td class="${gkClass}">${team.gk_count}</td><td>${playerWageDisplay}</td><td>${extraWageDisplay}</td><td class="${wageClass}">${finalWageDisplay}</td><td>${capDisplay}</td><td>${team.count_8m}</td><td>${team.count_7m}</td><td>${team.count_fake}</td><td>${team.total_value.toFixed(1)}M</td><td>${team.avg_ca.toFixed(1)}</td><td>${team.avg_pa.toFixed(1)}</td><td>${team.total_growth}</td><td class="${notesClass}" title="${notesDisplay.replace(/"/g, '&quot;')}">${notesDisplay}</td></tr>`;
+            return `<tr>${levelCell}${teamNameCell}${managerCell}<td class="${metrics.sizeClass}">${team.team_size}</td><td class="${metrics.gkClass}">${team.gk_count}</td><td>${metrics.playerWageDisplay}</td><td>${metrics.extraWageDisplay}</td><td class="${metrics.wageClass}">${metrics.finalWageDisplay}</td><td>${metrics.capDisplay}</td><td>${team.count_8m}</td><td>${team.count_7m}</td><td>${team.count_fake}</td><td>${team.total_value.toFixed(1)}M</td><td>${team.avg_ca.toFixed(1)}</td><td>${team.avg_pa.toFixed(1)}</td><td>${team.total_growth}</td><td class="${metrics.notesClass}" title="${metrics.notesDisplay.replace(/"/g, '&quot;')}">${metrics.notesDisplay}</td></tr>`;
         }
 
-        return `<tr><td>${getLevelBadge(team.level)}</td><td><span class="team-name" onclick="viewTeamPlayers('${team.name.replace(/'/g, "\\'")}')">${team.name}</span></td><td>${team.manager || '-'}</td><td class="${sizeClass}">${team.team_size}</td><td class="${gkClass}">${team.gk_count}</td><td>${playerWageDisplay}</td><td>${extraWageDisplay}</td><td class="${wageClass}">${finalWageDisplay}</td><td>${capDisplay}</td><td>${team.count_8m}</td><td>${team.count_7m}</td><td>${team.count_fake}</td><td>${team.total_value.toFixed(1)}M</td><td>${team.avg_ca.toFixed(1)}</td><td>${team.avg_pa.toFixed(1)}</td><td>${team.total_growth}</td><td class="${notesClass}" title="${notesDisplay.replace(/"/g, '&quot;')}">${notesDisplay}</td></tr>`;
+        return `<tr><td>${getLevelBadge(team.level)}</td><td><span class="team-name" onclick="viewTeamPlayers('${team.name.replace(/'/g, "\\'")}')">${team.name}</span></td><td>${renderCoachProfileLink(team.manager, 'coach-profile-link overview-coach-link')}</td><td class="${metrics.sizeClass}">${team.team_size}</td><td class="${metrics.gkClass}">${team.gk_count}</td><td>${metrics.playerWageDisplay}</td><td>${metrics.extraWageDisplay}</td><td class="${metrics.wageClass}">${metrics.finalWageDisplay}</td><td>${metrics.capDisplay}</td><td>${team.count_8m}</td><td>${team.count_7m}</td><td>${team.count_fake}</td><td>${team.total_value.toFixed(1)}M</td><td>${team.avg_ca.toFixed(1)}</td><td>${team.avg_pa.toFixed(1)}</td><td>${team.total_growth}</td><td class="${metrics.notesClass}" title="${metrics.notesDisplay.replace(/"/g, '&quot;')}">${metrics.notesDisplay}</td></tr>`;
     }).join('')}</tbody></table>`;
     document.getElementById('teamsTable').innerHTML = html;
 }

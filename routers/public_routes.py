@@ -9,18 +9,27 @@ from schemas_read import (
     AdvancedAttributeSearchResponse,
     AttributeSearchResponse,
     AttributeVersionsResponse,
+    CoachDetailResponse,
+    CoachesResponse,
+    CoachReactionActionResponse,
     DataFeedbackSubmitResponse,
+    CupBracketResponse,
     LeagueInfoResponse,
+    ScheduleResponse,
     PlayerReactionActionResponse,
     PlayerReactionLeaderboardResponse,
     PlayerAttributeDetailResponse,
+    PlayerRankingsResponse,
     PlayerResponse,
     ProjectUpdateEntryResponse,
+    SiteNoteResponse,
+    StandingsResponse,
+    SuspensionsResponse,
     TeamResponse,
     WageDetailResponse,
 )
 from schemas_write import AdvancedAttributeSearchRequest, DataFeedbackRequest
-from services import data_feedback_service, export_service, project_update_service, read_service, reaction_service
+from services import coach_service, cup_service, data_feedback_service, export_service, player_ranking_service, project_update_service, read_service, reaction_service, site_note_service, suspension_service
 
 REACTION_VISITOR_COOKIE_NAME = "heigo_reaction_visitor"
 REACTION_VISITOR_COOKIE_MAX_AGE_SECONDS = 31536000
@@ -54,6 +63,32 @@ def build_public_router(get_db):
     def get_teams(db: Session = Depends(get_db)):
         return read_service.get_teams(db)
 
+    @router.get("/api/coaches", response_model=CoachesResponse)
+    def get_coaches(
+        visitor_token: str | None = Cookie(None, alias=REACTION_VISITOR_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        return coach_service.get_coaches(db, visitor_token=visitor_token)
+
+    @router.get("/api/coaches/{coach_uid}", response_model=CoachDetailResponse)
+    def get_coach_detail(
+        coach_uid: str,
+        visitor_token: str | None = Cookie(None, alias=REACTION_VISITOR_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        return coach_service.get_coach_detail(db, coach_uid, visitor_token=visitor_token)
+
+    @router.post("/api/coaches/{coach_uid}/reactions/{reaction_type}", response_model=CoachReactionActionResponse)
+    def react_to_coach(
+        coach_uid: str,
+        reaction_type: str,
+        response: Response,
+        visitor_token: str | None = Cookie(None, alias=REACTION_VISITOR_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        stable_visitor_token = ensure_reaction_visitor_token(response, visitor_token)
+        return coach_service.record_coach_reaction(db, coach_uid, stable_visitor_token, reaction_type)
+
     @router.get("/api/players", response_model=list[PlayerResponse])
     def get_all_players(db: Session = Depends(get_db)):
         return read_service.get_all_players(db)
@@ -65,6 +100,34 @@ def build_public_router(get_db):
     @router.get("/api/players/search/{player_name}", response_model=list[PlayerResponse])
     def search_player(player_name: str, db: Session = Depends(get_db)):
         return read_service.search_player(db, player_name)
+
+    @router.get("/api/matches", response_model=ScheduleResponse)
+    def get_matches(
+        level: str | None = None,
+        round_no: int | None = None,
+        db: Session = Depends(get_db),
+    ):
+        return read_service.get_schedule(db, level=level, round_no=round_no)
+
+    @router.get("/api/standings", response_model=StandingsResponse)
+    def get_standings(db: Session = Depends(get_db)):
+        return read_service.get_standings(db)
+
+    @router.get("/api/player-rankings", response_model=PlayerRankingsResponse)
+    def get_player_rankings(db: Session = Depends(get_db)):
+        return player_ranking_service.get_player_rankings(db)
+
+    @router.get("/api/suspensions", response_model=SuspensionsResponse)
+    def get_suspensions(db: Session = Depends(get_db)):
+        return suspension_service.get_suspensions(db)
+
+    @router.get("/api/site-notes", response_model=list[SiteNoteResponse])
+    def get_site_notes(db: Session = Depends(get_db)):
+        return site_note_service.list_site_notes(db)
+
+    @router.get("/api/cups/{competition}/bracket", response_model=CupBracketResponse)
+    def get_cup_bracket(competition: str, db: Session = Depends(get_db)):
+        return cup_service.get_bracket(db, competition)
 
     @router.get("/api/attributes/search/{player_name}", response_model=list[AttributeSearchResponse])
     def search_player_attributes(

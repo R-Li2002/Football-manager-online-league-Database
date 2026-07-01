@@ -9,6 +9,8 @@ function isAdminUnauthorizedError(error) {
 
 function enterAdminLoggedOutState(options = {}) {
     isAdmin = false;
+    currentAdminRole = '';
+    canManageSchedule = false;
     if (options.reveal !== false) {
         adminEntryUnlocked = true;
     }
@@ -22,6 +24,9 @@ function enterAdminLoggedOutState(options = {}) {
     }
     if (typeof renderPlayers === 'function') {
         renderPlayers(Array.isArray(currentPlayers) ? currentPlayers : []);
+    }
+    if (typeof loadCompetitionData === 'function') {
+        loadCompetitionData({force: true});
     }
     if (typeof updateStats === 'function') {
         updateStats();
@@ -92,7 +97,9 @@ async function syncAdminAuthStatus(options = {}) {
         throw new Error(`HTTP ${response.status}`);
     }
     const data = await response.json();
-    isAdmin = Boolean(data.authenticated);
+    currentAdminRole = data.role || '';
+    isAdmin = Boolean(data.authenticated && data.can_manage_admin);
+    canManageSchedule = Boolean(data.authenticated && data.can_manage_schedule);
     syncAdminTabVisibility();
     syncAdminPanelVisibility({
         focusLogin: options.focusLogin !== false && !isAdmin,
@@ -156,6 +163,9 @@ function showAdminTab() {
     loadLatestFormalImportSummary();
     loadOperationsAudit();
     loadDataFeedbackReports();
+    if (typeof loadCompetitionData === 'function') {
+        loadCompetitionData({force: true});
+    }
     loadSeaPlayers();
     loadTransferLogs();
     loadLogFile();
@@ -236,7 +246,7 @@ function formatFormalImportResult(data) {
     return `
         <div class="maintenance-note"><strong>结果：</strong>${escapeHtml(data.message || '')}</div>
         <div class="maintenance-note" style="margin-top:8px;"><strong>Workbook：</strong><code>${escapeHtml(data.workbook_path || '')}</code></div>
-        <div class="maintenance-note" style="margin-top:8px;"><strong>Attributes CSV：</strong><code>${escapeHtml(data.attributes_csv_path || '')}</code></div>
+        <div class="maintenance-note" style="margin-top:8px;"><strong>Attributes CSV：</strong><code>${escapeHtml(data.skip_attributes ? '已跳过' : (data.attributes_csv_path || ''))}</code></div>
         <div class="maintenance-note" style="margin-top:8px;"><strong>备份：</strong><code>${escapeHtml(data.backup_path || '未创建')}</code></div>
         ${removedTeams.length ? `<div class="maintenance-note" style="margin-top:8px;"><strong>清理的过期球队：</strong>${removedTeams.map(item => `<code>${escapeHtml(item)}</code>`).join(', ')}</div>` : ''}
         ${datasetHtml}
@@ -453,11 +463,25 @@ async function adminLogin() {
                 showModal('错误', '登录态未生效，请检查 HTTPS / Session Cookie 配置后重试。');
                 return;
             }
+            if (!isAdmin && canManageSchedule) {
+                adminEntryUnlocked = false;
+                syncAdminTabVisibility();
+                if (typeof loadCompetitionData === 'function') {
+                    await loadCompetitionData({force: true});
+                }
+                showTab('competition', null, {syncHistory: false});
+                showModal('成功', `欢迎，${data.username}！当前账号仅可维护赛程和比分。`);
+                return;
+            }
             showAdminTab();
             showTab('admin', null, {syncHistory: false});
             renderTeamsTable();
             renderTeamStatSourceDebugView();
             renderPlayers(currentPlayers);
+            if (typeof loadCoaches === 'function' && document.body.dataset.activeTab === 'coaches') {
+                coachesLoaded = false;
+                await loadCoaches({force: true});
+            }
             showModal('成功', `欢迎，${data.username}！`);
         }
     } catch (e) {

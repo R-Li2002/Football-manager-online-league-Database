@@ -40,7 +40,7 @@ def calculate_final_value(initial_ca, current_ca, pa, age, growth_age_limit=24):
     if age > growth_age_limit:
         return current_value
     elif pa < 140:
-        return initial_value
+        return current_value
     else:
         return (current_value + potential_value) / 2
 
@@ -76,39 +76,52 @@ def calculate_slot_type(initial_field, pa, current_ca, age, growth_age_limit=24)
         else:
             return ""
 
-def calculate_coefficient(initial_field, current_ca, pa, age, position, slot_type, growth_age_limit=24):
+def calculate_coefficient(
+    initial_field,
+    current_ca,
+    pa,
+    age,
+    position,
+    slot_type,
+    growth_age_limit=24,
+    final_value=None,
+):
     """
     七、系数计算逻辑
     """
-    initial_value = calculate_initial_value(initial_field if initial_field >= 115 else 115)
     current_value = calculate_current_value(current_ca)
+    normalized_position = (position or "").strip().upper()
     slot_type = normalize_slot_type(slot_type)
     
     # 条件1: 门将且有名额标签
-    if position == "GK" and slot_type != "":
+    if normalized_position == "GK" and slot_type != "":
         return 0.1
     
-    # 条件2: 初始字段等于1
+    # 条件2: 1M 身价使用保底系数
+    if final_value == 1:
+        return 0.1
+    
+    # 条件3: 初始字段等于1
     if initial_field == 1:
         return 0.1
     
-    # 条件3: (初始字段 + 当前身价)/2 等于1
+    # 条件4: (初始字段 + 当前身价)/2 等于1
     if (initial_field + current_value) / 2 == 1:
         return 0.1
     
-    # 条件4: 8M
+    # 条件5: 8M
     if slot_type == SLOT_TYPE_8M:
         return 0.15
     
-    # 条件5: 7M
+    # 条件6: 7M
     if slot_type == SLOT_TYPE_7M:
         return 0.13
     
-    # 条件6: 伪名
+    # 条件7: 伪名
     if slot_type == SLOT_TYPE_FAKE:
         return 0.11
     
-    # 条件7: 按年龄和能力分段
+    # 条件8: 按年龄和能力分段
     if age > growth_age_limit:
         temp_value = math.floor((current_ca - 95) / 10)
         if temp_value > 5:
@@ -133,7 +146,16 @@ def calculate_wage(initial_ca, current_ca, pa, age, position, growth_age_limit=2
     final_value = calculate_final_value(initial_ca, current_ca, pa, age, growth_age_limit)
     initial_field = calculate_initial_field(initial_ca, pa, age)
     slot_type = calculate_slot_type(initial_field, pa, current_ca, age, growth_age_limit)
-    coefficient = calculate_coefficient(initial_field, current_ca, pa, age, position, slot_type, growth_age_limit)
+    coefficient = calculate_coefficient(
+        initial_field,
+        current_ca,
+        pa,
+        age,
+        position,
+        slot_type,
+        growth_age_limit,
+        final_value=final_value,
+    )
     
     # 计算工资
     wage = round(final_value * coefficient, 3)

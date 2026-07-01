@@ -12,6 +12,117 @@ const ROSTER_SORT_FIELD_CONFIG = {
     slot_type: {label: '名额', type: 'text', align: 'center'},
 };
 
+const ROSTER_FORMATIONS = {
+    '4-3-3': [
+        {key: 'gk', label: 'GK', x: 50, y: 90, roles: ['GK']},
+        {key: 'lb', label: 'LB', x: 18, y: 72, roles: ['DL', 'LWB', 'WBL', 'LB']},
+        {key: 'lcb', label: 'CB', x: 38, y: 74, roles: ['DC', 'CB']},
+        {key: 'rcb', label: 'CB', x: 62, y: 74, roles: ['DC', 'CB']},
+        {key: 'rb', label: 'RB', x: 82, y: 72, roles: ['DR', 'RWB', 'WBR', 'RB']},
+        {key: 'lcm', label: 'CM', x: 32, y: 52, roles: ['MC', 'DM', 'AMC', 'CM']},
+        {key: 'cm', label: 'CM', x: 50, y: 56, roles: ['MC', 'DM', 'CM']},
+        {key: 'rcm', label: 'CM', x: 68, y: 52, roles: ['MC', 'DM', 'AMC', 'CM']},
+        {key: 'lw', label: 'LW', x: 20, y: 30, roles: ['AML', 'ML', 'ST', 'LW']},
+        {key: 'st', label: 'ST', x: 50, y: 24, roles: ['ST', 'AM', 'CF']},
+        {key: 'rw', label: 'RW', x: 80, y: 30, roles: ['AMR', 'MR', 'ST', 'RW']},
+    ],
+    '4-2-3-1': [
+        {key: 'gk', label: 'GK', x: 50, y: 90, roles: ['GK']},
+        {key: 'lb', label: 'LB', x: 18, y: 72, roles: ['DL', 'LWB', 'WBL', 'LB']},
+        {key: 'lcb', label: 'CB', x: 38, y: 75, roles: ['DC', 'CB']},
+        {key: 'rcb', label: 'CB', x: 62, y: 75, roles: ['DC', 'CB']},
+        {key: 'rb', label: 'RB', x: 82, y: 72, roles: ['DR', 'RWB', 'WBR', 'RB']},
+        {key: 'ldm', label: 'DM', x: 40, y: 58, roles: ['DM', 'MC', 'CM']},
+        {key: 'rdm', label: 'DM', x: 60, y: 58, roles: ['DM', 'MC', 'CM']},
+        {key: 'lam', label: 'AM', x: 24, y: 40, roles: ['AML', 'ML', 'AMC', 'AM']},
+        {key: 'amc', label: 'AM', x: 50, y: 38, roles: ['AMC', 'MC', 'ST', 'AM']},
+        {key: 'ram', label: 'AM', x: 76, y: 40, roles: ['AMR', 'MR', 'AMC', 'AM']},
+        {key: 'st', label: 'ST', x: 50, y: 22, roles: ['ST', 'CF']},
+    ],
+    '3-4-3': [
+        {key: 'gk', label: 'GK', x: 50, y: 90, roles: ['GK']},
+        {key: 'lcb', label: 'CB', x: 30, y: 73, roles: ['DC', 'CB']},
+        {key: 'cb', label: 'CB', x: 50, y: 76, roles: ['DC', 'CB']},
+        {key: 'rcb', label: 'CB', x: 70, y: 73, roles: ['DC', 'CB']},
+        {key: 'lm', label: 'LM', x: 18, y: 52, roles: ['ML', 'AML', 'DL', 'LWB']},
+        {key: 'lcm', label: 'CM', x: 40, y: 56, roles: ['MC', 'DM', 'CM']},
+        {key: 'rcm', label: 'CM', x: 60, y: 56, roles: ['MC', 'DM', 'CM']},
+        {key: 'rm', label: 'RM', x: 82, y: 52, roles: ['MR', 'AMR', 'DR', 'RWB']},
+        {key: 'lw', label: 'LW', x: 22, y: 30, roles: ['AML', 'ML', 'ST']},
+        {key: 'st', label: 'ST', x: 50, y: 22, roles: ['ST', 'CF']},
+        {key: 'rw', label: 'RW', x: 78, y: 30, roles: ['AMR', 'MR', 'ST']},
+    ],
+    '3-5-2': [
+        {key: 'gk', label: 'GK', x: 50, y: 90, roles: ['GK']},
+        {key: 'lcb', label: 'CB', x: 30, y: 73, roles: ['DC', 'CB']},
+        {key: 'cb', label: 'CB', x: 50, y: 76, roles: ['DC', 'CB']},
+        {key: 'rcb', label: 'CB', x: 70, y: 73, roles: ['DC', 'CB']},
+        {key: 'lwb', label: 'WB', x: 16, y: 52, roles: ['LWB', 'WBL', 'DL', 'ML']},
+        {key: 'ldm', label: 'CM', x: 38, y: 58, roles: ['MC', 'DM', 'CM']},
+        {key: 'cm', label: 'CM', x: 50, y: 48, roles: ['MC', 'DM', 'AMC', 'CM']},
+        {key: 'rdm', label: 'CM', x: 62, y: 58, roles: ['MC', 'DM', 'CM']},
+        {key: 'rwb', label: 'WB', x: 84, y: 52, roles: ['RWB', 'WBR', 'DR', 'MR']},
+        {key: 'lst', label: 'ST', x: 40, y: 24, roles: ['ST', 'CF']},
+        {key: 'rst', label: 'ST', x: 60, y: 24, roles: ['ST', 'CF']},
+    ],
+    '4-4-2': [
+        {key: 'gk', label: 'GK', x: 50, y: 90, roles: ['GK']},
+        {key: 'lb', label: 'LB', x: 18, y: 72, roles: ['DL', 'LWB', 'WBL']},
+        {key: 'lcb', label: 'CB', x: 38, y: 75, roles: ['DC', 'CB']},
+        {key: 'rcb', label: 'CB', x: 62, y: 75, roles: ['DC', 'CB']},
+        {key: 'rb', label: 'RB', x: 82, y: 72, roles: ['DR', 'RWB', 'WBR']},
+        {key: 'lm', label: 'LM', x: 20, y: 50, roles: ['ML', 'AML', 'DL']},
+        {key: 'lcm', label: 'CM', x: 40, y: 54, roles: ['MC', 'DM', 'CM']},
+        {key: 'rcm', label: 'CM', x: 60, y: 54, roles: ['MC', 'DM', 'CM']},
+        {key: 'rm', label: 'RM', x: 80, y: 50, roles: ['MR', 'AMR', 'DR']},
+        {key: 'lst', label: 'ST', x: 40, y: 24, roles: ['ST', 'CF']},
+        {key: 'rst', label: 'ST', x: 60, y: 24, roles: ['ST', 'CF']},
+    ],
+};
+
+var rosterFormationState = {
+    teamName: '',
+    formation: '4-3-3',
+    picks: {},
+    exportBusy: false,
+    selectedMove: null,
+};
+
+const ROSTER_TACTICAL_SLOTS = [
+    {key: 'fw_l', label: 'IF', line: 'forward', x: 25, y: 15, roles: ['ST', 'AML', 'LW']},
+    {key: 'fw_c', label: 'ST', line: 'forward', x: 50, y: 14, roles: ['ST', 'CF']},
+    {key: 'fw_r', label: 'IF', line: 'forward', x: 75, y: 15, roles: ['ST', 'AMR', 'RW']},
+    {key: 'am_wl', label: 'W', line: 'attack', x: 14, y: 27, roles: ['AML', 'ML', 'LW']},
+    {key: 'am_l', label: 'IF', line: 'attack', x: 32, y: 28, roles: ['AML', 'AMC', 'ST']},
+    {key: 'am_c', label: 'AM', line: 'attack', x: 50, y: 29, roles: ['AMC', 'AM', 'MC']},
+    {key: 'am_r', label: 'IF', line: 'attack', x: 68, y: 28, roles: ['AMR', 'AMC', 'ST']},
+    {key: 'am_wr', label: 'W', line: 'attack', x: 86, y: 27, roles: ['AMR', 'MR', 'RW']},
+    {key: 'mc_wl', label: 'AWB', line: 'mid', x: 14, y: 40, roles: ['ML', 'AML', 'LWB', 'DL']},
+    {key: 'mc_l', label: 'BBM', line: 'mid', x: 32, y: 41, roles: ['MC', 'DM', 'AMC']},
+    {key: 'mc_c', label: 'CM', line: 'mid', x: 50, y: 42, roles: ['MC', 'DM']},
+    {key: 'mc_r', label: 'BBM', line: 'mid', x: 68, y: 41, roles: ['MC', 'DM', 'AMC']},
+    {key: 'mc_wr', label: 'AWB', line: 'mid', x: 86, y: 40, roles: ['MR', 'AMR', 'RWB', 'DR']},
+    {key: 'dm_wl', label: 'WB', line: 'dm', x: 14, y: 55, roles: ['LWB', 'WBL', 'DL', 'ML']},
+    {key: 'dm_l', label: 'DM', line: 'dm', x: 32, y: 56, roles: ['DM', 'MC']},
+    {key: 'dm_c', label: 'HB', line: 'dm', x: 50, y: 57, roles: ['DM', 'MC', 'DC']},
+    {key: 'dm_r', label: 'DM', line: 'dm', x: 68, y: 56, roles: ['DM', 'MC']},
+    {key: 'dm_wr', label: 'WB', line: 'dm', x: 86, y: 55, roles: ['RWB', 'WBR', 'DR', 'MR']},
+    {key: 'def_l', label: 'AWB', line: 'defense', x: 14, y: 70, roles: ['DL', 'LWB', 'WBL']},
+    {key: 'def_lc', label: 'OCB', line: 'defense', x: 32, y: 71, roles: ['DC', 'CB', 'DL']},
+    {key: 'def_c', label: 'BCB', line: 'defense', x: 50, y: 72, roles: ['DC', 'CB']},
+    {key: 'def_rc', label: 'OCB', line: 'defense', x: 68, y: 71, roles: ['DC', 'CB', 'DR']},
+    {key: 'def_r', label: 'AWB', line: 'defense', x: 86, y: 70, roles: ['DR', 'RWB', 'WBR']},
+    {key: 'gk', label: 'BGK', line: 'keeper', x: 50, y: 85, roles: ['GK']},
+];
+
+const ROSTER_FORMATION_SLOT_KEYS = {
+    '4-3-3': ['gk', 'def_l', 'def_lc', 'def_rc', 'def_r', 'mc_l', 'mc_c', 'mc_r', 'am_wl', 'fw_c', 'am_wr'],
+    '4-2-3-1': ['gk', 'def_l', 'def_lc', 'def_rc', 'def_r', 'dm_l', 'dm_r', 'am_wl', 'am_c', 'am_wr', 'fw_c'],
+    '3-4-3': ['gk', 'def_lc', 'def_c', 'def_rc', 'mc_wl', 'mc_l', 'mc_r', 'mc_wr', 'fw_l', 'fw_c', 'fw_r'],
+    '3-5-2': ['gk', 'def_lc', 'def_c', 'def_rc', 'dm_wl', 'mc_l', 'mc_c', 'mc_r', 'dm_wr', 'fw_l', 'fw_r'],
+    '4-4-2': ['gk', 'def_l', 'def_lc', 'def_rc', 'def_r', 'mc_wl', 'mc_l', 'mc_r', 'mc_wr', 'fw_l', 'fw_r'],
+};
+
 function escapeQueryText(value) {
     return escapeHtml(value ?? '');
 }
@@ -76,6 +187,7 @@ function renderPlayerQueryState() {
     const titleEl = document.getElementById('playerQueryTitle');
     const metaEl = document.getElementById('playerQueryMeta');
     const chipsEl = document.getElementById('playerQueryChips');
+    const actionsEl = document.getElementById('playerRosterActions');
     if (!titleEl || !metaEl || !chipsEl) return;
 
     const teamName = document.getElementById('teamSelect')?.value || '';
@@ -118,6 +230,493 @@ function renderPlayerQueryState() {
     }
 
     chipsEl.innerHTML = chips.join('');
+    if (actionsEl) {
+        const canPlan = Boolean(teamName && currentPlayers.some(player => player.team_name === teamName));
+        actionsEl.innerHTML = canPlan
+            ? `<button class="btn btn-secondary roster-formation-trigger" type="button" onclick="openRosterFormationModal(${htmlJsString(teamName)})">编辑阵容预览</button>`
+            : '';
+    }
+}
+
+function canEditRosterFormation(team) {
+    return Boolean(team);
+}
+
+function getRosterTeamPlayers(teamName) {
+    return (allPlayers || [])
+        .filter(player => player.team_name === teamName)
+        .sort((left, right) => {
+            const caDiff = Number(right.ca || 0) - Number(left.ca || 0);
+            if (caDiff) return caDiff;
+            return String(left.name || '').localeCompare(String(right.name || ''), ['en', 'zh-CN'], {numeric: true});
+        });
+}
+
+function getRosterFormationSlots() {
+    const keys = ROSTER_FORMATION_SLOT_KEYS[rosterFormationState.formation] || ROSTER_FORMATION_SLOT_KEYS['4-3-3'];
+    return keys.map(key => ROSTER_TACTICAL_SLOTS.find(slot => slot.key === key)).filter(Boolean);
+}
+
+function getRosterBoardSlots() {
+    return ROSTER_TACTICAL_SLOTS;
+}
+
+function normalizeRosterPosition(value) {
+    return String(value || '').toUpperCase().replace(/[()]/g, ' ').replace(/[,\-/]+/g, ' ');
+}
+
+function getRosterPositionTokens(value) {
+    return normalizeRosterPosition(value).split(/\s+/).filter(Boolean);
+}
+
+function getRosterPositionCompact(value) {
+    return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function rosterPositionHasLineSide(tokens, compact, line, side = '') {
+    if (side && (compact.includes(`${line}${side}`) || compact.includes(`${line} ${side}`))) return true;
+    if (!side && (tokens.includes(line) || compact.includes(line))) return true;
+    return tokens.includes(line) && (!side || tokens.includes(side));
+}
+
+function rosterPositionMatchesRole(position, rawRole) {
+    const role = String(rawRole || '').toUpperCase();
+    const tokens = getRosterPositionTokens(position);
+    const compact = getRosterPositionCompact(position);
+    if (!role) return false;
+    if (tokens.includes(role) || compact.includes(role)) return true;
+    if (role === 'CB' || role === 'DC') return rosterPositionHasLineSide(tokens, compact, 'D', 'C');
+    if (role === 'LB' || role === 'DL') return rosterPositionHasLineSide(tokens, compact, 'D', 'L');
+    if (role === 'RB' || role === 'DR') return rosterPositionHasLineSide(tokens, compact, 'D', 'R');
+    if (role === 'LWB' || role === 'WBL') return rosterPositionHasLineSide(tokens, compact, 'WB', 'L');
+    if (role === 'RWB' || role === 'WBR') return rosterPositionHasLineSide(tokens, compact, 'WB', 'R');
+    if (role === 'CM' || role === 'MC') return rosterPositionHasLineSide(tokens, compact, 'M', 'C');
+    if (role === 'DM') return compact.includes('DM') || tokens.includes('DM');
+    if (role === 'AM' || role === 'AMC') return compact.includes('AMC') || rosterPositionHasLineSide(tokens, compact, 'AM', 'C');
+    if (role === 'LW' || role === 'AML') return rosterPositionHasLineSide(tokens, compact, 'AM', 'L') || rosterPositionHasLineSide(tokens, compact, 'M', 'L');
+    if (role === 'RW' || role === 'AMR') return rosterPositionHasLineSide(tokens, compact, 'AM', 'R') || rosterPositionHasLineSide(tokens, compact, 'M', 'R');
+    if (role === 'ML') return rosterPositionHasLineSide(tokens, compact, 'M', 'L');
+    if (role === 'MR') return rosterPositionHasLineSide(tokens, compact, 'M', 'R');
+    if (role === 'ST' || role === 'CF') return tokens.includes('ST') || compact.includes('ST');
+    if (role === 'GK') return tokens.includes('GK') || compact.includes('GK');
+    return false;
+}
+
+function rosterPlayerMatchesSlot(player, slot) {
+    return (slot.roles || []).some(role => rosterPositionMatchesRole(player.position, role));
+}
+
+function autoPickRosterFormation(teamName, formation = rosterFormationState.formation) {
+    rosterFormationState.formation = formation;
+    const players = getRosterTeamPlayers(teamName);
+    const used = new Set();
+    const picks = {};
+    for (const slot of getRosterFormationSlots()) {
+        let candidate = players.find(player => !used.has(Number(player.uid)) && rosterPlayerMatchesSlot(player, slot));
+        if (!candidate) {
+            candidate = players.find(player => !used.has(Number(player.uid)));
+        }
+        if (candidate) {
+            picks[slot.key] = Number(candidate.uid);
+            used.add(Number(candidate.uid));
+        }
+    }
+    rosterFormationState.picks = picks;
+}
+
+function getFormationPickedPlayer(slotKey) {
+    const uid = Number(rosterFormationState.picks?.[slotKey] || 0);
+    if (!uid) return null;
+    return getRosterTeamPlayers(rosterFormationState.teamName).find(player => Number(player.uid) === uid) || null;
+}
+
+function getRosterBenchPlayers() {
+    const pickedUids = new Set(Object.values(rosterFormationState.picks || {}).map(uid => Number(uid)).filter(Boolean));
+    return getRosterTeamPlayers(rosterFormationState.teamName).filter(player => !pickedUids.has(Number(player.uid)));
+}
+
+function getRosterPlayerCardRole(player, slot = null) {
+    if (slot?.label) return slot.label;
+    const position = String(player?.position || '');
+    if (rosterPositionMatchesRole(position, 'GK')) return 'BGK';
+    if (rosterPositionMatchesRole(position, 'ST')) return 'ST';
+    if (rosterPositionMatchesRole(position, 'AML') || rosterPositionMatchesRole(position, 'AMR')) return 'IF';
+    if (rosterPositionMatchesRole(position, 'AMC')) return 'AM';
+    if (rosterPositionMatchesRole(position, 'MC') || rosterPositionMatchesRole(position, 'DM')) return 'BBM';
+    if (rosterPositionMatchesRole(position, 'DL') || rosterPositionMatchesRole(position, 'DR') || rosterPositionMatchesRole(position, 'LWB') || rosterPositionMatchesRole(position, 'RWB')) return 'AWB';
+    if (rosterPositionMatchesRole(position, 'DC')) return 'BCB';
+    return 'HEI';
+}
+
+function getRosterPlayerCardTone(player, slot = null) {
+    const line = slot?.line || '';
+    const position = String(player?.position || '');
+    if (line === 'keeper') return 'keeper';
+    if (line === 'forward') return 'forward';
+    if (line === 'attack') return 'attack';
+    if (line === 'mid' || line === 'dm') return 'midfield';
+    if (line === 'defense') return 'defense';
+    if (rosterPositionMatchesRole(position, 'GK')) return 'keeper';
+    if (rosterPositionMatchesRole(position, 'ST')) return 'forward';
+    if (rosterPositionMatchesRole(position, 'AML') || rosterPositionMatchesRole(position, 'AMR') || rosterPositionMatchesRole(position, 'AMC')) return 'attack';
+    if (rosterPositionMatchesRole(position, 'DC')) return 'defense';
+    return 'midfield';
+}
+
+function getRosterPlayerShortName(name) {
+    const clean = String(name || '').trim().replace(/\s+/g, ' ');
+    if (!clean) return '-';
+    const parts = clean.split(' ').filter(Boolean);
+    if (parts.length > 1) return parts[parts.length - 1];
+    return clean;
+}
+
+function buildRosterFormationCard(player, options = {}) {
+    if (!player) return '';
+    const slot = options.slot || null;
+    const source = options.source || 'bench';
+    const sourceValue = source === 'slot' ? slot?.key : Number(player.uid);
+    const selectedMove = rosterFormationState.selectedMove;
+    const isSelected = selectedMove
+        && selectedMove.type === source
+        && String(selectedMove.value) === String(sourceValue);
+    const cardClass = `formation-player-card tone-${getRosterPlayerCardTone(player, slot)}${isSelected ? ' is-selected' : ''}`;
+    const role = getRosterPlayerCardRole(player, slot);
+    return `
+        <div class="${cardClass}" draggable="true" data-source="${escapeHtml(source)}" data-source-value="${escapeHtml(sourceValue)}" onclick="handleRosterFormationCardTap(event, ${htmlJsString(source)}, ${htmlJsString(sourceValue)})" ondragstart="handleRosterFormationDragStart(event, ${htmlJsString(source)}, ${htmlJsString(sourceValue)})" ondragend="handleRosterFormationDragEnd(event)" title="拖拽或点击更换球员">
+            <span class="formation-shirt-icon" aria-hidden="true"></span>
+            <span class="formation-card-role">${escapeHtml(role)}</span>
+            <strong data-short-name="${escapeHtml(getRosterPlayerShortName(player.name))}">${escapeHtml(player.name || '-')}</strong>
+        </div>
+    `;
+}
+
+function swapRosterFormationSlots(sourceSlotKey, targetSlotKey) {
+    if (!sourceSlotKey || !targetSlotKey || sourceSlotKey === targetSlotKey) return;
+    const sourceUid = rosterFormationState.picks?.[sourceSlotKey] || '';
+    const targetUid = rosterFormationState.picks?.[targetSlotKey] || '';
+    if (targetUid) {
+        rosterFormationState.picks[sourceSlotKey] = Number(targetUid);
+    } else {
+        delete rosterFormationState.picks[sourceSlotKey];
+    }
+    if (sourceUid) {
+        rosterFormationState.picks[targetSlotKey] = Number(sourceUid);
+    } else {
+        delete rosterFormationState.picks[targetSlotKey];
+    }
+    refreshRosterFormationModal();
+}
+
+function moveRosterBenchPlayerToSlot(playerUid, targetSlotKey) {
+    if (!playerUid || !targetSlotKey) return;
+    const normalizedUid = Number(playerUid);
+    for (const [slotKey, uid] of Object.entries(rosterFormationState.picks || {})) {
+        if (Number(uid) === normalizedUid) {
+            delete rosterFormationState.picks[slotKey];
+        }
+    }
+    rosterFormationState.picks[targetSlotKey] = normalizedUid;
+    refreshRosterFormationModal();
+}
+
+function moveRosterSlotPlayerToBench(sourceSlotKey) {
+    if (!sourceSlotKey) return;
+    delete rosterFormationState.picks[sourceSlotKey];
+    refreshRosterFormationModal();
+}
+
+function clearRosterFormationSelection(options = {}) {
+    rosterFormationState.selectedMove = null;
+    if (options.render !== false) refreshRosterFormationModal();
+}
+
+function setRosterFormationSelection(type, value) {
+    const next = {type, value: String(value || '')};
+    const current = rosterFormationState.selectedMove;
+    if (current && current.type === next.type && String(current.value) === next.value) {
+        clearRosterFormationSelection();
+        return;
+    }
+    rosterFormationState.selectedMove = next;
+    refreshRosterFormationModal();
+}
+
+function applyRosterFormationMoveToSlot(move, targetSlotKey) {
+    if (!move || !targetSlotKey) return;
+    rosterFormationState.selectedMove = null;
+    if (move.type === 'slot') {
+        swapRosterFormationSlots(move.value, targetSlotKey);
+    } else if (move.type === 'bench') {
+        moveRosterBenchPlayerToSlot(move.value, targetSlotKey);
+    }
+}
+
+function applyRosterFormationMoveToBench(move) {
+    rosterFormationState.selectedMove = null;
+    if (move?.type === 'slot') {
+        moveRosterSlotPlayerToBench(move.value);
+    } else {
+        refreshRosterFormationModal();
+    }
+}
+
+function handleRosterFormationCardTap(event, sourceType, sourceValue) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    setRosterFormationSelection(sourceType, sourceValue);
+}
+
+function handleRosterFormationSlotTap(event, targetSlotKey) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const move = rosterFormationState.selectedMove;
+    if (!move) return;
+    applyRosterFormationMoveToSlot(move, targetSlotKey);
+}
+
+function handleRosterFormationBenchTap(event) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const move = rosterFormationState.selectedMove;
+    if (!move) return;
+    applyRosterFormationMoveToBench(move);
+}
+
+function parseRosterFormationDragData(event) {
+    const raw = event?.dataTransfer?.getData('application/json') || event?.dataTransfer?.getData('text/plain') || '';
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.type) return parsed;
+    } catch (error) {
+        return {type: 'slot', value: raw};
+    }
+    return null;
+}
+
+function handleRosterFormationDragStart(event, sourceType, sourceValue) {
+    if (!event?.dataTransfer) return;
+    const payload = JSON.stringify({type: sourceType, value: String(sourceValue || '')});
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('application/json', payload);
+    event.dataTransfer.setData('text/plain', payload);
+    event.currentTarget?.classList?.add('is-dragging');
+    document.querySelector('.formation-board')?.classList?.add('is-drag-active');
+}
+
+function handleRosterFormationDragEnd(event) {
+    event?.currentTarget?.classList?.remove('is-dragging');
+    document.querySelector('.formation-board')?.classList?.remove('is-drag-active');
+}
+
+function handleRosterFormationDragOver(event) {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    event.currentTarget?.classList?.add('is-drop-target');
+}
+
+function handleRosterFormationDragLeave(event) {
+    event.currentTarget?.classList?.remove('is-drop-target');
+}
+
+function handleRosterFormationDrop(event, targetSlotKey) {
+    event.preventDefault();
+    event.currentTarget?.classList?.remove('is-drop-target');
+    document.querySelector('.formation-board')?.classList?.remove('is-drag-active');
+    rosterFormationState.selectedMove = null;
+    const data = parseRosterFormationDragData(event);
+    if (!data) return;
+    if (data.type === 'slot') {
+        swapRosterFormationSlots(data.value, targetSlotKey);
+    } else if (data.type === 'bench') {
+        moveRosterBenchPlayerToSlot(data.value, targetSlotKey);
+    }
+}
+
+function handleRosterFormationBenchDrop(event) {
+    event.preventDefault();
+    event.currentTarget?.classList?.remove('is-drop-target');
+    document.querySelector('.formation-board')?.classList?.remove('is-drag-active');
+    rosterFormationState.selectedMove = null;
+    const data = parseRosterFormationDragData(event);
+    if (data?.type === 'slot') {
+        moveRosterSlotPlayerToBench(data.value);
+    }
+}
+
+function buildFormationPlayerOptions(players, selectedUid, slot) {
+    const selected = Number(selectedUid || 0);
+    const usedByOtherSlots = new Set(Object.entries(rosterFormationState.picks || {})
+        .filter(([key, uid]) => key !== slot.key && Number(uid))
+        .map(([, uid]) => Number(uid)));
+    const sorted = [...players].sort((left, right) => {
+        const leftFit = rosterPlayerMatchesSlot(left, slot) ? 1 : 0;
+        const rightFit = rosterPlayerMatchesSlot(right, slot) ? 1 : 0;
+        if (leftFit !== rightFit) return rightFit - leftFit;
+        return Number(right.ca || 0) - Number(left.ca || 0);
+    });
+    return [
+        '<option value="">空位</option>',
+        ...sorted.map(player => {
+            const uid = Number(player.uid);
+            const disabled = usedByOtherSlots.has(uid) ? ' disabled' : '';
+            const label = `${player.name} · ${player.position || '-'} · CA ${player.ca || '-'}`;
+            return `<option value="${uid}"${uid === selected ? ' selected' : ''}${disabled}>${escapeHtml(label)}</option>`;
+        }),
+    ].join('');
+}
+
+function renderRosterFormationModal() {
+    const teamName = rosterFormationState.teamName;
+    const team = teams.find(item => item.name === teamName);
+    const players = getRosterTeamPlayers(teamName);
+    const slots = getRosterBoardSlots();
+    const benchPlayers = getRosterBenchPlayers();
+    const canEdit = canEditRosterFormation(team);
+    const formationOptions = Object.keys(ROSTER_FORMATIONS)
+        .map(key => `<option value="${escapeHtml(key)}"${key === rosterFormationState.formation ? ' selected' : ''}>${escapeHtml(key)}</option>`)
+        .join('');
+    const pitchSlots = slots.map(slot => {
+        const player = getFormationPickedPlayer(slot.key);
+        return `
+            <div class="formation-slot ${player ? 'has-player' : ''}" style="left:${slot.x}%;top:${slot.y}%;" data-slot-key="${escapeHtml(slot.key)}" onclick="handleRosterFormationSlotTap(event, ${htmlJsString(slot.key)})" ondragover="handleRosterFormationDragOver(event)" ondragleave="handleRosterFormationDragLeave(event)" ondrop="handleRosterFormationDrop(event, ${htmlJsString(slot.key)})">
+                <span class="formation-slot-plus">+</span>
+                ${player ? buildRosterFormationCard(player, {source: 'slot', slot}) : ''}
+            </div>
+        `;
+    }).join('');
+    const benchCards = benchPlayers.map(player => buildRosterFormationCard(player, {source: 'bench'})).join('');
+
+    return `
+        <div class="formation-modal formation-board ${rosterFormationState.selectedMove ? 'is-tap-active' : ''}">
+            <div class="formation-toolbar capture-exclude">
+                <label>
+                    <span>阵型</span>
+                    <select onchange="changeRosterFormation(this.value)" ${canEdit ? '' : 'disabled'}>${formationOptions}</select>
+                </label>
+                <button class="btn btn-secondary" type="button" onclick="autoFillRosterFormation()">自动填入</button><button class="btn btn-secondary" type="button" onclick="clearRosterFormation()">清空</button>
+                <button class="btn btn-primary" type="button" onclick="saveRosterFormationImage()">保存图片</button>
+            </div>
+            <section id="rosterFormationCapture" class="formation-capture surface-card" data-team-name="${escapeHtml(teamName)}" onclick="clearRosterFormationSelection()">
+                <div class="formation-capture-head">
+                    <div>
+                        <span class="panel-kicker">Lineup Preview</span>
+                        <h3>${escapeHtml(teamName)}</h3>
+                    </div>
+                    <strong>${escapeHtml(rosterFormationState.formation)}</strong>
+                </div>
+                <div class="formation-pitch" aria-label="${escapeHtml(teamName)}阵容预览">
+                    <div class="formation-pitch-line formation-pitch-center"></div>
+                    <div class="formation-pitch-box formation-pitch-box-top"></div>
+                    <div class="formation-pitch-box formation-pitch-box-bottom"></div>
+                    <div class="formation-goal-box formation-goal-box-top"></div>
+                    <div class="formation-goal-box formation-goal-box-bottom"></div>
+                    <span class="formation-corner corner-tl"></span>
+                    <span class="formation-corner corner-tr"></span>
+                    <span class="formation-corner corner-bl"></span>
+                    <span class="formation-corner corner-br"></span>
+                    ${pitchSlots}
+                </div>
+                <div class="formation-bench" onclick="handleRosterFormationBenchTap(event)" ondragover="handleRosterFormationDragOver(event)" ondragleave="handleRosterFormationDragLeave(event)" ondrop="handleRosterFormationBenchDrop(event)">
+                    <div class="formation-bench-title">替补席</div>
+                    <div class="formation-bench-grid">${benchCards || '<span class="formation-bench-empty">暂无替补球员</span>'}</div>
+                </div>
+            </section>
+        </div>
+    `;
+}
+
+function openRosterFormationModal(teamName) {
+    const normalizedTeamName = String(teamName || '').trim();
+    const team = teams.find(item => item.name === normalizedTeamName);
+    if (!team) {
+        showModal('阵容预览', '请先选择一个有效球队。');
+        return;
+    }
+    rosterFormationState.teamName = normalizedTeamName;
+    rosterFormationState.formation = rosterFormationState.formation || '4-3-3';
+    autoPickRosterFormation(normalizedTeamName, rosterFormationState.formation);
+    showModal(`${normalizedTeamName} 阵容预览`, renderRosterFormationModal());
+}
+
+function refreshRosterFormationModal() {
+    const body = document.getElementById('modalBody');
+    if (body) body.innerHTML = renderRosterFormationModal();
+}
+
+function changeRosterFormation(formation) {
+    if (!ROSTER_FORMATIONS[formation]) return;
+    autoPickRosterFormation(rosterFormationState.teamName, formation);
+    refreshRosterFormationModal();
+}
+
+function setRosterFormationPick(slotKey, value) {
+    const uid = Number(value || 0);
+    if (!uid) {
+        delete rosterFormationState.picks[slotKey];
+    } else {
+        rosterFormationState.picks[slotKey] = uid;
+    }
+    refreshRosterFormationModal();
+}
+
+function autoFillRosterFormation() {
+    autoPickRosterFormation(rosterFormationState.teamName, rosterFormationState.formation);
+    refreshRosterFormationModal();
+}
+
+function clearRosterFormation() {
+    rosterFormationState.picks = {};
+    refreshRosterFormationModal();
+}
+
+function buildRosterFormationImageFileName() {
+    const date = new Date();
+    const stamp = [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0'),
+    ].join('');
+    const cleanTeam = String(rosterFormationState.teamName || '球队').replace(/[\\/:*?"<>|\s]+/g, '_');
+    const cleanFormation = String(rosterFormationState.formation || '阵型').replace(/[\\/:*?"<>|\s]+/g, '_');
+    return `HEIGO_${cleanTeam}_${cleanFormation}_阵容预览_${stamp}.png`;
+}
+
+async function saveRosterFormationImage() {
+    if (rosterFormationState.exportBusy) return;
+    if (!window.htmlToImage || typeof window.htmlToImage.toBlob !== 'function') {
+        showModal('导出组件未就绪', '页面截图组件加载失败，请刷新页面后重试。');
+        return;
+    }
+    const target = document.getElementById('rosterFormationCapture');
+    if (!target) {
+        showModal('暂时无法保存', '当前没有可导出的阵容预览。');
+        return;
+    }
+    rosterFormationState.exportBusy = true;
+    target.classList.add('is-exporting');
+    try {
+        if (document.fonts?.ready) await document.fonts.ready;
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const blob = await window.htmlToImage.toBlob(target, {
+            cacheBust: true,
+            pixelRatio: Math.max(2, Math.min(3, window.devicePixelRatio || 1)),
+            filter: node => !(node?.classList && node.classList.contains('capture-exclude')),
+        });
+        if (!blob) throw new Error('capture-blob-empty');
+        if (typeof downloadBlob === 'function') {
+            downloadBlob(blob, buildRosterFormationImageFileName());
+        } else {
+            downloadCompetitionBlob(blob, buildRosterFormationImageFileName());
+        }
+    } catch (error) {
+        console.error('Failed to export roster formation image:', error);
+        showModal('生成图片失败', '阵容预览图片生成失败，请刷新页面后重试。');
+    } finally {
+        target.classList.remove('is-exporting');
+        rosterFormationState.exportBusy = false;
+    }
 }
 
 function getSlotBadge(slot) {

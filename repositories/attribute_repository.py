@@ -132,6 +132,14 @@ def get_default_attribute_version(db: Session) -> str:
     return pick_default_attribute_version(list_available_attribute_versions(db))
 
 
+def count_attribute_players(db: Session, data_version: str | None = None) -> int:
+    available_versions = list_available_attribute_versions(db)
+    resolved_version = resolve_attribute_version(db, data_version)
+    if available_versions:
+        return db.query(PlayerAttributeVersion).filter(PlayerAttributeVersion.data_version == resolved_version).count()
+    return db.query(PlayerAttribute).count()
+
+
 def resolve_attribute_version(db: Session, data_version: str | None = None) -> str:
     requested_version = normalize_attribute_data_version(data_version)
     available_versions = list_available_attribute_versions(db)

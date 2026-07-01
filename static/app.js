@@ -2,6 +2,8 @@ const AppModules = {
     home: {onEnter: () => { if (typeof updateHeroBadgeState === 'function') updateHeroBadgeState(); }},
     overview: {onEnter: () => { if (typeof renderOverview === 'function') renderOverview(); }},
     players: {onEnter: () => { if (typeof renderPlayerQueryState === 'function') renderPlayerQueryState(); }},
+    competition: {onEnter: () => { if (typeof loadCompetitionData === 'function') loadCompetitionData(); }},
+    coaches: {onEnter: () => { if (typeof loadCoaches === 'function') loadCoaches(); }},
     database: {onEnter: async () => {
         if (typeof loadAttributeVersionCatalog === 'function') {
             await loadAttributeVersionCatalog();
@@ -42,7 +44,7 @@ const AppModules = {
 };
 
 const APP_HISTORY_MARKER = 'heigo-spa';
-const APP_TAB_NAMES = new Set(['home', 'overview', 'players', 'database', 'admin']);
+const APP_TAB_NAMES = new Set(['home', 'overview', 'players', 'competition', 'coaches', 'database', 'admin']);
 let appHistoryReady = false;
 let appHistoryRestoring = false;
 let appHistoryIndex = 0;
@@ -361,7 +363,12 @@ async function init() {
         currentPlayers = [...allPlayers];
         leagueInfo = await infoRes.json();
         const adminData = await adminRes.json();
-        isAdmin = adminData.authenticated;
+        currentAdminRole = adminData.role || '';
+        isAdmin = Boolean(adminData.authenticated && adminData.can_manage_admin);
+        canManageSchedule = Boolean(adminData.authenticated && adminData.can_manage_schedule);
+        if (typeof syncCoachAuthStatus === 'function') {
+            await syncCoachAuthStatus();
+        }
 
         renderOverview();
         renderTeamsTable();
@@ -396,6 +403,12 @@ async function refreshTeamDataset() {
     renderTeamsTable();
     renderTeamStatSourceDebugView();
     populateTeamSelect();
+    if (typeof loadCoaches === 'function') {
+        coachesLoaded = false;
+        if (document.body.dataset.activeTab === 'coaches') {
+            await loadCoaches({force: true});
+        }
+    }
     if (isAdmin) {
         populateAdminSelects();
     }

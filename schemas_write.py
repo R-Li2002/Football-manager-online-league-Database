@@ -11,6 +11,9 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     success: bool
     username: str
+    role: str = "admin"
+    can_manage_admin: bool = True
+    can_manage_schedule: bool = True
 
 
 class LogoutResponse(BaseModel):
@@ -38,11 +41,111 @@ class AdminImportResponse(BaseModel):
     message: str
     committed: bool = False
     strict_mode: bool = True
+    skip_attributes: bool = False
     workbook_path: str = ""
     attributes_csv_path: str = ""
     backup_path: Optional[str] = None
     warnings: list[str] = Field(default_factory=list)
     datasets: dict[str, ImportDatasetSummaryResponse] = Field(default_factory=dict)
+
+
+class ScheduleImportResponse(BaseModel):
+    success: bool
+    message: str
+    source_file: str
+    created: int = 0
+    updated: int = 0
+    unchanged: int = 0
+    removed: int = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
+class MatchUpdateRequest(BaseModel):
+    home_score: Optional[int] = None
+    away_score: Optional[int] = None
+    status: Optional[str] = None
+    match_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class MatchBatchUpdateItem(BaseModel):
+    match_id: int
+    home_score: Optional[int] = None
+    away_score: Optional[int] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class MatchBatchUpdateRequest(BaseModel):
+    matches: list[MatchBatchUpdateItem]
+
+
+class CupMatchTeamsUpdateRequest(BaseModel):
+    home_team_id: Optional[int] = None
+    away_team_id: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class CupMatchResultUpdateRequest(BaseModel):
+    home_score: Optional[int] = None
+    away_score: Optional[int] = None
+    winner_team_id: Optional[int] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SuspensionRecordUpdateRequest(BaseModel):
+    player_uid: int
+    yellow_cards: int = 0
+    red_card_suspended: bool = False
+    red_injury_suspended: bool = False
+    notes: Optional[str] = None
+
+
+class SiteNoteUpdateRequest(BaseModel):
+    text: str = ""
+
+
+class CoachUpdateRequest(BaseModel):
+    nickname: Optional[str] = None
+    title: Optional[str] = None
+    title_color: Optional[str] = None
+    bio: Optional[str] = None
+
+
+class CoachHonorUpdateRequest(BaseModel):
+    coach_uid: Optional[str] = None
+    edition: Optional[int] = None
+    season: Optional[str] = None
+    competition: Optional[str] = None
+    placement: Optional[str] = None
+    honor: Optional[str] = None
+    description: Optional[str] = None
+    sort_order: int = 0
+
+
+class CoachAssistantUpdateRequest(BaseModel):
+    coach_uid: Optional[str] = None
+    name: str
+    level: str
+    note: Optional[str] = None
+    sort_order: int = 0
+
+
+class CoachLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class CoachAccountUpsertRequest(BaseModel):
+    username: str
+    password: str
+    is_active: bool = True
+
+
+class CoachPasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 
 class BatchActionItemResponse(BaseModel):

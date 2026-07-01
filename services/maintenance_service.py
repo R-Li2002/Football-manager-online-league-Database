@@ -101,6 +101,7 @@ def build_import_summary(import_payload: dict[str, Any] | None) -> dict[str, Any
         "backup_path": import_payload.get("backup_path"),
         "committed": bool(import_payload.get("committed")),
         "strict_mode": bool(import_payload.get("strict_mode", True)),
+        "skip_attributes": bool(import_payload.get("skip_attributes", False)),
         "executed_at": load_maintenance_status().get("updated_at"),
         "created_total": created_total,
         "updated_total": updated_total,

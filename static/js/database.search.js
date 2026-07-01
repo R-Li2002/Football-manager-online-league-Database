@@ -1,5 +1,6 @@
 const ADVANCED_DB_SEARCH_LIMIT = 200;
 const ADVANCED_POSITION_SCORE_STEPS = [10, 15, 18];
+var currentAdvancedSearchTab = 'base';
 const ADVANCED_DB_BASE_FIELDS = [
     ['age', '年龄'],
     ['ca', 'CA'],
@@ -66,6 +67,21 @@ const DEFAULT_DB_SEARCH_META = {
     applied_filters_summary: [],
     data_version: '',
 };
+
+function getAdvancedSearchTabs() {
+    return [
+        {key: 'base', label: '基础区间+位置熟练度'},
+        {key: 'physical', label: '身体属性'},
+        {key: 'mental', label: '精神属性'},
+        {key: 'technical', label: '技术属性'},
+        {key: 'goalkeeper', label: '门将属性'},
+        {key: 'hidden', label: '隐藏属性'},
+    ];
+}
+
+function getAdvancedAttributeGroup(key) {
+    return ADVANCED_DB_ATTRIBUTE_GROUPS.find(group => group.key === key) || null;
+}
 
 function createEmptyDatabaseAdvancedFilters() {
     return {
@@ -352,20 +368,50 @@ function renderDatabaseAdvancedSearchPanel() {
     if (!panel) return;
 
     const filters = currentDbAdvancedFilters;
+    const tabs = getAdvancedSearchTabs();
+    if (!tabs.some(tab => tab.key === currentAdvancedSearchTab)) {
+        currentAdvancedSearchTab = 'base';
+    }
     const baseFieldsMarkup = ADVANCED_DB_BASE_FIELDS
         .map(([field, label]) => buildAdvancedRangeFieldMarkup(field, label, filters[field]))
         .join('');
-    const groupMarkup = ADVANCED_DB_ATTRIBUTE_GROUPS.map(group => `
-        <details class="database-advanced-group" ${group.key === 'technical' || group.key === 'mental' ? 'open' : ''}>
-            <summary>
-                <span>${group.label}</span>
-                <span class="database-advanced-group-count">${group.fields.length} 项</span>
-            </summary>
-            <div class="database-advanced-field-grid">
-                ${group.fields.map(([field, label]) => buildAdvancedRangeFieldMarkup(field, label, filters.attributes[field] || {}, true)).join('')}
-            </div>
-        </details>
+    const activeGroup = getAdvancedAttributeGroup(currentAdvancedSearchTab);
+    const tabButtons = tabs.map(tab => `
+        <button
+            class="database-advanced-tab ${currentAdvancedSearchTab === tab.key ? 'active' : ''}"
+            type="button"
+            onclick="setAdvancedSearchTab('${tab.key}')"
+            aria-selected="${currentAdvancedSearchTab === tab.key ? 'true' : 'false'}"
+        >${escapeHtml(tab.label)}</button>
     `).join('');
+    const activePanel = currentAdvancedSearchTab === 'base'
+        ? `
+            <section class="database-advanced-tab-panel">
+                <div class="database-advanced-section-head">
+                    <h4>基础区间</h4>
+                    <span>年龄 / CA / PA</span>
+                </div>
+                <div class="database-advanced-field-grid database-advanced-field-grid-base">
+                    ${baseFieldsMarkup}
+                </div>
+                <div class="database-advanced-section-head">
+                    <h4>位置熟练度</h4>
+                    <span>点击球场位置增加搜索要求</span>
+                </div>
+                ${buildAdvancedSearchPositionMap()}
+            </section>
+        `
+        : `
+            <section class="database-advanced-tab-panel">
+                <div class="database-advanced-section-head">
+                    <h4>${escapeHtml(activeGroup?.label || '属性')}</h4>
+                    <span>${Number(activeGroup?.fields?.length || 0)} 项</span>
+                </div>
+                <div class="database-advanced-field-grid database-advanced-field-grid-attributes">
+                    ${(activeGroup?.fields || []).map(([field, label]) => buildAdvancedRangeFieldMarkup(field, label, filters.attributes[field] || {}, true)).join('')}
+                </div>
+            </section>
+        `;
 
     panel.innerHTML = `
         <form class="database-advanced-panel-card" onsubmit="event.preventDefault();applyAdvancedSearchAndRun();">
@@ -381,37 +427,23 @@ function renderDatabaseAdvancedSearchPanel() {
                 <span class="query-chip ${countActiveAdvancedFilters() ? '' : 'is-muted'}">已启用 <strong>${countActiveAdvancedFilters()}</strong> 个高级条件</span>
                 ${Object.keys(filters.positions || {}).length ? `<span class="query-chip">位置 <strong>${Object.keys(filters.positions).join(' / ')}</strong></span>` : ''}
             </div>
-            <section class="database-advanced-section">
-                <div class="database-advanced-section-head">
-                    <h4>基础区间</h4>
-                    <span>年龄 / CA / PA</span>
-                </div>
-                <div class="database-advanced-field-grid database-advanced-field-grid-base">
-                    ${baseFieldsMarkup}
-                </div>
-            </section>
-            <section class="database-advanced-section">
-                <div class="database-advanced-section-head">
-                    <h4>位置要求</h4>
-                    <span>点击微型球场增加搜索要求</span>
-                </div>
-                ${buildAdvancedSearchPositionMap()}
-            </section>
-            <section class="database-advanced-section">
-                <div class="database-advanced-section-head">
-                    <h4>属性上下限</h4>
-                    <span>按技术 / 精神 / 身体 / 门将 / 隐藏属性分组</span>
-                </div>
-                <div class="database-advanced-groups">
-                    ${groupMarkup}
-                </div>
-            </section>
+            <div class="database-advanced-tabs" role="tablist" aria-label="高级搜索条件分类">
+                ${tabButtons}
+            </div>
+            ${activePanel}
             <div class="database-advanced-actions">
                 <button class="btn btn-secondary" type="button" onclick="clearAdvancedDatabaseFilters({rerenderPanel: true})">清空条件</button>
                 <button class="btn btn-primary" type="submit">应用并搜索</button>
             </div>
         </form>
     `;
+}
+
+function setAdvancedSearchTab(tabKey) {
+    const nextTab = String(tabKey || '').trim();
+    if (!getAdvancedSearchTabs().some(tab => tab.key === nextTab)) return;
+    currentAdvancedSearchTab = nextTab;
+    renderDatabaseAdvancedSearchPanel();
 }
 
 function renderAdvancedSearchTriggerState() {

@@ -34,6 +34,8 @@
             <button class="nav-tab active" data-tab="home" onclick="showTab('home', this)"><span class="nav-tab-icon" aria-hidden="true">⌂</span><span>首页</span></button>
             <button class="nav-tab" data-tab="overview" onclick="showTab('overview', this)"><span class="nav-tab-icon" aria-hidden="true">◫</span><span>联赛概览</span></button>
             <button class="nav-tab" data-tab="players" onclick="showTab('players', this)"><span class="nav-tab-icon" aria-hidden="true">☰</span><span>联赛名单</span></button>
+            <button class="nav-tab" data-tab="competition" onclick="showTab('competition', this)"><span class="nav-tab-icon nav-stat-icon" aria-hidden="true"><i></i><i></i><i></i></span><span>数据统计</span></button>
+            <button class="nav-tab" data-tab="coaches" onclick="showTab('coaches', this)"><span class="nav-tab-icon coach-nav-icon" aria-hidden="true">◉</span><span>教练主页</span></button>
             <button class="nav-tab" data-tab="database" onclick="showTab('database', this)"><span class="nav-tab-icon" aria-hidden="true">⌕</span><span>球员库</span></button>
             <button class="nav-tab hidden-tab" id="adminTab" data-tab="admin" onclick="showTab('admin', this)"><span class="nav-tab-icon" aria-hidden="true">⚙</span><span>维护中心</span></button>
         </div>
@@ -51,31 +53,47 @@
                         <div class="home-search-bar">
                             <input type="text" id="heroPlayerSearch" placeholder="输入球员姓名或 UID...">
                             <button class="btn btn-primary home-search-button" onclick="runHeroSearch()">搜索球员库</button>
+                            <button class="btn btn-secondary home-advanced-button" type="button" onclick="openAdvancedDatabaseSearchFromHero()">高级搜索</button>
                         </div>
                         <div class="home-search-meta">
                             <span class="hero-badge"><strong id="heroTeamCount">-</strong> 支联赛球队</span>
                             <span class="hero-badge"><strong id="heroPlayerCount">-</strong> 名联赛球员</span>
+                            <span class="hero-badge"><strong id="heroDbPlayerCount">-</strong> 名球员库球员</span>
                             <span class="hero-badge" id="heroModeBadge">公开查询模式</span>
                         </div>
                         <div id="heroSearchResults" class="home-search-results"></div>
                     </div>
                 </div>
 
+                <div class="home-announcement surface-card" role="status">
+                    <div class="home-announcement-copy">
+                        <span class="panel-kicker">Coach Profiles</span>
+                        <h3>教练主页已启用</h3>
+                        <p>各位教练可使用自己的教练用户名登录，初始密码为 <code>heigo123</code>。欢迎个性化定义自己的主页，上传头像与队徽，填满自己的荣誉室。</p>
+                    </div>
+                    <button class="btn btn-primary home-announcement-action" type="button" onclick="showTab('coaches')">进入教练主页</button>
+                </div>
+
                 <div class="home-shortcuts">
                     <button class="home-shortcut-card surface-card" onclick="showTab('overview')">
                         <span class="panel-kicker">League Overview</span>
-                        <h3>联赛概览</h3>
-                        <p>查看联赛规则、球队总览、统计概况和最近一次数据状态。</p>
+                        <h3>联赛概览 / 球队列表</h3>
+                        <p>查看联赛规则、球队总览、工资合规性和最近一次数据状态。</p>
                     </button>
                     <button class="home-shortcut-card surface-card" onclick="showTab('players')">
                         <span class="panel-kicker">League Roster</span>
                         <h3>联赛名单</h3>
                         <p>按球队、姓名和排序方式筛选当前联赛内球员。</p>
                     </button>
-                    <button class="home-shortcut-card surface-card" onclick="goToTeamDirectory()">
-                        <span class="panel-kicker">Team Directory</span>
-                        <h3>查看球队列表</h3>
-                        <p>直接跳到球队列表，按工资、人数、身价和规则合规性浏览全联赛。</p>
+                    <button class="home-shortcut-card surface-card" onclick="showTab('competition')">
+                        <span class="panel-kicker">Data Center</span>
+                        <h3>数据统计</h3>
+                        <p>进入积分榜、赛程、球员榜、伤停和杯赛对阵图。</p>
+                    </button>
+                    <button class="home-shortcut-card surface-card" onclick="showTab('coaches')">
+                        <span class="panel-kicker">Coach Profiles</span>
+                        <h3>教练主页</h3>
+                        <p>查看各级别教练资料、头像、荣誉和鲜花鸡蛋互动。</p>
                     </button>
                 </div>
             </section>
@@ -120,6 +138,10 @@
             <div class="teams-table">
                 <div class="table-header-row">
                     <h2 class="table-title">球队列表</h2>
+                    <div class="overview-view-toggle" role="tablist" aria-label="球队列表视图切换">
+                        <button class="overview-view-button is-active" id="overviewTableViewButton" type="button" onclick="setTeamOverviewView('table')" aria-selected="true">表格</button>
+                        <button class="overview-view-button" id="overviewCardViewButton" type="button" onclick="setTeamOverviewView('card')" aria-selected="false">卡片</button>
+                    </div>
                 </div>
                 <div id="teamsTable"><div class="loading">加载中...</div></div>
             </div>
@@ -169,6 +191,7 @@
                             <h3 id="playerQueryTitle">当前正在查看全部联赛名单</h3>
                             <p id="playerQueryMeta">可按球队、姓名和排序方式快速缩小范围。</p>
                         </div>
+                        <div class="query-status-actions" id="playerRosterActions"></div>
                         <div class="query-chip-row" id="playerQueryChips">
                             <span class="query-chip is-muted">未应用筛选</span>
                         </div>
@@ -291,6 +314,81 @@
                     <div id="playerDetailToolbar" class="detail-growth-toolbar"></div>
                 </div>
                 <div id="playerDetailContent"></div>
+            </div>
+        </div>
+
+        <div id="coaches" class="tab-content">
+            <section class="coach-workspace">
+                <div id="coachDirectoryView" class="coach-directory-view active">
+                    <div class="coach-page-head surface-card">
+                        <div class="panel-caption">
+                            <span class="panel-kicker">Coach Profiles</span>
+                            <h2>教练主页</h2>
+                        </div>
+                        <div class="coach-page-actions">
+                            <div id="coachAuthBox" class="coach-auth-box"></div>
+                            <button class="btn btn-secondary" type="button" onclick="loadCoaches({force: true})">刷新</button>
+                            <button class="btn btn-primary coach-admin-only" type="button" onclick="syncCoachesFromTeams()">同步教练</button>
+                        </div>
+                    </div>
+                    <div id="coachDirectoryBoard"><div class="loading">加载中...</div></div>
+                </div>
+                <div id="coachDetailView" class="coach-detail-view">
+                    <div id="coachDetailBoard"><div class="loading">加载中...</div></div>
+                </div>
+            </section>
+        </div>
+
+        <div id="competition" class="tab-content">
+            <div class="competition-shell">
+                <div class="database-subtabs surface-card" role="tablist" aria-label="积分榜功能切换">
+                    <button class="database-subtab active" id="competitionSubtabStandings" type="button" onclick="showCompetitionSubtab('standings')" role="tab" aria-selected="true">积分榜</button>
+                    <button class="database-subtab" id="competitionSubtabSchedule" type="button" onclick="showCompetitionSubtab('schedule')" role="tab" aria-selected="false">赛程</button>
+                    <button class="database-subtab" id="competitionSubtabPlayerRankings" type="button" onclick="showCompetitionSubtab('playerRankings')" role="tab" aria-selected="false">球员榜</button>
+                    <button class="database-subtab" id="competitionSubtabSuspensions" type="button" onclick="showCompetitionSubtab('suspensions')" role="tab" aria-selected="false">伤停</button>
+                </div>
+                <div class="competition-actions competition-actions-inline" id="competitionAdminActions"></div>
+
+                <div class="competition-level-tabs surface-card" role="tablist" aria-label="联赛级别切换">
+                    <button class="competition-level-tab active" id="competitionLevelSuper" type="button" onclick="setCompetitionLevel('超级')">超级</button>
+                    <button class="competition-level-tab" id="competitionLevelFirst" type="button" onclick="setCompetitionLevel('甲级')">甲级</button>
+                    <button class="competition-level-tab" id="competitionLevelSecond" type="button" onclick="setCompetitionLevel('乙级')">乙级</button>
+                    <button class="competition-level-tab cup-tab champion-tab" id="competitionLevelChampionsCup" type="button" onclick="setCompetitionLevel('冠军杯')">冠军杯</button>
+                    <button class="competition-level-tab cup-tab league-tab" id="competitionLevelLeagueCup" type="button" onclick="setCompetitionLevel('联盟杯')">联盟杯</button>
+                    <button class="competition-level-tab cup-tab wumingjian-tab" id="competitionLevelWumingjianCup" type="button" onclick="setCompetitionLevel('无铭剑杯')">无铭剑杯</button>
+                </div>
+
+                <div class="list-view active" id="competitionStandingsView">
+                    <div id="standingsBoard"><div class="loading">加载中...</div></div>
+                    <div id="cupBracketBoard" class="cup-bracket-board" style="display:none;"><div class="loading">加载中...</div></div>
+                </div>
+
+                <div class="list-view" id="competitionScheduleView">
+                    <div class="search-section">
+                        <div class="search-controls competition-filters">
+                            <div class="form-group">
+                                <label for="scheduleRoundSelect">轮次</label>
+                                <select id="scheduleRoundSelect" onchange="renderScheduleBoard()">
+                                    <option value="">全部轮次</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-secondary" type="button" onclick="resetScheduleFilters()">查看全部轮次</button>
+                        </div>
+                    </div>
+                    <div id="scheduleBoard"><div class="loading">加载中...</div></div>
+                </div>
+
+                <div class="list-view" id="competitionPlayerRankingsView">
+                    <div class="player-ranking-tabs surface-card" role="tablist" aria-label="球员榜类型切换">
+                        <button class="player-ranking-tab active" id="playerRankingGoalsTab" type="button" onclick="setPlayerRankingType('goals')" role="tab" aria-selected="true">射手榜</button>
+                        <button class="player-ranking-tab" id="playerRankingAssistsTab" type="button" onclick="setPlayerRankingType('assists')" role="tab" aria-selected="false">助攻榜</button>
+                    </div>
+                    <div id="playerRankingsBoard"><div class="loading">加载中...</div></div>
+                </div>
+
+                <div class="list-view" id="competitionSuspensionsView">
+                    <div id="suspensionsBoard"><div class="loading">加载中...</div></div>
+                </div>
             </div>
         </div>
 
@@ -554,7 +652,7 @@
                 <a class="footer-link-card" href="/updates">更新记录</a>
                 <a class="footer-link-card" href="/data-feedback">数据纠错</a>
             </div>
-            <div class="footer-signature">Created by ❤大直塞❤</div>
+            <div class="footer-signature">Created by ❤大直塞❤ <span class="footer-version">v__STATIC_ASSET_VERSION__</span></div>
         </footer>
     </div>
     
@@ -587,8 +685,10 @@
     <script src="/static/js/app.home.js?v=__STATIC_ASSET_VERSION__"></script>
     <script src="/static/js/app.overview.js?v=__STATIC_ASSET_VERSION__"></script>
     <script src="/static/js/app.players.js?v=__STATIC_ASSET_VERSION__"></script>
+    <script src="/static/js/app.competition.js?v=__STATIC_ASSET_VERSION__"></script>
     <script src="/static/vendor/html-to-image.js?v=__STATIC_ASSET_VERSION__"></script>
     <script src="/static/js/app.database.js?v=__STATIC_ASSET_VERSION__"></script>
+    <script src="/static/js/app.coaches.js?v=__STATIC_ASSET_VERSION__"></script>
     <script src="/static/js/database.search.js?v=__STATIC_ASSET_VERSION__"></script>
     <script src="/static/js/database.compare.js?v=__STATIC_ASSET_VERSION__"></script>
     <script src="/static/js/app.admin.js?v=__STATIC_ASSET_VERSION__"></script>
