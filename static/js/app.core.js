@@ -13,6 +13,8 @@ var defaultAttributeVersionPlayerCount = 0;
 var isAdmin = false;
 var currentAdminRole = '';
 var canManageSchedule = false;
+var canManageSuspensions = false;
+var canManageCandidateLists = false;
 var adminEntryUnlocked = false;
 var isDarkMode = false;
 const ADMIN_ENTRY_QUERY = 'heigomanage';
@@ -32,7 +34,30 @@ var currentDbSearchMeta = {
     truncated: false,
     limit: 200,
     applied_filters_summary: [],
+    data_version: '',
+    batch_scope_count: 0,
+    batch_unmatched_count: 0,
+    scope_type: 'none',
+    scope_label: '',
 };
+var databaseSearchScope = {
+    type: 'none',
+    id: null,
+    name: '',
+    dataVersion: '',
+    uids: [],
+    players: [],
+    missingUids: [],
+    raw: '',
+    unmatched: [],
+};
+var candidateLists = [];
+var adminCandidateLists = [];
+var currentCandidateListId = null;
+var activeCandidateList = null;
+var activeCandidateListPlayers = [];
+var candidateDockExpanded = false;
+var candidateDockBusy = false;
 
 window.AppState = window.AppState || {};
 Object.defineProperties(window.AppState, {
@@ -51,6 +76,8 @@ Object.defineProperties(window.AppState, {
     isAdmin: {enumerable: true, get: () => isAdmin, set: value => { isAdmin = value; }},
     currentAdminRole: {enumerable: true, get: () => currentAdminRole, set: value => { currentAdminRole = value; }},
     canManageSchedule: {enumerable: true, get: () => canManageSchedule, set: value => { canManageSchedule = value; }},
+    canManageSuspensions: {enumerable: true, get: () => canManageSuspensions, set: value => { canManageSuspensions = value; }},
+    canManageCandidateLists: {enumerable: true, get: () => canManageCandidateLists, set: value => { canManageCandidateLists = value; }},
     adminEntryUnlocked: {enumerable: true, get: () => adminEntryUnlocked, set: value => { adminEntryUnlocked = value; }},
     isDarkMode: {enumerable: true, get: () => isDarkMode, set: value => { isDarkMode = value; }},
     currentDetailPlayer: {enumerable: true, get: () => currentDetailPlayer, set: value => { currentDetailPlayer = value; }},
@@ -64,6 +91,14 @@ Object.defineProperties(window.AppState, {
     currentDetailMobileSection: {enumerable: true, get: () => currentDetailMobileSection, set: value => { currentDetailMobileSection = value; }},
     currentDbAdvancedFilters: {enumerable: true, get: () => currentDbAdvancedFilters, set: value => { currentDbAdvancedFilters = value; }},
     currentDbSearchMeta: {enumerable: true, get: () => currentDbSearchMeta, set: value => { currentDbSearchMeta = value; }},
+    databaseSearchScope: {enumerable: true, get: () => databaseSearchScope, set: value => { databaseSearchScope = value; }},
+    candidateLists: {enumerable: true, get: () => candidateLists, set: value => { candidateLists = value; }},
+    adminCandidateLists: {enumerable: true, get: () => adminCandidateLists, set: value => { adminCandidateLists = value; }},
+    currentCandidateListId: {enumerable: true, get: () => currentCandidateListId, set: value => { currentCandidateListId = value; }},
+    activeCandidateList: {enumerable: true, get: () => activeCandidateList, set: value => { activeCandidateList = value; }},
+    activeCandidateListPlayers: {enumerable: true, get: () => activeCandidateListPlayers, set: value => { activeCandidateListPlayers = value; }},
+    candidateDockExpanded: {enumerable: true, get: () => candidateDockExpanded, set: value => { candidateDockExpanded = value; }},
+    candidateDockBusy: {enumerable: true, get: () => candidateDockBusy, set: value => { candidateDockBusy = value; }},
 });
 
 function syncThemeToggleState() {
@@ -99,8 +134,23 @@ function setCurrentAttributeVersion(version, options = {}) {
     return currentAttributeVersion;
 }
 
+function updateAttributeVersionPlayerCountLabels() {
+    const text = defaultAttributeVersionPlayerCount
+        ? Number(defaultAttributeVersionPlayerCount).toLocaleString()
+        : '-';
+    const heroDbPlayerCount = document.getElementById('heroDbPlayerCount');
+    const dbPlayerSearchCount = document.getElementById('dbPlayerSearchCount');
+    if (heroDbPlayerCount) {
+        heroDbPlayerCount.textContent = text;
+    }
+    if (dbPlayerSearchCount) {
+        dbPlayerSearchCount.textContent = text;
+    }
+}
+
 async function loadAttributeVersionCatalog(options = {}) {
     if (availableAttributeVersions.length && options.force !== true) {
+        updateAttributeVersionPlayerCountLabels();
         return {
             available_versions: [...availableAttributeVersions],
             default_version: getCurrentAttributeVersion() || availableAttributeVersions[0] || '',
@@ -114,6 +164,7 @@ async function loadAttributeVersionCatalog(options = {}) {
     defaultAttributeVersionPlayerCount = Number(payload.default_version_player_count || 0);
     const activeVersion = normalizeAttributeVersion(currentAttributeVersion);
     setCurrentAttributeVersion(activeVersion || payload.default_version, {persist: false});
+    updateAttributeVersionPlayerCountLabels();
     return payload;
 }
 

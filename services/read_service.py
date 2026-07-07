@@ -1,4 +1,5 @@
 from fastapi import HTTPException
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from repositories.attribute_repository import (
@@ -16,6 +17,7 @@ from repositories.attribute_repository import (
     search_player_attributes_advanced,
     search_player_attributes_by_name,
 )
+from search_normalization import build_search_normalized_keys
 from repositories.league_info_repository import list_league_info
 from repositories.player_reaction_repository import list_player_reaction_leaderboard_rows
 from repositories.player_repository import (
@@ -28,6 +30,7 @@ from repositories.player_repository import (
 from repositories.team_repository import get_team_by_name, list_visible_teams
 from schemas_read import (
     AdvancedAttributeSearchResponse,
+    AttributeBatchLookupResponse,
     AttributeSearchResponse,
     AttributeVersionsResponse,
     PlayerAttributeDetailResponse,
@@ -37,7 +40,7 @@ from schemas_read import (
     TeamResponse,
     WageDetailResponse,
 )
-from schemas_write import AdvancedAttributeRangeRequest, AdvancedAttributeSearchRequest
+from schemas_write import AdvancedAttributeRangeRequest, AdvancedAttributeSearchRequest, AttributeBatchLookupRequest
 from services import match_service
 from services.league_service import calculate_player_wage_payload
 from services.read_presenters import (
@@ -278,6 +281,111 @@ def search_player_attributes_advanced_service(
         limit=max(1, min(200, int(request.limit or 200))),
         truncated=result.truncated,
         applied_filters_summary=[item for item in applied_filters_summary if item],
+    )
+
+
+def _attribute_search_payload(player, *, data_version: str, heigo_club: str) -> dict:
+    response = build_attribute_search_response(player, data_version=data_version, heigo_club=heigo_club)
+    payload = response.model_dump() if hasattr(response, "model_dump") else response.dict()
+    for field_name in set(ATTRIBUTE_RANGE_FIELD_ALLOWLIST.values()) | set(POSITION_SCORE_FIELD_ALLOWLIST.values()):
+        payload[field_name] = getattr(player, field_name, None)
+    return payload
+
+
+def _batch_token_matches_player(token: str, player) -> tuple[bool, bool]:
+    clean_token = str(token or "").strip()
+    if not clean_token:
+        return False, False
+    if clean_token.isdigit():
+        return str(player.uid) == clean_token, False
+
+    strict_keys, loose_keys = build_search_normalized_keys(clean_token)
+    player_strict_keys, player_loose_keys = build_search_normalized_keys(player.name)
+    exact = any(key and key in player_strict_keys for key in strict_keys) or any(key and key in player_loose_keys for key in loose_keys)
+    if exact:
+        return True, True
+    contains = any(key and any(key in player_key for player_key in player_strict_keys) for key in strict_keys)
+    contains = contains or any(key and any(key in player_key for player_key in player_loose_keys) for key in loose_keys)
+    return contains, False
+
+
+def batch_lookup_player_attributes_service(
+    db: Session,
+    request: AttributeBatchLookupRequest,
+) -> AttributeBatchLookupResponse:
+    resolved_version = resolve_attribute_version(db, request.version)
+    tokens = []
+    for token in request.tokens or []:
+        clean_token = str(token or "").strip()
+        if clean_token and clean_token not in tokens:
+            tokens.append(clean_token)
+    tokens = tokens[:500]
+
+    available_versions = list_available_attribute_versions(db)
+    attribute_model = get_attribute_model_for_versions(available_versions)
+    base_query = db.query(attribute_model)
+    if available_versions:
+        base_query = base_query.filter(attribute_model.data_version == resolved_version)
+
+    uid_tokens = [int(token) for token in tokens if token.isdigit()]
+    name_tokens = [token for token in tokens if not token.isdigit()]
+    candidate_rows = []
+    if uid_tokens:
+        candidate_rows.extend(base_query.filter(attribute_model.uid.in_(uid_tokens)).all())
+    name_filters = []
+    for token in name_tokens:
+        strict_keys, loose_keys = build_search_normalized_keys(token)
+        for key in strict_keys:
+            name_filters.append(func.heigo_normalize(attribute_model.name).contains(key))
+        for key in loose_keys:
+            name_filters.append(func.heigo_normalize_loose(attribute_model.name).contains(key))
+        if not strict_keys and not loose_keys:
+            name_filters.append(attribute_model.name.ilike(f"%{token}%"))
+    if name_filters:
+        candidate_rows.extend(
+            base_query
+            .filter(or_(*name_filters))
+            .order_by(attribute_model.ca.desc(), attribute_model.pa.desc(), attribute_model.uid.asc())
+            .limit(5000)
+            .all()
+        )
+    rows_by_uid = {player.uid: player for player in candidate_rows}
+    rows = list(rows_by_uid.values())
+
+    heigo_players = map_player_uid_to_team_name(db)
+    matched_by_uid: dict[int, object] = {}
+    unmatched: list[str] = []
+    for token in tokens:
+        exact_name_matches = []
+        contains_matches = []
+        for player in rows:
+            matched, exact = _batch_token_matches_player(token, player)
+            if not matched:
+                continue
+            if str(token).strip().isdigit() or exact:
+                exact_name_matches.append(player)
+            else:
+                contains_matches.append(player)
+        token_matches = exact_name_matches or contains_matches[:50]
+        if not token_matches:
+            unmatched.append(token)
+            continue
+        for player in token_matches:
+            matched_by_uid[player.uid] = player
+
+    matched_players = sorted(matched_by_uid.values(), key=lambda player: (str(player.name or ""), int(player.uid or 0)))
+    return AttributeBatchLookupResponse(
+        items=[
+            _attribute_search_payload(
+                player,
+                data_version=resolved_version,
+                heigo_club=heigo_players.get(player.uid, ATTRIBUTE_FALLBACK_TEAM),
+            )
+            for player in matched_players
+        ],
+        unmatched=unmatched,
+        data_version=resolved_version,
+        token_count=len(tokens),
     )
 
 

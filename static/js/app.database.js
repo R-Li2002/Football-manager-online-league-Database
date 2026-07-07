@@ -112,11 +112,17 @@ function getDatabaseLeaderboardMetricLabel(metric) {
 
 function syncDatabaseSubtabUI() {
     const searchButton = document.getElementById('dbSubtabSearch');
+    const candidatesButton = document.getElementById('dbSubtabCandidates');
     const leaderboardButton = document.getElementById('dbSubtabLeaderboard');
     if (searchButton) {
         const active = currentDatabaseSubtab === 'search';
         searchButton.classList.toggle('active', active);
         searchButton.setAttribute('aria-selected', active ? 'true' : 'false');
+    }
+    if (candidatesButton) {
+        const active = currentDatabaseSubtab === 'candidates';
+        candidatesButton.classList.toggle('active', active);
+        candidatesButton.setAttribute('aria-selected', active ? 'true' : 'false');
     }
     if (leaderboardButton) {
         const active = currentDatabaseSubtab === 'leaderboard';
@@ -143,13 +149,18 @@ function populateReactionLeaderboardTeamSelect() {
 
 function activateDatabaseView(viewName = 'list') {
     const isSearchView = viewName === 'list';
+    const isCandidateView = viewName === 'candidates';
     const isLeaderboardView = viewName === 'leaderboard';
     const isDetailView = viewName === 'detail';
     const dbListView = document.getElementById('dbListView');
+    const dbCandidateListsView = document.getElementById('dbCandidateListsView');
     const dbReactionLeaderboardView = document.getElementById('dbReactionLeaderboardView');
     const dbDetailView = document.getElementById('dbDetailView');
     if (dbListView) {
         dbListView.classList.toggle('active', isSearchView);
+    }
+    if (dbCandidateListsView) {
+        dbCandidateListsView.classList.toggle('active', isCandidateView);
     }
     if (dbReactionLeaderboardView) {
         dbReactionLeaderboardView.classList.toggle('active', isLeaderboardView);
@@ -286,6 +297,7 @@ var compareDockExpanded = false;
 const DETAIL_MOBILE_SECTIONS = [
     {key: 'overview', label: '概览'},
     {key: 'skills', label: '能力'},
+    {key: 'hidden', label: '隐藏'},
     {key: 'charts', label: '图表'},
 ];
 
@@ -681,6 +693,27 @@ function buildPlayerInfoRows(player, previewPlayer) {
         ['HEIGO俱乐部', `<span class="${player.heigo_club !== '大海' ? 'heigo-club' : ''}">${escapeHtml(player.heigo_club || '-')}</span>`, true],
         ['现实俱乐部', `<span class="real-club">${escapeHtml(player.club || '-')}</span>`, true],
     ];
+}
+
+function buildPlayerMobileSummary(player, previewPlayer) {
+    const footLabel = `${previewPlayer.left_foot ?? '-'} / ${previewPlayer.right_foot ?? '-'}`;
+    const items = [
+        ['CA', player.ca ?? '-'],
+        ['PA', player.pa ?? '-'],
+        ['年龄', player.age ?? '-'],
+        ['位置', player.position || '-'],
+        ['脚法', footLabel],
+    ];
+    return `
+        <div class="player-mobile-summary" aria-label="球员核心信息">
+            ${items.map(([label, value]) => `
+                <div class="player-mobile-summary-item">
+                    <span>${escapeHtml(label)}</span>
+                    <strong>${escapeHtml(value)}</strong>
+                </div>
+            `).join('')}
+        </div>
+    `;
 }
 
 function normalizeDetailMobileSection(section) {
@@ -1251,6 +1284,7 @@ function renderPlayerDetail(player) {
                                 <div class="player-name">${escapeHtml(player.name)}</div>
                             </div>
                             <div class="player-uid">UID: ${escapeHtml(player.uid)}</div>
+                            ${buildPlayerMobileSummary(player, previewPlayer)}
                             <div id="playerReactionControls" class="player-reaction-host"></div>
                         </div>
                         ${infoRows.map(([label, value, isHtml]) => `
@@ -1282,6 +1316,8 @@ function renderPlayerDetail(player) {
                             ${radarMarkup}
                         </div>
                     </div>
+                </section>
+                <section class="detail-section detail-section-hidden">
                     <div class="attribute-group attribute-group-wide detail-hidden-panel">
                         <h3>隐藏</h3>
                         <div class="attribute-list attribute-list-grid">${renderAttributeList(collections.hidden)}</div>
@@ -1318,7 +1354,7 @@ function backToList(options = {}) {
     playerReactionSubmitting = false;
     currentDatabaseSubtab = dbDetailReturnState.subtab || currentDatabaseSubtab || 'search';
     syncDatabaseSubtabUI();
-    activateDatabaseView(currentDatabaseSubtab === 'leaderboard' ? 'leaderboard' : 'list');
+    activateDatabaseView(currentDatabaseSubtab === 'leaderboard' ? 'leaderboard' : currentDatabaseSubtab === 'candidates' ? 'candidates' : 'list');
     currentDetailPlayer = null;
     const returnTab = dbDetailReturnState.tab || 'database';
     if (returnTab !== 'database') {
@@ -1327,6 +1363,8 @@ function backToList(options = {}) {
         showTab('database', null, {syncHistory: false});
         if (currentDatabaseSubtab === 'leaderboard') {
             loadReactionLeaderboard({pushHistory: false});
+        } else if (currentDatabaseSubtab === 'candidates' && typeof loadCandidateLists === 'function') {
+            loadCandidateLists({pushHistory: false});
         }
     }
     if (options.pushHistory !== false && typeof syncAppHistory === 'function') {

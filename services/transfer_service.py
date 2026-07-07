@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from models import Player
+from models import Player, PlayerSuspensionRecord, Team
 from repositories.player_repository import get_player_by_uid
 from repositories.team_repository import get_team_by_id, get_team_by_name
 from repositories.transfer_log_repository import get_transfer_log_by_id
@@ -26,6 +26,50 @@ RELEASE_LABEL = "\u89e3\u7ea6"
 BATCH_TRADE_LABEL = "\u6279\u91cf\u4ea4\u6613"
 BATCH_RELEASE_LABEL = "\u6279\u91cf\u89e3\u7ea6"
 UNDO_LABEL = "\u64a4\u9500"
+LEAGUE_LEVELS = {"\u8d85\u7ea7", "\u7532\u7ea7", "\u4e59\u7ea7"}
+
+
+def _resolve_team_for_suspension(db: Session, team_id: int | None, team_name: str | None) -> Team | None:
+    if team_id:
+        team = get_team_by_id(db, team_id)
+        if team:
+            return team
+    if team_name:
+        return get_team_by_name(db, team_name)
+    return None
+
+
+def _sync_suspension_after_team_change(
+    db: Session,
+    player: Player,
+    *,
+    from_team_id: int | None,
+    from_team_name: str | None,
+    to_team: Team | None,
+    force_clear: bool = False,
+) -> str | None:
+    record = db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_uid == player.uid).first()
+    if not record:
+        return None
+
+    from_team = _resolve_team_for_suspension(db, from_team_id, from_team_name)
+    should_transfer = (
+        not force_clear
+        and from_team is not None
+        and to_team is not None
+        and from_team.level in LEAGUE_LEVELS
+        and to_team.level in LEAGUE_LEVELS
+        and from_team.level == to_team.level
+    )
+    if should_transfer:
+        record.player_name = player.name
+        record.team_id = to_team.id
+        record.team_name = to_team.name
+        record.level = to_team.level
+        return f"\u4f24\u505c\u8bb0\u5f55\u8f6c\u79fb\u81f3 {to_team.name}"
+
+    db.delete(record)
+    return "\u4f24\u505c\u8bb0\u5f55\u5df2\u6e05\u96f6"
 
 
 def transfer_player(db: Session, admin: str | None, request: Any, write_to_log: LogWriter):
@@ -41,10 +85,20 @@ def transfer_player(db: Session, admin: str | None, request: Any, write_to_log: 
         from_team = player.team_name
         from_team_id = player.team_id
         assign_player_team(player, new_team)
+        suspension_detail = _sync_suspension_after_team_change(
+            db,
+            player,
+            from_team_id=from_team_id,
+            from_team_name=from_team,
+            to_team=new_team,
+        )
+        log_detail = f"player {player.uid} moved from {from_team} to {new_team.name}"
+        if suspension_detail:
+            log_detail = f"{log_detail}; {suspension_detail}"
         return AdminMutationResult(
-            message=f"{player.name} moved from {from_team} to {new_team.name}",
+            message=f"{player.name} moved from {from_team} to {new_team.name}{f'；{suspension_detail}' if suspension_detail else ''}",
             log_action=TRADE_LABEL,
-            log_detail=f"player {player.uid} moved from {from_team} to {new_team.name}",
+            log_detail=log_detail,
             affected_team_ids={from_team_id, new_team.id},
             stat_scopes=PERSISTED_TEAM_STAT_SCOPES,
             transfer_logs=[
@@ -125,10 +179,21 @@ def release_player(db: Session, admin: str | None, request: Any, write_to_log: L
         from_team = player.team_name
         from_team_id = player.team_id
         assign_player_team(player, sea_team)
+        suspension_detail = _sync_suspension_after_team_change(
+            db,
+            player,
+            from_team_id=from_team_id,
+            from_team_name=from_team,
+            to_team=sea_team,
+            force_clear=True,
+        )
+        log_detail = f"player {player.uid} released from {from_team} to {sea_team.name}"
+        if suspension_detail:
+            log_detail = f"{log_detail}; {suspension_detail}"
         return AdminMutationResult(
-            message=f"{player.name} released to {sea_team.name}",
+            message=f"{player.name} released to {sea_team.name}{f'；{suspension_detail}' if suspension_detail else ''}",
             log_action=RELEASE_LABEL,
-            log_detail=f"player {player.uid} released from {from_team} to {sea_team.name}",
+            log_detail=log_detail,
             affected_team_ids={from_team_id, sea_team.id},
             stat_scopes=PERSISTED_TEAM_STAT_SCOPES,
             transfer_logs=[
@@ -154,6 +219,8 @@ def batch_transfer(db: Session, admin: str | None, request: Any, write_to_log: L
         success_count = 0
         affected_team_ids: set[int | None] = set()
         transfer_logs = []
+        suspension_moved = 0
+        suspension_cleared = 0
 
         for item in request.items:
             player = get_player_by_uid(db, item.uid)
@@ -169,6 +236,18 @@ def batch_transfer(db: Session, admin: str | None, request: Any, write_to_log: L
             from_team = player.team_name
             from_team_id = player.team_id
             assign_player_team(player, new_team)
+            suspension_detail = _sync_suspension_after_team_change(
+                db,
+                player,
+                from_team_id=from_team_id,
+                from_team_name=from_team,
+                to_team=new_team,
+            )
+            if suspension_detail:
+                if "\u8f6c\u79fb" in suspension_detail:
+                    suspension_moved += 1
+                elif "\u6e05\u96f6" in suspension_detail:
+                    suspension_cleared += 1
             affected_team_ids.update({from_team_id, new_team.id})
             transfer_logs.append(
                 {
@@ -179,16 +258,24 @@ def batch_transfer(db: Session, admin: str | None, request: Any, write_to_log: L
                     "from_team_id": from_team_id,
                     "to_team_id": new_team.id,
                     "operation": BATCH_TRADE_LABEL,
-                    "notes": item.notes or "",
+                    "notes": "; ".join(part for part in [item.notes or "", suspension_detail or ""] if part),
                 }
             )
-            results.append({"uid": item.uid, "success": True, "message": f"{player.name}: {from_team}->{new_team.name}"})
+            results.append({"uid": item.uid, "success": True, "message": f"{player.name}: {from_team}->{new_team.name}{f'；{suspension_detail}' if suspension_detail else ''}"})
             success_count += 1
 
+        suspension_summary = []
+        if suspension_moved:
+            suspension_summary.append(f"\u4f24\u505c\u8f6c\u79fb {suspension_moved}")
+        if suspension_cleared:
+            suspension_summary.append(f"\u4f24\u505c\u6e05\u96f6 {suspension_cleared}")
+        suspension_suffix = f"; {'; '.join(suspension_summary)}" if suspension_summary else ""
+        message_separator = "\uff1b"
+        message_suffix = f"\uff1b{message_separator.join(suspension_summary)}" if suspension_summary else ""
         return AdminMutationResult(
-            message=f"batch transfer finished {success_count}/{len(request.items)}",
+            message=f"batch transfer finished {success_count}/{len(request.items)}{message_suffix}",
             log_action=BATCH_TRADE_LABEL,
-            log_detail=f"batch transfer {success_count}/{len(request.items)}",
+            log_detail=f"batch transfer {success_count}/{len(request.items)}{suspension_suffix}",
             affected_team_ids=affected_team_ids,
             stat_scopes=PERSISTED_TEAM_STAT_SCOPES,
             transfer_logs=transfer_logs,
@@ -204,6 +291,7 @@ def batch_release(db: Session, admin: str | None, request: Any, write_to_log: Lo
         success_count = 0
         affected_team_ids: set[int | None] = set()
         transfer_logs = []
+        suspension_cleared = 0
 
         sea_team = get_sea_team(db)
         if not sea_team:
@@ -218,6 +306,16 @@ def batch_release(db: Session, admin: str | None, request: Any, write_to_log: Lo
             from_team = player.team_name
             from_team_id = player.team_id
             assign_player_team(player, sea_team)
+            suspension_detail = _sync_suspension_after_team_change(
+                db,
+                player,
+                from_team_id=from_team_id,
+                from_team_name=from_team,
+                to_team=sea_team,
+                force_clear=True,
+            )
+            if suspension_detail:
+                suspension_cleared += 1
             affected_team_ids.update({from_team_id, sea_team.id})
             transfer_logs.append(
                 {
@@ -228,16 +326,18 @@ def batch_release(db: Session, admin: str | None, request: Any, write_to_log: Lo
                     "from_team_id": from_team_id,
                     "to_team_id": sea_team.id,
                     "operation": BATCH_RELEASE_LABEL,
-                    "notes": item.notes or "",
+                    "notes": "; ".join(part for part in [item.notes or "", suspension_detail or ""] if part),
                 }
             )
-            results.append({"uid": item.uid, "success": True, "message": f"{player.name}: {from_team}->{sea_team.name}"})
+            results.append({"uid": item.uid, "success": True, "message": f"{player.name}: {from_team}->{sea_team.name}{f'；{suspension_detail}' if suspension_detail else ''}"})
             success_count += 1
 
+        suspension_suffix = f"; \u4f24\u505c\u6e05\u96f6 {suspension_cleared}" if suspension_cleared else ""
+        message_suffix = f"\uff1b\u4f24\u505c\u6e05\u96f6 {suspension_cleared}" if suspension_cleared else ""
         return AdminMutationResult(
-            message=f"batch release finished {success_count}/{len(request.items)}",
+            message=f"batch release finished {success_count}/{len(request.items)}{message_suffix}",
             log_action=BATCH_RELEASE_LABEL,
-            log_detail=f"batch release {success_count}/{len(request.items)}",
+            log_detail=f"batch release {success_count}/{len(request.items)}{suspension_suffix}",
             affected_team_ids=affected_team_ids,
             stat_scopes=PERSISTED_TEAM_STAT_SCOPES,
             transfer_logs=transfer_logs,
@@ -269,11 +369,22 @@ def undo_operation(db: Session, admin: str | None, log_id: int, write_to_log: Lo
                 assign_player_team(player, from_team)
                 target_team_name = from_team.name
                 target_team_id = from_team.id
+                target_team = from_team
             else:
                 assign_player_team_by_name(db, player, log.from_team)
                 target_team_name = log.from_team
                 target_team_id = player.team_id
+                target_team = _resolve_team_for_suspension(db, target_team_id, target_team_name)
+            suspension_detail = _sync_suspension_after_team_change(
+                db,
+                player,
+                from_team_id=current_team_id,
+                from_team_name=current_team,
+                to_team=target_team,
+            )
             undo_details.append(f"team {current_team}->{target_team_name}")
+            if suspension_detail:
+                undo_details.append(suspension_detail)
         elif log.operation == FISH_LABEL:
             stat_scopes = set(PERSISTED_TEAM_STAT_SCOPES)
             current_team_id = player.team_id if player else None

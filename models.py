@@ -130,6 +130,21 @@ class Match(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class MatchPlayerEvent(Base):
+    __tablename__ = "match_player_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    match_id = Column(Integer, ForeignKey("matches.id", ondelete="CASCADE"), index=True, nullable=False)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), index=True)
+    team_name = Column(String, index=True, nullable=False)
+    player_uid = Column(Integer, ForeignKey("players.uid", ondelete="SET NULL"), index=True)
+    player_name = Column(String, index=True, nullable=False)
+    event_type = Column(String, index=True, nullable=False)
+    quantity = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class CupMatch(Base):
     __tablename__ = "cup_matches"
 
@@ -181,6 +196,48 @@ class PlayerSuspensionRecord(Base):
     red_injury_suspended = Column(Integer, default=0)
     notes = Column(Text)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class CandidateList(Base):
+    __tablename__ = "candidate_lists"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True, nullable=False)
+    description = Column(Text)
+    type = Column(String, index=True, nullable=False, default="custom")
+    status = Column(String, index=True, nullable=False, default="draft")
+    base_data_version = Column(String, index=True)
+    source_filters_json = Column(Text)
+    created_by = Column(String, index=True)
+    updated_by = Column(String, index=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    published_at = Column(DateTime, index=True)
+    published_by = Column(String, index=True)
+    archived_at = Column(DateTime, index=True)
+    archived_by = Column(String, index=True)
+    locked_at = Column(DateTime, index=True)
+    locked_by = Column(String, index=True)
+    published_player_count = Column(Integer, default=0)
+    last_published_snapshot_json = Column(Text)
+
+
+class CandidateListPlayer(Base):
+    __tablename__ = "candidate_list_players"
+
+    id = Column(Integer, primary_key=True, index=True)
+    list_id = Column(Integer, ForeignKey("candidate_lists.id", ondelete="CASCADE"), index=True, nullable=False)
+    uid = Column(Integer, index=True, nullable=False)
+    data_version = Column(String, index=True, nullable=False)
+    name_snapshot = Column(String)
+    club_snapshot = Column(String)
+    heigo_club_snapshot = Column(String)
+    ca_snapshot = Column(Integer)
+    pa_snapshot = Column(Integer)
+    added_by = Column(String, index=True)
+    added_at = Column(DateTime, default=datetime.now)
+    removed_at = Column(DateTime, index=True)
+    removed_by = Column(String, index=True)
 
 
 class Coach(Base):
@@ -236,6 +293,9 @@ class CoachAccount(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     is_active = Column(Integer, nullable=False, default=1)
+    can_manage_schedule = Column(Integer, nullable=False, default=0)
+    can_manage_suspensions = Column(Integer, nullable=False, default=0)
+    can_manage_candidate_lists = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     last_login_at = Column(DateTime)

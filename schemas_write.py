@@ -12,8 +12,10 @@ class LoginResponse(BaseModel):
     success: bool
     username: str
     role: str = "admin"
-    can_manage_admin: bool = True
-    can_manage_schedule: bool = True
+    can_manage_admin: bool = False
+    can_manage_schedule: bool = False
+    can_manage_suspensions: bool = False
+    can_manage_candidate_lists: bool = False
 
 
 class LogoutResponse(BaseModel):
@@ -60,12 +62,21 @@ class ScheduleImportResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class MatchPlayerEventUpdateItem(BaseModel):
+    team_name: str
+    player_uid: Optional[int] = None
+    player_name: str
+    event_type: str
+    quantity: int = 1
+
+
 class MatchUpdateRequest(BaseModel):
     home_score: Optional[int] = None
     away_score: Optional[int] = None
     status: Optional[str] = None
     match_date: Optional[str] = None
     notes: Optional[str] = None
+    events: list[MatchPlayerEventUpdateItem] = Field(default_factory=list)
 
 
 class MatchBatchUpdateItem(BaseModel):
@@ -74,6 +85,7 @@ class MatchBatchUpdateItem(BaseModel):
     away_score: Optional[int] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    events: list[MatchPlayerEventUpdateItem] = Field(default_factory=list)
 
 
 class MatchBatchUpdateRequest(BaseModel):
@@ -139,8 +151,11 @@ class CoachLoginRequest(BaseModel):
 
 class CoachAccountUpsertRequest(BaseModel):
     username: str
-    password: str
+    password: Optional[str] = None
     is_active: bool = True
+    can_manage_schedule: bool = False
+    can_manage_suspensions: bool = False
+    can_manage_candidate_lists: bool = False
 
 
 class CoachPasswordChangeRequest(BaseModel):
@@ -275,3 +290,35 @@ class AdvancedAttributeSearchRequest(BaseModel):
     attributes: dict[str, AdvancedAttributeRangeRequest] = Field(default_factory=dict)
     positions: list[AdvancedAttributePositionRequest] = Field(default_factory=list)
     limit: int = 200
+
+
+class AttributeBatchLookupRequest(BaseModel):
+    tokens: list[str] = Field(default_factory=list)
+    version: Optional[str] = None
+
+
+class CandidateListUpsertRequest(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    type: str = "custom"
+    base_data_version: Optional[str] = None
+    source_filters: dict[str, Any] = Field(default_factory=dict)
+
+
+class CandidateListPlayerPreviewRequest(BaseModel):
+    tokens: list[str] = Field(default_factory=list)
+    uids: list[int] = Field(default_factory=list)
+    version: Optional[str] = None
+
+
+class CandidateListPlayerCommitRequest(BaseModel):
+    tokens: list[str] = Field(default_factory=list)
+    uids: list[int] = Field(default_factory=list)
+    confirmed_uids: list[int] = Field(default_factory=list)
+    version: Optional[str] = None
+
+
+class CandidateListBatchRemoveRequest(BaseModel):
+    tokens: list[str] = Field(default_factory=list)
+    uids: list[int] = Field(default_factory=list)
+    version: Optional[str] = None

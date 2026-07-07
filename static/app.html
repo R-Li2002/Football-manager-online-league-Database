@@ -40,38 +40,74 @@
             <button class="nav-tab hidden-tab" id="adminTab" data-tab="admin" onclick="showTab('admin', this)"><span class="nav-tab-icon" aria-hidden="true">⚙</span><span>维护中心</span></button>
         </div>
 
+        <nav class="mobile-bottom-nav" aria-label="移动端主导航">
+            <button class="mobile-bottom-nav-item active" type="button" data-mobile-tab="home" onclick="showTab('home')">
+                <span class="mobile-bottom-nav-icon" aria-hidden="true">⌂</span>
+                <span>首页</span>
+            </button>
+            <button class="mobile-bottom-nav-item" type="button" data-mobile-tab="players" onclick="showTab('players')">
+                <span class="mobile-bottom-nav-icon" aria-hidden="true">☰</span>
+                <span>名单</span>
+            </button>
+            <button class="mobile-bottom-nav-item" type="button" data-mobile-tab="competition" onclick="showTab('competition')">
+                <span class="mobile-bottom-nav-icon mobile-stat-icon" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span>数据</span>
+            </button>
+            <button class="mobile-bottom-nav-item" type="button" data-mobile-tab="database" onclick="showTab('database')">
+                <span class="mobile-bottom-nav-icon" aria-hidden="true">⌕</span>
+                <span>球员库</span>
+            </button>
+            <button class="mobile-bottom-nav-item" type="button" data-mobile-more-toggle aria-expanded="false" aria-controls="mobileMoreMenu" onclick="toggleMobileMoreMenu()">
+                <span class="mobile-bottom-nav-icon" aria-hidden="true">⋯</span>
+                <span>更多</span>
+            </button>
+        </nav>
+        <div class="mobile-more-menu" id="mobileMoreMenu" hidden>
+            <button class="mobile-more-menu-item" type="button" data-mobile-tab="overview" onclick="showTab('overview')">
+                <span aria-hidden="true">◫</span>
+                <span>联赛概览</span>
+            </button>
+            <button class="mobile-more-menu-item" type="button" data-mobile-tab="coaches" onclick="showTab('coaches')">
+                <span aria-hidden="true">◉</span>
+                <span>教练主页</span>
+            </button>
+            <button class="mobile-more-menu-item hidden-tab" id="mobileAdminTab" type="button" data-mobile-tab="admin" onclick="showTab('admin')">
+                <span aria-hidden="true">⚙</span>
+                <span>维护中心</span>
+            </button>
+        </div>
+
         <div id="home" class="tab-content active">
             <section class="home-landing">
                 <div class="home-hero glass-card">
                     <div class="home-hero-copy">
-                        <span class="hero-kicker">Player Database Search</span>
-                        <h2>FM球员检索</h2>
-                        <p>精确搜索直接进入球员详情，模糊搜索提供一组相关球员列表，帮助你快速继续查看。</p>
+                        <span class="hero-kicker">HEIGO Search</span>
+                        <h2>HEIGO搜索</h2>
+                        <p>统一搜索球队、联赛球员、教练主页和球员库数据，快速跳转到你要查看的内容。</p>
                     </div>
                     <div class="home-search-shell">
-                        <label class="home-search-label" for="heroPlayerSearch">搜索姓名或 UID</label>
+                        <div class="home-announcement" role="status">
+                            <div class="home-announcement-copy">
+                                <span class="panel-kicker">Candidate Lists</span>
+                                <h3>87届初期强制名单已发布</h3>
+                                <p>教练可进入球员库的候选名单范围，并继续按位置、能力和俱乐部筛选球员。</p>
+                            </div>
+                            <button class="btn btn-primary home-announcement-action" type="button" onclick="showTab('database'); showDatabaseSubtab('candidates')">查看名单</button>
+                        </div>
+                        <label class="home-search-label" for="heroPlayerSearch">搜索球队、球员、教练或 UID</label>
                         <div class="home-search-bar">
-                            <input type="text" id="heroPlayerSearch" placeholder="输入球员姓名或 UID...">
-                            <button class="btn btn-primary home-search-button" onclick="runHeroSearch()">搜索球员库</button>
-                            <button class="btn btn-secondary home-advanced-button" type="button" onclick="openAdvancedDatabaseSearchFromHero()">高级搜索</button>
+                            <input type="text" id="heroPlayerSearch" placeholder="输入球队、球员、教练或 UID...">
+                            <button class="btn btn-primary home-search-button" onclick="runHeroSearch()">全站搜索</button>
+                            <button class="btn btn-secondary home-advanced-button" type="button" onclick="openAdvancedDatabaseSearchFromHero()">球员库高级搜索</button>
                         </div>
                         <div class="home-search-meta">
-                            <span class="hero-badge"><strong id="heroTeamCount">-</strong> 支联赛球队</span>
-                            <span class="hero-badge"><strong id="heroPlayerCount">-</strong> 名联赛球员</span>
-                            <span class="hero-badge"><strong id="heroDbPlayerCount">-</strong> 名球员库球员</span>
-                            <span class="hero-badge" id="heroModeBadge">公开查询模式</span>
+                            <span class="hero-badge hero-stat-badge"><strong id="heroTeamCount">-</strong><span>联赛球队</span></span>
+                            <span class="hero-badge hero-stat-badge"><strong id="heroPlayerCount">-</strong><span>联赛球员</span></span>
+                            <span class="hero-badge hero-stat-badge"><strong id="heroDbPlayerCount">-</strong><span>球员库球员</span></span>
+                            <span class="hero-badge hero-mode-badge" id="heroModeBadge">公开查询模式</span>
                         </div>
                         <div id="heroSearchResults" class="home-search-results"></div>
                     </div>
-                </div>
-
-                <div class="home-announcement surface-card" role="status">
-                    <div class="home-announcement-copy">
-                        <span class="panel-kicker">Coach Profiles</span>
-                        <h3>教练主页已启用</h3>
-                        <p>各位教练可使用自己的教练用户名登录，初始密码为 <code>heigo123</code>。欢迎个性化定义自己的主页，上传头像与队徽，填满自己的荣誉室。</p>
-                    </div>
-                    <button class="btn btn-primary home-announcement-action" type="button" onclick="showTab('coaches')">进入教练主页</button>
                 </div>
 
                 <div class="home-shortcuts">
@@ -187,19 +223,23 @@
 
                 <section class="player-results-panel">
                     <div class="query-status-bar surface-card">
+                        <div class="roster-team-badge-slot" id="playerRosterTeamBadge"></div>
                         <div class="query-status-copy">
                             <h3 id="playerQueryTitle">当前正在查看全部联赛名单</h3>
                             <p id="playerQueryMeta">可按球队、姓名和排序方式快速缩小范围。</p>
                         </div>
-                        <div class="query-status-actions" id="playerRosterActions"></div>
-                        <div class="query-chip-row" id="playerQueryChips">
-                            <span class="query-chip is-muted">未应用筛选</span>
+                        <div class="query-status-side">
+                            <div class="query-status-actions" id="playerRosterActions"></div>
+                            <div class="query-chip-row" id="playerQueryChips">
+                                <span class="query-chip is-muted">未应用筛选</span>
+                            </div>
                         </div>
                     </div>
 
                     <div class="table-container surface-card">
-                        <div class="table-header-row">
+                        <div class="table-header-row roster-table-header-row">
                             <h2 id="tableTitle" class="table-title">全部联赛名单</h2>
+                            <div id="rosterViewToggle" class="roster-view-toggle capture-exclude" aria-label="联赛名单视图切换"></div>
                         </div>
                         <div id="playersTable"><div class="loading">加载中...</div></div>
                     </div>
@@ -210,6 +250,7 @@
         <div id="database" class="tab-content">
             <div class="database-subtabs surface-card" role="tablist" aria-label="球员库功能切换">
                 <button class="database-subtab active" id="dbSubtabSearch" type="button" onclick="showDatabaseSubtab('search')" role="tab" aria-selected="true">球员搜索</button>
+                <button class="database-subtab" id="dbSubtabCandidates" type="button" onclick="showDatabaseSubtab('candidates')" role="tab" aria-selected="false">候选名单</button>
                 <button class="database-subtab" id="dbSubtabLeaderboard" type="button" onclick="showDatabaseSubtab('leaderboard')" role="tab" aria-selected="false">互动排行榜</button>
             </div>
 
@@ -217,7 +258,7 @@
                 <div class="search-section">
                     <div class="search-controls">
                         <div class="form-group" style="flex: 2;">
-                            <label>搜索球员库 (34000+ 球员)</label>
+                            <label for="dbPlayerSearch">搜索球员库 (<span id="dbPlayerSearchCount">-</span> 球员)</label>
                             <input type="text" id="dbPlayerSearch" placeholder="输入球员姓名或 UID 搜索...">
                         </div>
                         <div class="form-group database-version-group">
@@ -266,6 +307,23 @@
                         </div>
                     </div>
                     <div id="dbPlayersTable"><div class="no-data">请输入球员姓名或 UID 进行搜索</div></div>
+                </div>
+            </div>
+
+            <div class="list-view" id="dbCandidateListsView">
+                <div class="candidate-lists-shell">
+                    <div class="candidate-lists-head surface-card">
+                        <div class="candidate-lists-head-row">
+                            <div>
+                                <h2 id="candidateListPageTitle">候选名单</h2>
+                            </div>
+                            <div class="candidate-lists-actions" id="candidateListTopActions"></div>
+                        </div>
+                        <p id="candidateListPageDescription">查看已发布的候选范围，进入后继续筛选球员。</p>
+                        <div class="candidate-list-top-tabs" id="candidateListTopTabs" hidden></div>
+                    </div>
+                    <div id="candidateListsBoard"><div class="loading">加载中...</div></div>
+                    <div id="candidateListAdminPanel" class="candidate-admin-panel surface-card" hidden></div>
                 </div>
             </div>
 
@@ -382,6 +440,7 @@
                     <div class="player-ranking-tabs surface-card" role="tablist" aria-label="球员榜类型切换">
                         <button class="player-ranking-tab active" id="playerRankingGoalsTab" type="button" onclick="setPlayerRankingType('goals')" role="tab" aria-selected="true">射手榜</button>
                         <button class="player-ranking-tab" id="playerRankingAssistsTab" type="button" onclick="setPlayerRankingType('assists')" role="tab" aria-selected="false">助攻榜</button>
+                        <button class="player-ranking-tab" id="playerRankingMvpsTab" type="button" onclick="setPlayerRankingType('mvps')" role="tab" aria-selected="false">最佳球员榜</button>
                     </div>
                     <div id="playerRankingsBoard"><div class="loading">加载中...</div></div>
                 </div>
@@ -667,6 +726,7 @@
     </div>
 
     <aside id="compareDock" class="compare-dock" aria-label="球员对比夹"></aside>
+    <aside id="candidateDock" class="candidate-dock" aria-label="候选名单夹"></aside>
 
     <div class="comparison-overlay" id="comparisonOverlay" aria-hidden="true">
         <div class="comparison-shell" role="dialog" aria-modal="true" aria-labelledby="comparisonTitle">

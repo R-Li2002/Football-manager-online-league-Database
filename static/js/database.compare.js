@@ -126,6 +126,18 @@ function clearCompareSlots() {
 
 function toggleCompareDock() {
     compareDockExpanded = !compareDockExpanded;
+    if (
+        compareDockExpanded &&
+        typeof isMobileViewport === 'function' &&
+        isMobileViewport() &&
+        typeof candidateDockExpanded !== 'undefined' &&
+        candidateDockExpanded
+    ) {
+        candidateDockExpanded = false;
+        if (typeof renderCandidateDock === 'function') {
+            renderCandidateDock();
+        }
+    }
     renderCompareDock();
 }
 
@@ -170,7 +182,13 @@ function renderCompareDock() {
 
     normalizeCompareSlots();
     const activeTab = document.body.dataset.activeTab || document.querySelector('.tab-content.active')?.id || 'home';
-    const shouldShowDock = activeTab === 'players' || activeTab === 'database';
+    const mobileDetailActive = activeTab === 'database'
+        && document.getElementById('dbDetailView')?.classList.contains('active')
+        && typeof isMobileViewport === 'function'
+        && isMobileViewport();
+    const shouldShowDock = activeTab === 'players' || (activeTab === 'database' && !mobileDetailActive);
+    document.body.classList.toggle('has-compare-dock', shouldShowDock);
+    document.body.classList.toggle('has-expanded-compare-dock', shouldShowDock && compareDockExpanded);
     dock.classList.toggle('is-hidden', !shouldShowDock);
     if (!shouldShowDock) {
         dock.innerHTML = '';

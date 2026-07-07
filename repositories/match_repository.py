@@ -1,7 +1,7 @@
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
-from models import Match
+from models import Match, MatchPlayerEvent
 
 
 def list_matches(db: Session, *, level: str | None = None, round_no: int | None = None) -> list[Match]:
@@ -13,11 +13,24 @@ def list_matches(db: Session, *, level: str | None = None, round_no: int | None 
     return query.order_by(Match.level, Match.round_no, Match.id).all()
 
 
+def list_match_events(db: Session, match_ids: set[int] | None = None) -> list[MatchPlayerEvent]:
+    query = db.query(MatchPlayerEvent)
+    if match_ids is not None:
+        if not match_ids:
+            return []
+        query = query.filter(MatchPlayerEvent.match_id.in_(match_ids))
+    return query.order_by(MatchPlayerEvent.match_id, MatchPlayerEvent.id).all()
+
+
+def delete_match_events(db: Session, match_id: int) -> None:
+    db.query(MatchPlayerEvent).filter(MatchPlayerEvent.match_id == match_id).delete(synchronize_session=False)
+
+
 def list_played_matches(db: Session) -> list[Match]:
     return (
         db.query(Match)
         .filter(
-            Match.status == "played",
+            Match.status.in_(("played", "home_forfeit", "away_forfeit", "double_forfeit")),
             Match.home_score.is_not(None),
             Match.away_score.is_not(None),
         )

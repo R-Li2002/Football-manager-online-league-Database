@@ -9,8 +9,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import Coach, CoachHonor, Team
-from schemas_write import CoachHonorUpdateRequest, CoachUpdateRequest
+from models import Coach, CoachAccount, CoachHonor, CoachSession, Team
+from schemas_write import CoachAccountUpsertRequest, CoachHonorUpdateRequest, CoachLoginRequest, CoachUpdateRequest
 from services import coach_service
 
 
@@ -128,6 +128,70 @@ class CoachServiceTest(unittest.TestCase):
         detail = coach_service.get_coach_detail(self.db, coach_uid)
         self.assertEqual(detail.honors[0].competition, "新人赛")
         self.assertEqual(detail.honors[0].placement, "冠军")
+
+    def test_upsert_coach_account_preserves_blank_password_and_updates_work_permissions(self):
+        payload = coach_service.get_coaches(self.db)
+        coach_uid = payload.coaches[0].uid
+
+        coach_service.upsert_coach_account(
+            self.db,
+            "admin",
+            coach_uid,
+            CoachAccountUpsertRequest(username="coach-a", password="secret123", can_manage_schedule=True),
+            lambda *_args: None,
+        )
+        account = self.db.query(CoachAccount).filter(CoachAccount.coach_uid == coach_uid).one()
+        original_hash = account.password_hash
+        token, identity = coach_service.login_coach(self.db, CoachLoginRequest(username="coach-a", password="secret123"))
+
+        self.assertTrue(identity.can_manage_schedule)
+        self.assertTrue(self.db.query(CoachSession).filter(CoachSession.token == token).first())
+
+        coach_service.upsert_coach_account(
+            self.db,
+            "admin",
+            coach_uid,
+            CoachAccountUpsertRequest(
+                username="coach-a",
+                password="",
+                can_manage_suspensions=True,
+                can_manage_candidate_lists=True,
+            ),
+            lambda *_args: None,
+        )
+        account = self.db.query(CoachAccount).filter(CoachAccount.coach_uid == coach_uid).one()
+
+        self.assertEqual(account.password_hash, original_hash)
+        self.assertEqual(self.db.query(CoachSession).filter(CoachSession.coach_uid == coach_uid).count(), 0)
+
+        _token, identity = coach_service.login_coach(self.db, CoachLoginRequest(username="coach-a", password="secret123"))
+        self.assertFalse(identity.can_manage_schedule)
+        self.assertTrue(identity.can_manage_suspensions)
+        self.assertTrue(identity.can_manage_candidate_lists)
+
+    def test_coach_session_identity_includes_work_permissions(self):
+        payload = coach_service.get_coaches(self.db)
+        coach_uid = payload.coaches[0].uid
+        coach_service.upsert_coach_account(
+            self.db,
+            "admin",
+            coach_uid,
+            CoachAccountUpsertRequest(
+                username="coach-b",
+                password="secret123",
+                can_manage_schedule=True,
+                can_manage_candidate_lists=True,
+            ),
+            lambda *_args: None,
+        )
+        token, _identity = coach_service.login_coach(self.db, CoachLoginRequest(username="coach-b", password="secret123"))
+
+        identity = coach_service.get_coach_session_identity(self.db, token)
+
+        self.assertTrue(identity.authenticated)
+        self.assertTrue(identity.can_manage_schedule)
+        self.assertFalse(identity.can_manage_suspensions)
+        self.assertTrue(identity.can_manage_candidate_lists)
 
     def test_coach_reaction_uses_cooldown(self):
         payload = coach_service.get_coaches(self.db)

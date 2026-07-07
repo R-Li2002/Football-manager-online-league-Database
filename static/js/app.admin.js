@@ -11,6 +11,11 @@ function enterAdminLoggedOutState(options = {}) {
     isAdmin = false;
     currentAdminRole = '';
     canManageSchedule = false;
+    canManageSuspensions = false;
+    canManageCandidateLists = false;
+    if (typeof endCandidateListMaintenance === 'function') {
+        endCandidateListMaintenance();
+    }
     if (options.reveal !== false) {
         adminEntryUnlocked = true;
     }
@@ -43,6 +48,26 @@ function notifyAdminUnauthorized(message = '管理员登录已失效，请重新
     showModal('未授权', message);
 }
 
+function isCoachWorkAccountActive() {
+    return Boolean(
+        !currentAdminRole
+        && currentCoachAccount?.authenticated
+        && (canManageSchedule || canManageSuspensions || canManageCandidateLists)
+    );
+}
+
+async function handleCoachWorkUnauthorized(message = '工作账号登录已失效，请重新登录教练账号。') {
+    if (typeof coachLogout === 'function') {
+        await coachLogout();
+    } else {
+        currentCoachAccount = {authenticated: false};
+        canManageSchedule = false;
+        canManageSuspensions = false;
+        canManageCandidateLists = false;
+    }
+    notifyAdminUnauthorized(message);
+}
+
 function handleAdminUnauthorized(message = '管理员登录已失效，请重新验证管理员账户。', options = {}) {
     enterAdminLoggedOutState({
         focusLogin: options.focusLogin !== false,
@@ -66,6 +91,12 @@ async function adminFetch(url, options = {}) {
         ...fetchOptions,
     });
     if (response.status === 401) {
+        if (isCoachWorkAccountActive()) {
+            await handleCoachWorkUnauthorized('工作账号登录已失效，请重新登录教练账号。');
+            const error = new Error(ADMIN_UNAUTHORIZED_ERROR);
+            error.code = ADMIN_UNAUTHORIZED_ERROR;
+            throw error;
+        }
         handleAdminUnauthorized(unauthorizedMessage, {
             silent: silentUnauthorized,
             focusLogin: focusLoginOnUnauthorized,
@@ -100,6 +131,8 @@ async function syncAdminAuthStatus(options = {}) {
     currentAdminRole = data.role || '';
     isAdmin = Boolean(data.authenticated && data.can_manage_admin);
     canManageSchedule = Boolean(data.authenticated && data.can_manage_schedule);
+    canManageSuspensions = Boolean(data.authenticated && data.can_manage_suspensions);
+    canManageCandidateLists = Boolean(data.authenticated && data.can_manage_candidate_lists);
     syncAdminTabVisibility();
     syncAdminPanelVisibility({
         focusLogin: options.focusLogin !== false && !isAdmin,
@@ -107,10 +140,23 @@ async function syncAdminAuthStatus(options = {}) {
     return data;
 }
 
+async function logoutCurrentWorkAccount() {
+    if (currentAdminRole) {
+        await adminLogout();
+        return;
+    }
+    if (typeof coachLogout === 'function') {
+        await coachLogout();
+    }
+}
+
 function syncAdminTabVisibility() {
     const adminTab = document.getElementById('adminTab');
     if (!adminTab) return;
     adminTab.classList.toggle('hidden-tab', !(isAdmin || adminEntryUnlocked));
+    if (typeof syncMobileNavState === 'function') {
+        syncMobileNavState({closeMenu: false});
+    }
 }
 
 function syncAdminPanelVisibility(options = {}) {
@@ -463,14 +509,19 @@ async function adminLogin() {
                 showModal('错误', '登录态未生效，请检查 HTTPS / Session Cookie 配置后重试。');
                 return;
             }
-            if (!isAdmin && canManageSchedule) {
+            if (!isAdmin && (canManageSchedule || canManageSuspensions || canManageCandidateLists)) {
                 adminEntryUnlocked = false;
                 syncAdminTabVisibility();
                 if (typeof loadCompetitionData === 'function') {
                     await loadCompetitionData({force: true});
                 }
                 showTab('competition', null, {syncHistory: false});
-                showModal('成功', `欢迎，${data.username}！当前账号仅可维护赛程和比分。`);
+                const permissions = [
+                    canManageSchedule ? '赛程' : '',
+                    canManageSuspensions ? '伤停' : '',
+                    canManageCandidateLists ? '候选名单' : '',
+                ].filter(Boolean).join('、');
+                showModal('成功', `欢迎，${data.username}！当前账号可维护${permissions || '指定模块'}。`);
                 return;
             }
             showAdminTab();

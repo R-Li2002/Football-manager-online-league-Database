@@ -36,3 +36,4 @@ tmp/
 bg_test*.txt
 output/
 data/backups/
+static/uploads/

@@ -15,7 +15,18 @@ const COACH_TITLE_COLORS = [
     {value: 'purple', label: '紫色'},
     {value: 'orange', label: '橙色'},
     {value: 'red', label: '红色'},
+    {value: 'gold', label: '冠军金'},
+    {value: 'cyan', label: '冰蓝'},
+    {value: 'pink', label: '粉蓝'},
+    {value: 'emerald', label: '翡翠'},
+    {value: 'silver', label: '银灰'},
+    {value: 'blackgold', label: '黑金'},
     {value: 'rainbow', label: '彩虹闪动'},
+    {value: 'marquee', label: '跑马灯'},
+    {value: 'pulse', label: '呼吸微光'},
+    {value: 'blink', label: '低频闪烁'},
+    {value: 'jump', label: '颜色跳变'},
+    {value: 'aurora', label: '极光流动'},
 ];
 
 const COACH_ASSISTANT_LEVELS = [
@@ -162,8 +173,23 @@ function showCoachDetailShell() {
     document.getElementById('coachDetailView')?.classList.add('active');
 }
 
+function canManageCoachProfiles() {
+    return Boolean(currentAdminRole && canManageSchedule);
+}
+
 function canEditCurrentCoach(coach = currentCoachDetail) {
-    return Boolean(coach && (canManageSchedule || (currentCoachAccount.authenticated && currentCoachAccount.coach_uid === coach.uid)));
+    return Boolean(coach && (canManageCoachProfiles() || (currentCoachAccount.authenticated && currentCoachAccount.coach_uid === coach.uid)));
+}
+
+function coachAccountHasWorkPermissions(account = currentCoachAccount) {
+    return Boolean(account?.can_manage_schedule || account?.can_manage_suspensions || account?.can_manage_candidate_lists);
+}
+
+function syncWorkPermissionsFromCoachAccount() {
+    if (currentAdminRole) return;
+    canManageSchedule = Boolean(currentCoachAccount.authenticated && currentCoachAccount.can_manage_schedule);
+    canManageSuspensions = Boolean(currentCoachAccount.authenticated && currentCoachAccount.can_manage_suspensions);
+    canManageCandidateLists = Boolean(currentCoachAccount.authenticated && currentCoachAccount.can_manage_candidate_lists);
 }
 
 async function syncCoachAuthStatus() {
@@ -173,6 +199,7 @@ async function syncCoachAuthStatus() {
     } catch (error) {
         currentCoachAccount = {authenticated: false};
     }
+    syncWorkPermissionsFromCoachAccount();
     renderCoachAuthBox();
     return currentCoachAccount;
 }
@@ -183,6 +210,7 @@ function renderCoachAuthBox() {
     if (currentCoachAccount.authenticated) {
         host.innerHTML = `
             <span class="coach-auth-pill">${escapeHtml(currentCoachAccount.nickname || currentCoachAccount.username || '教练')}</span>
+            ${coachAccountHasWorkPermissions() ? '<span class="coach-auth-pill is-work">工作账号</span>' : ''}
             <button class="btn btn-secondary" type="button" onclick="coachLogout()">退出</button>
         `;
         return;
@@ -215,8 +243,12 @@ async function coachLogin() {
         return;
     }
     currentCoachAccount = data;
+    syncWorkPermissionsFromCoachAccount();
     renderCoachAuthBox();
     if (typeof renderTeamsTable === 'function') renderTeamsTable();
+    if (typeof loadCompetitionData === 'function') loadCompetitionData({force: true});
+    if (typeof renderCandidateDock === 'function') renderCandidateDock();
+    if (typeof loadCandidateLists === 'function' && currentDatabaseSubtab === 'candidates') loadCandidateLists({force: true});
     if (typeof closeModal === 'function') closeModal();
     if (currentCoachDetail) renderCoachDetail();
 }
@@ -224,8 +256,12 @@ async function coachLogin() {
 async function coachLogout() {
     await fetch('/api/coach/logout', {method: 'POST', credentials: 'same-origin'});
     currentCoachAccount = {authenticated: false};
+    syncWorkPermissionsFromCoachAccount();
     renderCoachAuthBox();
     if (typeof renderTeamsTable === 'function') renderTeamsTable();
+    if (typeof loadCompetitionData === 'function') loadCompetitionData({force: true});
+    if (typeof renderCandidateDock === 'function') renderCandidateDock();
+    if (typeof loadCandidateLists === 'function' && currentDatabaseSubtab === 'candidates') loadCandidateLists({force: true});
     if (currentCoachDetail) renderCoachDetail();
 }
 
@@ -233,7 +269,7 @@ async function loadCoaches(options = {}) {
     const board = document.getElementById('coachDirectoryBoard');
     if (!board) return;
     document.querySelectorAll('.coach-admin-only').forEach(item => {
-        item.style.display = canManageSchedule ? '' : 'none';
+        item.style.display = canManageCoachProfiles() ? '' : 'none';
     });
     await syncCoachAuthStatus();
     if (coachesLoaded && options.force !== true) {
@@ -420,10 +456,10 @@ function renderCoachActionPanel(coach) {
     if (!canEditCurrentCoach(coach)) return '';
     return `
         <section class="coach-action-panel surface-card">
-            <button class="btn btn-secondary" type="button" onclick="showCoachProfileModal()">${canManageSchedule ? '修改资料/称号颜色' : '修改资料'}</button>
+            <button class="btn btn-secondary" type="button" onclick="showCoachProfileModal()">修改资料/称号样式</button>
             <button class="btn btn-secondary" type="button" onclick="showCoachAvatarModal()">上传头像</button>
             <button class="btn btn-secondary" type="button" onclick="showCoachHonorModal()">添加荣誉</button>
-            ${!canManageSchedule && currentCoachAccount.authenticated ? `<button class="btn btn-secondary" type="button" onclick="showCoachPasswordModal()">修改密码</button>` : ''}
+            ${!canManageCoachProfiles() && currentCoachAccount.authenticated ? `<button class="btn btn-secondary" type="button" onclick="showCoachPasswordModal()">修改密码</button>` : ''}
             ${isAdmin ? `<button class="btn btn-secondary" type="button" onclick="showCoachAccountModal()">账号设置</button>` : ''}
         </section>
     `;
@@ -433,9 +469,10 @@ function showCoachProfileModal() {
     if (!canEditCurrentCoach() || !currentCoachDetail) return;
     showModal('修改资料', `
         <div class="coach-modal-form">
-            ${canManageSchedule ? `<input id="coachEditNickname" type="text" value="${escapeHtml(currentCoachDetail.nickname || '')}" placeholder="教练昵称">` : ''}
+            ${canManageCoachProfiles() ? `<input id="coachEditNickname" type="text" value="${escapeHtml(currentCoachDetail.nickname || '')}" placeholder="教练昵称">` : ''}
             <input id="coachEditTitle" type="text" value="${escapeHtml(currentCoachDetail.title || '')}" placeholder="个人称号">
-            ${canManageSchedule ? `<label class="coach-modal-field-label" for="coachEditTitleColor">称号颜色</label><select id="coachEditTitleColor">${getCoachTitleColorOptions(currentCoachDetail.title_color || 'white')}</select>` : ''}
+            <label class="coach-modal-field-label" for="coachEditTitleColor">称号样式</label>
+            <select id="coachEditTitleColor">${getCoachTitleColorOptions(currentCoachDetail.title_color || 'white')}</select>
             <textarea id="coachEditBio" placeholder="个人介绍">${escapeHtml(currentCoachDetail.bio || '')}</textarea>
             <button class="btn btn-primary" type="button" onclick="saveCoachProfile()">保存资料</button>
         </div>
@@ -502,8 +539,17 @@ async function showCoachAccountModal() {
         <div class="coach-modal-form">
             <div id="coachAccountStatus" class="coach-account-status">加载账号状态...</div>
             <input id="coachAccountUsername" type="text" placeholder="账号名">
-            <input id="coachAccountPassword" type="password" placeholder="新密码或初始密码">
+            <input id="coachAccountPassword" type="password" placeholder="新账号必填；已有账号留空则不改密码">
             <label class="coach-account-toggle"><input id="coachAccountActive" type="checkbox" checked> 启用账号</label>
+            <section class="coach-account-permissions">
+                <div>
+                    <strong>工作权限</strong>
+                    <span>勾选后，该教练账号可直接维护对应模块。</span>
+                </div>
+                <label class="coach-account-toggle"><input id="coachAccountSchedule" type="checkbox">赛程编辑</label>
+                <label class="coach-account-toggle"><input id="coachAccountSuspensions" type="checkbox">伤停编辑</label>
+                <label class="coach-account-toggle"><input id="coachAccountCandidates" type="checkbox">候选名单编辑</label>
+            </section>
             <button class="btn btn-primary" type="button" onclick="saveCoachAccount()">保存/重置账号</button>
         </div>
     `);
@@ -601,7 +647,7 @@ async function submitCoachReaction(reactionType) {
 }
 
 async function syncCoachesFromTeams() {
-    if (!canManageSchedule) return;
+    if (!canManageCoachProfiles()) return;
     const result = await adminJsonRequest('/api/admin/coaches/sync', {method: 'POST'});
     if (!result) return;
     coachesLoaded = false;
@@ -613,17 +659,16 @@ async function saveCoachProfile() {
     const payload = {
         nickname: document.getElementById('coachEditNickname')?.value || '',
         title: document.getElementById('coachEditTitle')?.value || '',
+        title_color: document.getElementById('coachEditTitleColor')?.value || 'white',
         bio: document.getElementById('coachEditBio')?.value || '',
     };
-    if (canManageSchedule) {
-        payload.title_color = document.getElementById('coachEditTitleColor')?.value || 'white';
-    }
-    const url = canManageSchedule ? `/api/admin/coaches/${encodeURIComponent(currentCoachDetail.uid)}` : '/api/coach/me';
+    const useAdmin = canManageCoachProfiles();
+    const url = useAdmin ? `/api/admin/coaches/${encodeURIComponent(currentCoachDetail.uid)}` : '/api/coach/me';
     const result = await coachJsonRequest(url, {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload),
-    }, canManageSchedule);
+    }, useAdmin);
     if (!result) return;
     const {response, data} = result;
     if (!response.ok || !data.success) {
@@ -644,11 +689,12 @@ async function uploadCoachAvatar() {
     }
     const formData = new FormData();
     formData.append('avatar', file);
-    const url = canManageSchedule ? `/api/admin/coaches/${encodeURIComponent(currentCoachDetail.uid)}/avatar` : '/api/coach/me/avatar';
+    const useAdmin = canManageCoachProfiles();
+    const url = useAdmin ? `/api/admin/coaches/${encodeURIComponent(currentCoachDetail.uid)}/avatar` : '/api/coach/me/avatar';
     const result = await coachJsonRequest(url, {
         method: 'POST',
         body: formData,
-    }, canManageSchedule);
+    }, useAdmin);
     if (!result) return;
     const {response, data} = result;
     if (!response.ok || !data.success) {
@@ -675,12 +721,13 @@ async function saveCoachHonor() {
         sort_order: Number(document.getElementById('coachHonorSort')?.value || 0),
         description: document.getElementById('coachHonorDescription')?.value || '',
     };
-    const url = canManageSchedule ? '/api/admin/coach-honors' : '/api/coach/me/honors';
+    const useAdmin = canManageCoachProfiles();
+    const url = useAdmin ? '/api/admin/coach-honors' : '/api/coach/me/honors';
     const result = await coachJsonRequest(url, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload),
-    }, canManageSchedule);
+    }, useAdmin);
     if (!result) return;
     const {response, data} = result;
     if (!response.ok || !data.success) {
@@ -694,8 +741,9 @@ async function saveCoachHonor() {
 async function deleteCoachHonor(honorId) {
     if (!canEditCurrentCoach() || !currentCoachDetail) return;
     if (!confirm('确认删除这条教练荣誉？')) return;
-    const url = canManageSchedule ? `/api/admin/coach-honors/${Number(honorId)}` : `/api/coach/me/honors/${Number(honorId)}`;
-    const result = await coachJsonRequest(url, {method: 'DELETE'}, canManageSchedule);
+    const useAdmin = canManageCoachProfiles();
+    const url = useAdmin ? `/api/admin/coach-honors/${Number(honorId)}` : `/api/coach/me/honors/${Number(honorId)}`;
+    const result = await coachJsonRequest(url, {method: 'DELETE'}, useAdmin);
     if (!result) return;
     const {response, data} = result;
     if (!response.ok || !data.success) {
@@ -715,14 +763,15 @@ async function saveCoachAssistant(assistantId = null) {
         note: document.getElementById('coachAssistantNote')?.value || '',
     };
     const isEdit = Number(assistantId) > 0;
-    const url = canManageSchedule
+    const useAdmin = canManageCoachProfiles();
+    const url = useAdmin
         ? (isEdit ? `/api/admin/coach-assistants/${Number(assistantId)}` : '/api/admin/coach-assistants')
         : (isEdit ? `/api/coach/me/assistants/${Number(assistantId)}` : '/api/coach/me/assistants');
     const result = await coachJsonRequest(url, {
         method: isEdit ? 'PATCH' : 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload),
-    }, canManageSchedule);
+    }, useAdmin);
     if (!result) return;
     const {response, data} = result;
     if (!response.ok || !data.success) {
@@ -736,10 +785,11 @@ async function saveCoachAssistant(assistantId = null) {
 async function deleteCoachAssistant(assistantId) {
     if (!canEditCurrentCoach() || !currentCoachDetail) return;
     if (!confirm('确认删除这位助教？')) return;
-    const url = canManageSchedule
+    const useAdmin = canManageCoachProfiles();
+    const url = useAdmin
         ? `/api/admin/coach-assistants/${Number(assistantId)}`
         : `/api/coach/me/assistants/${Number(assistantId)}`;
-    const result = await coachJsonRequest(url, {method: 'DELETE'}, canManageSchedule);
+    const result = await coachJsonRequest(url, {method: 'DELETE'}, useAdmin);
     if (!result) return;
     const {response, data} = result;
     if (!response.ok || !data.success) {
@@ -772,14 +822,24 @@ async function loadCoachAccountStatus() {
         return;
     }
     if (status) {
+        const permissions = [];
+        if (data.can_manage_schedule) permissions.push('赛程');
+        if (data.can_manage_suspensions) permissions.push('伤停');
+        if (data.can_manage_candidate_lists) permissions.push('候选名单');
         status.textContent = data.exists
-            ? `当前账号：${data.username}${data.is_active ? '（启用）' : '（停用）'}`
+            ? `当前账号：${data.username}${data.is_active ? '（启用）' : '（停用）'} · 工作权限：${permissions.join('、') || '无'}`
             : '尚未设置教练账号';
     }
     const usernameInput = document.getElementById('coachAccountUsername');
     const activeInput = document.getElementById('coachAccountActive');
+    const scheduleInput = document.getElementById('coachAccountSchedule');
+    const suspensionsInput = document.getElementById('coachAccountSuspensions');
+    const candidatesInput = document.getElementById('coachAccountCandidates');
     if (usernameInput && data.username) usernameInput.value = data.username;
     if (activeInput) activeInput.checked = data.exists ? Boolean(data.is_active) : true;
+    if (scheduleInput) scheduleInput.checked = Boolean(data.can_manage_schedule);
+    if (suspensionsInput) suspensionsInput.checked = Boolean(data.can_manage_suspensions);
+    if (candidatesInput) candidatesInput.checked = Boolean(data.can_manage_candidate_lists);
 }
 
 async function saveCoachAccount() {
@@ -788,6 +848,9 @@ async function saveCoachAccount() {
         username: document.getElementById('coachAccountUsername')?.value || '',
         password: document.getElementById('coachAccountPassword')?.value || '',
         is_active: Boolean(document.getElementById('coachAccountActive')?.checked),
+        can_manage_schedule: Boolean(document.getElementById('coachAccountSchedule')?.checked),
+        can_manage_suspensions: Boolean(document.getElementById('coachAccountSuspensions')?.checked),
+        can_manage_candidate_lists: Boolean(document.getElementById('coachAccountCandidates')?.checked),
     };
     const result = await adminJsonRequest(`/api/admin/coaches/${encodeURIComponent(currentCoachDetail.uid)}/account`, {
         method: 'POST',

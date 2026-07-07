@@ -7,8 +7,12 @@ from sqlalchemy.orm import Session
 
 from schemas_read import (
     AdvancedAttributeSearchResponse,
+    AttributeBatchLookupResponse,
     AttributeSearchResponse,
     AttributeVersionsResponse,
+    CandidateListDetailResponse,
+    CandidateListPlayersResponse,
+    CandidateListSummaryResponse,
     CoachDetailResponse,
     CoachesResponse,
     CoachReactionActionResponse,
@@ -28,8 +32,8 @@ from schemas_read import (
     TeamResponse,
     WageDetailResponse,
 )
-from schemas_write import AdvancedAttributeSearchRequest, DataFeedbackRequest
-from services import coach_service, cup_service, data_feedback_service, export_service, player_ranking_service, project_update_service, read_service, reaction_service, site_note_service, suspension_service
+from schemas_write import AdvancedAttributeSearchRequest, AttributeBatchLookupRequest, DataFeedbackRequest
+from services import candidate_list_service, coach_service, cup_service, data_feedback_service, export_service, player_ranking_service, project_update_service, read_service, reaction_service, site_note_service, suspension_service
 
 REACTION_VISITOR_COOKIE_NAME = "heigo_reaction_visitor"
 REACTION_VISITOR_COOKIE_MAX_AGE_SECONDS = 31536000
@@ -129,6 +133,31 @@ def build_public_router(get_db):
     def get_cup_bracket(competition: str, db: Session = Depends(get_db)):
         return cup_service.get_bracket(db, competition)
 
+    @router.get("/api/candidate-lists", response_model=list[CandidateListSummaryResponse])
+    def get_candidate_lists(db: Session = Depends(get_db)):
+        return candidate_list_service.list_public_candidate_lists(db)
+
+    @router.get("/api/candidate-lists/{list_id}", response_model=CandidateListDetailResponse)
+    def get_candidate_list(list_id: int, db: Session = Depends(get_db)):
+        return candidate_list_service.get_candidate_list(db, list_id, public=True)
+
+    @router.get("/api/candidate-lists/{list_id}/players", response_model=CandidateListPlayersResponse)
+    def get_candidate_list_players(
+        list_id: int,
+        version: str | None = None,
+        limit: int = 500,
+        offset: int = 0,
+        db: Session = Depends(get_db),
+    ):
+        return candidate_list_service.get_candidate_list_players(
+            db,
+            list_id,
+            version=version,
+            limit=limit,
+            offset=offset,
+            public=True,
+        )
+
     @router.get("/api/attributes/search/{player_name}", response_model=list[AttributeSearchResponse])
     def search_player_attributes(
         player_name: str,
@@ -143,6 +172,13 @@ def build_public_router(get_db):
         db: Session = Depends(get_db),
     ):
         return read_service.search_player_attributes_advanced_service(db, request)
+
+    @router.post("/api/attributes/batch-lookup", response_model=AttributeBatchLookupResponse)
+    def batch_lookup_player_attributes(
+        request: AttributeBatchLookupRequest,
+        db: Session = Depends(get_db),
+    ):
+        return read_service.batch_lookup_player_attributes_service(db, request)
 
     @router.get("/api/attributes/versions", response_model=AttributeVersionsResponse)
     def get_attribute_versions(db: Session = Depends(get_db)):

@@ -24,6 +24,7 @@ const AppModules = {
             populateReactionLeaderboardTeamSelect();
         }
         if (typeof renderCompareDock === 'function') renderCompareDock();
+        if (typeof renderCandidateDock === 'function') renderCandidateDock();
     }},
     admin: {onEnter: () => {
         if (typeof syncAdminTabVisibility === 'function') {
@@ -62,6 +63,154 @@ function getActiveTabName() {
     return normalizeAppTabName(activeTab);
 }
 
+const MOBILE_PRIMARY_TABS = new Set(['home', 'players', 'competition', 'database']);
+
+function isMobileViewport() {
+    return window.matchMedia ? window.matchMedia('(max-width: 780px)').matches : window.innerWidth <= 780;
+}
+
+function closeMobileMoreMenu() {
+    const menu = document.getElementById('mobileMoreMenu');
+    const toggle = document.querySelector('[data-mobile-more-toggle]');
+    if (menu) {
+        menu.hidden = true;
+    }
+    if (toggle) {
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.classList.remove('is-open');
+    }
+}
+
+function toggleMobileMoreMenu(forceOpen) {
+    const menu = document.getElementById('mobileMoreMenu');
+    const toggle = document.querySelector('[data-mobile-more-toggle]');
+    if (!menu || !toggle) return;
+    const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : menu.hidden;
+    menu.hidden = !shouldOpen;
+    toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+    toggle.classList.toggle('is-open', shouldOpen);
+}
+
+function syncMobileNavState(options = {}) {
+    const activeTab = getActiveTabName();
+    document.querySelectorAll('[data-mobile-tab]').forEach(button => {
+        button.classList.toggle('active', button.dataset.mobileTab === activeTab);
+    });
+
+    const moreToggle = document.querySelector('[data-mobile-more-toggle]');
+    if (moreToggle) {
+        moreToggle.classList.toggle('active', APP_TAB_NAMES.has(activeTab) && !MOBILE_PRIMARY_TABS.has(activeTab));
+    }
+
+    const mobileAdminTab = document.getElementById('mobileAdminTab');
+    if (mobileAdminTab) {
+        mobileAdminTab.classList.toggle('hidden-tab', !(isAdmin || adminEntryUnlocked));
+    }
+
+    if (options.closeMenu !== false) {
+        closeMobileMoreMenu();
+    }
+}
+
+function initializeMobileNavigation() {
+    const menu = document.getElementById('mobileMoreMenu');
+    const toggle = document.querySelector('[data-mobile-more-toggle]');
+    if (!menu || !toggle) return;
+
+    document.addEventListener('click', event => {
+        if (menu.hidden) return;
+        if (menu.contains(event.target) || toggle.contains(event.target)) return;
+        closeMobileMoreMenu();
+    });
+
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            closeMobileMoreMenu();
+        }
+    });
+
+    window.addEventListener('resize', () => {
+        if (!isMobileViewport()) {
+            closeMobileMoreMenu();
+        }
+    });
+
+    syncMobileNavState({closeMenu: false});
+}
+
+function buildAppHistoryUrl(state) {
+    const normalized = normalizeHistoryState(state);
+    const url = new URL(window.location.href);
+    const params = url.searchParams;
+    ['tab', 'databaseSubtab', 'candidateList', 'q', 'version'].forEach(key => params.delete(key));
+
+    if (normalized.tab !== 'home') {
+        params.set('tab', normalized.tab);
+    }
+    if (normalized.tab === 'database') {
+        const database = normalized.database || {};
+        if (database.scopeType === 'candidate_list' && database.scopeId) {
+            params.set('candidateList', String(database.scopeId));
+        } else if (database.view === 'candidates' || database.subtab === 'candidates') {
+            params.set('databaseSubtab', 'candidates');
+        } else if (database.view === 'leaderboard' || database.subtab === 'leaderboard') {
+            params.set('databaseSubtab', 'leaderboard');
+        }
+        if (database.query) {
+            params.set('q', database.query);
+        }
+        if (database.attributeVersion) {
+            params.set('version', database.attributeVersion);
+        }
+    }
+
+    const query = params.toString();
+    return `${url.pathname}${query ? `?${query}` : ''}${url.hash}`;
+}
+
+function applyInitialUrlState(rawState) {
+    const state = normalizeHistoryState(rawState);
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    const candidateListId = Number(params.get('candidateList'));
+    const databaseSubtab = params.get('databaseSubtab');
+    const query = params.get('q');
+    const version = params.get('version');
+
+    if (tabParam) {
+        state.tab = normalizeAppTabName(tabParam);
+    }
+
+    if (Number.isFinite(candidateListId) && candidateListId > 0) {
+        state.tab = 'database';
+        state.database.subtab = 'search';
+        state.database.view = 'list';
+        state.database.scopeType = 'candidate_list';
+        state.database.scopeId = candidateListId;
+    } else if (state.tab === 'database' && databaseSubtab === 'candidates') {
+        state.database.subtab = 'candidates';
+        state.database.view = 'candidates';
+        state.database.scopeType = 'none';
+        state.database.scopeId = null;
+    } else if (state.tab === 'database' && databaseSubtab === 'leaderboard') {
+        state.database.subtab = 'leaderboard';
+        state.database.view = 'leaderboard';
+        state.database.scopeType = 'none';
+        state.database.scopeId = null;
+    }
+
+    if (state.tab === 'database') {
+        if (query !== null) {
+            state.database.query = query;
+        }
+        if (version !== null) {
+            state.database.attributeVersion = version;
+        }
+    }
+
+    return normalizeHistoryState(state, state.__appHistoryIndex);
+}
+
 function normalizeSortState(sortState, defaultType = 'number') {
     const field = typeof sortState?.field === 'string' ? sortState.field : '';
     const type = sortState?.type === 'text' ? 'text' : defaultType;
@@ -91,19 +240,25 @@ function capturePlayersHistoryState() {
 function captureDatabaseHistoryState() {
     const isDetailView = document.getElementById('dbDetailView')?.classList.contains('active');
     const isLeaderboardView = document.getElementById('dbReactionLeaderboardView')?.classList.contains('active');
+    const isCandidateView = document.getElementById('dbCandidateListsView')?.classList.contains('active');
     return {
         query: document.getElementById('dbPlayerSearch')?.value.trim() || '',
+        batch: typeof getDatabaseBatchRawValue === 'function'
+            ? getDatabaseBatchRawValue()
+            : (document.getElementById('dbBatchSearch')?.value || ''),
         attributeVersion: typeof getCurrentAttributeVersion === 'function' ? getCurrentAttributeVersion() : '',
         advancedFilters: typeof captureAdvancedDatabaseFilters === 'function' ? captureAdvancedDatabaseFilters() : {},
         sort: normalizeSortState(currentDbSort, 'number'),
-        subtab: currentDatabaseSubtab === 'leaderboard' ? 'leaderboard' : 'search',
+        subtab: currentDatabaseSubtab === 'leaderboard' ? 'leaderboard' : currentDatabaseSubtab === 'candidates' ? 'candidates' : 'search',
+        scopeType: databaseSearchScope?.type || 'none',
+        scopeId: databaseSearchScope?.id || null,
         leaderboardMetric: document.getElementById('dbReactionMetricSelect')?.value || 'flowers',
         leaderboardLimit: document.getElementById('dbReactionLimitSelect')?.value || '20',
         leaderboardTeam: document.getElementById('dbReactionTeamSelect')?.value || '',
-        view: isDetailView && currentDetailPlayer ? 'detail' : isLeaderboardView ? 'leaderboard' : 'list',
+        view: isDetailView && currentDetailPlayer ? 'detail' : isLeaderboardView ? 'leaderboard' : isCandidateView ? 'candidates' : 'list',
         detailUid: isDetailView && currentDetailPlayer ? Number(currentDetailPlayer.uid) || null : null,
         returnTab: normalizeAppTabName(dbDetailReturnState?.tab || 'database'),
-        returnSubtab: dbDetailReturnState?.subtab === 'leaderboard' ? 'leaderboard' : 'search',
+        returnSubtab: dbDetailReturnState?.subtab === 'leaderboard' ? 'leaderboard' : dbDetailReturnState?.subtab === 'candidates' ? 'candidates' : 'search',
     };
 }
 
@@ -141,21 +296,24 @@ function normalizeHistoryState(rawState, index = appHistoryIndex) {
         },
         database: {
             query: typeof baseState.database?.query === 'string' ? baseState.database.query : '',
+            batch: typeof baseState.database?.batch === 'string' ? baseState.database.batch : '',
             attributeVersion: typeof baseState.database?.attributeVersion === 'string' ? baseState.database.attributeVersion : '',
             advancedFilters: baseState.database?.advancedFilters && typeof baseState.database.advancedFilters === 'object'
                 ? baseState.database.advancedFilters
                 : {},
             sort: normalizeSortState(baseState.database?.sort, 'number'),
-            subtab: baseState.database?.subtab === 'leaderboard' ? 'leaderboard' : 'search',
+            subtab: baseState.database?.subtab === 'leaderboard' ? 'leaderboard' : baseState.database?.subtab === 'candidates' ? 'candidates' : 'search',
+            scopeType: baseState.database?.scopeType === 'candidate_list' ? 'candidate_list' : baseState.database?.scopeType === 'batch' ? 'batch' : 'none',
+            scopeId: Number.isFinite(Number(baseState.database?.scopeId)) ? Number(baseState.database.scopeId) : null,
             leaderboardMetric: typeof baseState.database?.leaderboardMetric === 'string' ? baseState.database.leaderboardMetric : 'flowers',
             leaderboardLimit: typeof baseState.database?.leaderboardLimit === 'string' ? baseState.database.leaderboardLimit : '20',
             leaderboardTeam: typeof baseState.database?.leaderboardTeam === 'string' ? baseState.database.leaderboardTeam : '',
-            view: baseState.database?.view === 'detail' ? 'detail' : baseState.database?.view === 'leaderboard' ? 'leaderboard' : 'list',
+            view: baseState.database?.view === 'detail' ? 'detail' : baseState.database?.view === 'leaderboard' ? 'leaderboard' : baseState.database?.view === 'candidates' ? 'candidates' : 'list',
             detailUid: Number.isFinite(Number(baseState.database?.detailUid))
                 ? Number(baseState.database.detailUid)
                 : null,
             returnTab: normalizeAppTabName(baseState.database?.returnTab || 'database'),
-            returnSubtab: baseState.database?.returnSubtab === 'leaderboard' ? 'leaderboard' : 'search',
+            returnSubtab: baseState.database?.returnSubtab === 'leaderboard' ? 'leaderboard' : baseState.database?.returnSubtab === 'candidates' ? 'candidates' : 'search',
         },
     };
 }
@@ -186,12 +344,12 @@ function syncAppHistory(mode = 'push') {
 
     if (mode === 'replace') {
         appHistoryIndex = nextState.__appHistoryIndex;
-        history.replaceState(nextState, '', window.location.href);
+        history.replaceState(nextState, '', buildAppHistoryUrl(nextState));
         return;
     }
 
     appHistoryIndex = nextState.__appHistoryIndex;
-    history.pushState(nextState, '', window.location.href);
+    history.pushState(nextState, '', buildAppHistoryUrl(nextState));
 }
 
 function canUseAppHistoryBack() {
@@ -241,6 +399,9 @@ async function restoreDatabaseHistoryState(databaseState) {
     if (searchInput) {
         searchInput.value = databaseState.query || '';
     }
+    if (typeof setDatabaseBatchRawValue === 'function') {
+        setDatabaseBatchRawValue(databaseState.batch || '');
+    }
 
     if (typeof loadAttributeVersionCatalog === 'function') {
         await loadAttributeVersionCatalog();
@@ -252,10 +413,10 @@ async function restoreDatabaseHistoryState(databaseState) {
         applyAdvancedDatabaseFiltersState(databaseState.advancedFilters, {renderPanel: false});
     }
     currentDbSort = normalizeSortState(databaseState.sort, 'number');
-    currentDatabaseSubtab = databaseState.subtab === 'leaderboard' ? 'leaderboard' : 'search';
+    currentDatabaseSubtab = databaseState.subtab === 'leaderboard' ? 'leaderboard' : databaseState.subtab === 'candidates' ? 'candidates' : 'search';
     dbDetailReturnState = {
         tab: normalizeAppTabName(databaseState.returnTab || 'database'),
-        subtab: databaseState.returnSubtab === 'leaderboard' ? 'leaderboard' : 'search',
+        subtab: databaseState.returnSubtab === 'leaderboard' ? 'leaderboard' : databaseState.returnSubtab === 'candidates' ? 'candidates' : 'search',
     };
     if (typeof syncDatabaseSubtabUI === 'function') {
         syncDatabaseSubtabUI();
@@ -284,12 +445,25 @@ async function restoreDatabaseHistoryState(databaseState) {
         return;
     }
 
+    if (databaseState.view === 'candidates' && typeof loadCandidateLists === 'function') {
+        if (typeof activateDatabaseView === 'function') {
+            activateDatabaseView('candidates');
+        }
+        await loadCandidateLists({pushHistory: false});
+        return;
+    }
+
+    if (databaseState.scopeType === 'candidate_list' && databaseState.scopeId && typeof enterCandidateListScope === 'function') {
+        await enterCandidateListScope(databaseState.scopeId, {pushHistory: false, query: databaseState.query || ''});
+        return;
+    }
+
     if (typeof activateDatabaseView === 'function') {
         activateDatabaseView('list');
     }
     currentDetailPlayer = null;
 
-    if ((databaseState.query || (typeof hasActiveAdvancedFilters === 'function' && hasActiveAdvancedFilters())) && typeof searchDatabase === 'function') {
+    if ((databaseState.query || databaseState.batch || (typeof hasActiveAdvancedFilters === 'function' && hasActiveAdvancedFilters())) && typeof searchDatabase === 'function') {
         await searchDatabase(databaseState.query, {pushHistory: false});
         return;
     }
@@ -336,9 +510,9 @@ async function initializeAppHistory() {
     const initialIndex = history.state?.__appHistory === APP_HISTORY_MARKER
         ? Number(history.state.__appHistoryIndex) || 0
         : 0;
-    const initialState = normalizeHistoryState(history.state, initialIndex);
+    const initialState = applyInitialUrlState(normalizeHistoryState(history.state, initialIndex));
     appHistoryIndex = initialState.__appHistoryIndex;
-    history.replaceState(initialState, '', window.location.href);
+    history.replaceState(initialState, '', buildAppHistoryUrl(initialState));
     appHistoryReady = true;
     await restoreAppHistoryState(initialState);
 }
@@ -348,6 +522,7 @@ async function init() {
     isDarkMode = savedTheme === 'dark';
     document.body.classList.toggle('light-mode', !isDarkMode);
     syncThemeToggleState();
+    initializeMobileNavigation();
     try {
         const [teamsRes, playersRes, infoRes, adminRes] = await Promise.all([
             fetch('/api/teams'),
@@ -366,6 +541,8 @@ async function init() {
         currentAdminRole = adminData.role || '';
         isAdmin = Boolean(adminData.authenticated && adminData.can_manage_admin);
         canManageSchedule = Boolean(adminData.authenticated && adminData.can_manage_schedule);
+        canManageSuspensions = Boolean(adminData.authenticated && adminData.can_manage_suspensions);
+        canManageCandidateLists = Boolean(adminData.authenticated && adminData.can_manage_candidate_lists);
         if (typeof syncCoachAuthStatus === 'function') {
             await syncCoachAuthStatus();
         }
@@ -445,6 +622,10 @@ function showTab(tabName, triggerElement = null, options = {}) {
     if (typeof renderCompareDock === 'function') {
         renderCompareDock();
     }
+    if (typeof renderCandidateDock === 'function') {
+        renderCandidateDock();
+    }
+    syncMobileNavState();
     if (options.syncHistory !== false) {
         syncAppHistory(options.historyMode || 'push');
     }

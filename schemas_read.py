@@ -15,6 +15,8 @@ class AuthStatusResponse(BaseModel):
     role: Optional[str] = None
     can_manage_admin: bool = False
     can_manage_schedule: bool = False
+    can_manage_suspensions: bool = False
+    can_manage_candidate_lists: bool = False
 
 
 class LogsResponse(BaseModel):
@@ -135,6 +137,19 @@ class TeamResponse(BaseModel):
     stat_sources: TeamStatSourcesResponse
 
 
+class MatchPlayerEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    match_id: int
+    team_id: Optional[int] = None
+    team_name: str
+    player_uid: Optional[int] = None
+    player_name: str
+    event_type: Literal["goal", "assist", "mvp"]
+    quantity: int = 1
+
+
 class MatchResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -148,11 +163,12 @@ class MatchResponse(BaseModel):
     away_team_name: str
     home_score: Optional[int] = None
     away_score: Optional[int] = None
-    status: Literal["scheduled", "played", "postponed", "cancelled"]
+    status: Literal["scheduled", "played", "postponed", "cancelled", "home_forfeit", "away_forfeit", "double_forfeit"]
     match_date: Optional[datetime] = None
     notes: Optional[str] = None
     source_file: Optional[str] = None
     updated_at: Optional[datetime] = None
+    events: list[MatchPlayerEventResponse] = Field(default_factory=list)
 
 
 class ScheduleResponse(BaseModel):
@@ -240,6 +256,7 @@ class PlayerRankingRowResponse(BaseModel):
     team_name: str
     goals: int = 0
     assists: int = 0
+    mvps: int = 0
     appearances: int = 0
 
 
@@ -334,6 +351,119 @@ class AdvancedAttributeSearchResponse(BaseModel):
     applied_filters_summary: list[str] = Field(default_factory=list)
 
 
+class AttributeBatchLookupResponse(BaseModel):
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    unmatched: list[str] = Field(default_factory=list)
+    data_version: str
+    token_count: int = 0
+
+
+class CandidateListSummaryResponse(BaseModel):
+    id: int
+    name: str
+    description: str = ""
+    type: str = "custom"
+    status: str = "draft"
+    base_data_version: str = ""
+    player_count: int = 0
+    published_player_count: int = 0
+    created_by: Optional[str] = None
+    updated_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    published_at: Optional[datetime] = None
+    published_by: Optional[str] = None
+    archived_at: Optional[datetime] = None
+    locked_at: Optional[datetime] = None
+
+
+class CandidateListDetailResponse(CandidateListSummaryResponse):
+    source_filters: dict[str, Any] = Field(default_factory=dict)
+    last_published_snapshot: dict[str, Any] = Field(default_factory=dict)
+
+
+class CandidateListPlayerResponse(BaseModel):
+    uid: int
+    data_version: str
+    name: str
+    position: str = ""
+    age: Optional[int] = None
+    ca: Optional[int] = None
+    pa: Optional[int] = None
+    nationality: str = ""
+    club: str = ""
+    heigo_club: str = ""
+    missing: bool = False
+    added_at: Optional[datetime] = None
+
+
+class CandidateListPlayersResponse(BaseModel):
+    list_id: int
+    name: str
+    data_version: str
+    total_count: int
+    matched_count: int
+    missing_count: int
+    limit: int
+    offset: int
+    items: list[CandidateListPlayerResponse] = Field(default_factory=list)
+
+
+class CandidateListPreviewCandidateResponse(BaseModel):
+    uid: int
+    name: str
+    data_version: str
+    position: str = ""
+    age: Optional[int] = None
+    ca: Optional[int] = None
+    pa: Optional[int] = None
+    club: str = ""
+    heigo_club: str = ""
+
+
+class CandidateListPreviewTokenResponse(BaseModel):
+    token: str
+    candidates: list[CandidateListPreviewCandidateResponse] = Field(default_factory=list)
+
+
+class CandidateListPlayerPreviewResponse(BaseModel):
+    matched: list[CandidateListPreviewCandidateResponse] = Field(default_factory=list)
+    ambiguous: list[CandidateListPreviewTokenResponse] = Field(default_factory=list)
+    unmatched: list[str] = Field(default_factory=list)
+    already_exists: list[CandidateListPreviewCandidateResponse] = Field(default_factory=list)
+    will_add_count: int = 0
+    data_version: str = ""
+
+
+class CandidateListRemovePreviewResponse(BaseModel):
+    matched: list[CandidateListPlayerResponse] = Field(default_factory=list)
+    ambiguous: list[CandidateListPreviewTokenResponse] = Field(default_factory=list)
+    unmatched: list[str] = Field(default_factory=list)
+    not_in_list: list[CandidateListPreviewCandidateResponse] = Field(default_factory=list)
+    will_remove_count: int = 0
+    data_version: str = ""
+
+
+class CandidateListMutationResponse(BaseModel):
+    success: bool = True
+    message: str = ""
+    list: Optional[CandidateListDetailResponse] = None
+    preview: Optional[CandidateListPlayerPreviewResponse] = None
+    added_count: int = 0
+    removed_count: int = 0
+
+
+class CandidateListPublishPreviewResponse(BaseModel):
+    list_id: int
+    name: str
+    previous_count: int = 0
+    current_count: int = 0
+    added_uids: list[int] = Field(default_factory=list)
+    removed_uids: list[int] = Field(default_factory=list)
+    kept_count: int = 0
+    missing_count: int = 0
+
+
 class PositionScoreResponse(BaseModel):
     position: str
     score: int
@@ -395,12 +525,18 @@ class CoachAccountPublicResponse(BaseModel):
     nickname: Optional[str] = None
     team_id: Optional[int] = None
     team_name: Optional[str] = None
+    can_manage_schedule: bool = False
+    can_manage_suspensions: bool = False
+    can_manage_candidate_lists: bool = False
 
 
 class CoachAccountAdminResponse(BaseModel):
     exists: bool = False
     username: Optional[str] = None
     is_active: bool = False
+    can_manage_schedule: bool = False
+    can_manage_suspensions: bool = False
+    can_manage_candidate_lists: bool = False
     last_login_at: Optional[datetime] = None
 
 

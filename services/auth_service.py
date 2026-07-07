@@ -1,8 +1,10 @@
+from datetime import datetime
+
 from fastapi import HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from auth_utils import cleanup_expired_sessions, create_session, delete_session, get_session_username, verify_password_and_upgrade
-from models import AdminUser
+from models import AdminUser, CoachAccount, CoachSession
 from repositories.admin_user_repository import get_admin_by_username
 from schemas_read import AuthStatusResponse
 from schemas_write import LoginResponse, LogoutResponse
@@ -57,6 +59,42 @@ def can_manage_admin(role: str | None) -> bool:
 
 def can_manage_schedule(role: str | None) -> bool:
     return normalize_admin_role(role) in {FULL_ADMIN_ROLE, SCHEDULE_EDITOR_ROLE}
+
+
+def can_manage_suspensions(role: str | None) -> bool:
+    return normalize_admin_role(role) in {FULL_ADMIN_ROLE, SCHEDULE_EDITOR_ROLE}
+
+
+def can_manage_candidate_lists(role: str | None) -> bool:
+    return normalize_admin_role(role) in {FULL_ADMIN_ROLE, SCHEDULE_EDITOR_ROLE}
+
+
+COACH_WORK_PERMISSION_FIELDS = {
+    "schedule": "can_manage_schedule",
+    "suspensions": "can_manage_suspensions",
+    "candidate_lists": "can_manage_candidate_lists",
+}
+
+
+def _get_active_coach_account_for_session(db: Session, session_token: str | None) -> CoachAccount | None:
+    if not session_token:
+        return None
+    db.query(CoachSession).filter(CoachSession.expires_at <= datetime.now()).delete()
+    session = db.query(CoachSession).filter(CoachSession.token == session_token).first()
+    if not session:
+        return None
+    account = db.query(CoachAccount).filter(CoachAccount.coach_uid == session.coach_uid).first()
+    if not account or not account.is_active:
+        return None
+    return account
+
+
+def get_coach_work_operator(db: Session, session_token: str | None, permission: str) -> str | None:
+    account = _get_active_coach_account_for_session(db, session_token)
+    field = COACH_WORK_PERMISSION_FIELDS.get(permission)
+    if not account or not field:
+        return None
+    return f"coach:{account.username}" if bool(getattr(account, field, 0)) else None
 
 
 def seed_default_admins(db: Session, admin_accounts: list[tuple[str, str] | tuple[str, str, str]]) -> None:
@@ -117,6 +155,8 @@ def login_admin(
         role=role,
         can_manage_admin=can_manage_admin(role),
         can_manage_schedule=can_manage_schedule(role),
+        can_manage_suspensions=can_manage_suspensions(role),
+        can_manage_candidate_lists=can_manage_candidate_lists(role),
     )
     _persist_auth_audit(
         db,
@@ -171,6 +211,8 @@ def get_auth_status(db: Session, username: str | None) -> AuthStatusResponse:
         role=role,
         can_manage_admin=can_manage_admin(role),
         can_manage_schedule=can_manage_schedule(role),
+        can_manage_suspensions=can_manage_suspensions(role),
+        can_manage_candidate_lists=can_manage_candidate_lists(role),
     )
 
 

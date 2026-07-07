@@ -52,8 +52,39 @@ COACH_AVATAR_PUBLIC_PREFIX = "/static/uploads/coaches/"
 COACH_SESSION_TTL = timedelta(days=14)
 COACH_HONOR_COMPETITIONS = {"超级杯", "冠军杯", "联盟杯", "无铭剑杯", "足总杯", "联赛杯", "联机联赛联盟杯", "世界杯", "新人赛", "超级联赛", "甲级联赛", "乙级联赛"}
 COACH_HONOR_PLACEMENTS = {"冠军", "亚军", "季军"}
-COACH_TITLE_COLORS = {"white", "green", "blue", "purple", "orange", "red", "rainbow"}
+COACH_TITLE_COLORS = {
+    "white",
+    "green",
+    "blue",
+    "purple",
+    "orange",
+    "red",
+    "gold",
+    "cyan",
+    "pink",
+    "emerald",
+    "silver",
+    "blackgold",
+    "rainbow",
+    "marquee",
+    "pulse",
+    "blink",
+    "jump",
+    "aurora",
+}
 COACH_ASSISTANT_LEVELS = {"全权助教", "正式助教", "实习助教"}
+
+
+def _public_static_path_exists(path: str | None) -> bool:
+    raw = str(path or "").strip()
+    if not raw.startswith("/static/"):
+        return False
+    return Path(raw.lstrip("/")).exists()
+
+
+def _safe_coach_avatar_path(path: str | None) -> str | None:
+    raw = str(path or "").strip()
+    return raw if _public_static_path_exists(raw) else None
 
 
 def _validate_coach_username(username: str) -> str:
@@ -185,7 +216,7 @@ def _coach_list_item(db: Session, coach: Coach, visitor_token: str | None = None
         team_id=coach.team_id,
         team_name=coach.team_name,
         level=coach.level,
-        avatar_path=coach.avatar_path,
+        avatar_path=_safe_coach_avatar_path(coach.avatar_path),
         title=coach.title,
         title_color=coach.title_color or "white",
         bio=coach.bio,
@@ -243,6 +274,14 @@ def _get_coach_account(db: Session, coach_uid: str) -> CoachAccount | None:
     return db.query(CoachAccount).filter(CoachAccount.coach_uid == coach_uid).first()
 
 
+def _coach_account_work_permissions(account: CoachAccount | None) -> dict[str, bool]:
+    return {
+        "can_manage_schedule": bool(getattr(account, "can_manage_schedule", 0)) if account else False,
+        "can_manage_suspensions": bool(getattr(account, "can_manage_suspensions", 0)) if account else False,
+        "can_manage_candidate_lists": bool(getattr(account, "can_manage_candidate_lists", 0)) if account else False,
+    }
+
+
 def get_coach_account_admin_status(db: Session, admin: str | None, coach_uid: str) -> CoachAccountAdminResponse:
     require_admin(admin)
     account = _get_coach_account(db, coach_uid)
@@ -252,6 +291,7 @@ def get_coach_account_admin_status(db: Session, admin: str | None, coach_uid: st
         exists=True,
         username=account.username,
         is_active=bool(account.is_active),
+        **_coach_account_work_permissions(account),
         last_login_at=account.last_login_at,
     )
 
@@ -268,18 +308,24 @@ def upsert_coach_account(
     if not coach:
         raise HTTPException(status_code=404, detail="教练不存在")
     username = _validate_coach_username(request.username)
-    password = _validate_coach_password(request.password)
     existing_username = db.query(CoachAccount).filter(CoachAccount.username == username).first()
     if existing_username and existing_username.coach_uid != coach_uid:
         raise HTTPException(status_code=400, detail="账号名已被其他教练使用")
     now = datetime.now()
     account = _get_coach_account(db, coach_uid)
     if not account:
+        password = _validate_coach_password(request.password or "")
         account = CoachAccount(coach_uid=coach_uid, created_at=now)
         db.add(account)
+        account.password_hash = hash_password(password)
+    elif str(request.password or "").strip():
+        password = _validate_coach_password(request.password or "")
+        account.password_hash = hash_password(password)
     account.username = username
-    account.password_hash = hash_password(password)
     account.is_active = 1 if request.is_active else 0
+    account.can_manage_schedule = 1 if request.can_manage_schedule else 0
+    account.can_manage_suspensions = 1 if request.can_manage_suspensions else 0
+    account.can_manage_candidate_lists = 1 if request.can_manage_candidate_lists else 0
     account.updated_at = now
     db.query(CoachSession).filter(CoachSession.coach_uid == coach_uid).delete()
     db.commit()
@@ -334,6 +380,7 @@ def get_coach_session_identity(db: Session, session_token: str | None) -> CoachA
         nickname=coach.nickname,
         team_id=coach.team_id,
         team_name=coach.team_name,
+        **_coach_account_work_permissions(account),
     )
 
 
@@ -356,6 +403,7 @@ def login_coach(db: Session, request: CoachLoginRequest) -> tuple[str, CoachAcco
         nickname=coach.nickname,
         team_id=coach.team_id,
         team_name=coach.team_name,
+        **_coach_account_work_permissions(account),
     )
 
 
@@ -416,7 +464,7 @@ def update_own_coach_profile(
     write_to_log: LogWriter,
 ) -> dict[str, Any]:
     coach = _require_coach_owner(db, session_token)
-    return _update_coach_profile_for_operator(db, f"coach:{coach.nickname}", coach.uid, request, write_to_log, allow_nickname=False, allow_title_color=False)
+    return _update_coach_profile_for_operator(db, f"coach:{coach.nickname}", coach.uid, request, write_to_log, allow_nickname=False, allow_title_color=True)
 
 
 def _update_coach_profile_for_operator(
@@ -439,7 +487,7 @@ def _update_coach_profile_for_operator(
     if allow_title_color:
         title_color = str(request.title_color or "white").strip().lower()
         if title_color not in COACH_TITLE_COLORS:
-            raise HTTPException(status_code=400, detail="称号颜色无效")
+            raise HTTPException(status_code=400, detail="称号样式无效")
         coach.title_color = title_color
     elif not coach.title_color:
         coach.title_color = "white"

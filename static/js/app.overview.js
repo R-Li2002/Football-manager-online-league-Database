@@ -414,7 +414,7 @@ function getOverviewTeamCrestText(teamName) {
 
 function canUploadTeamLogo(team) {
     if (!team) return false;
-    if (canManageSchedule) return true;
+    if (currentAdminRole && canManageSchedule) return true;
     return Boolean(currentCoachAccount?.authenticated && Number(currentCoachAccount.team_id) === Number(team.id));
 }
 
@@ -463,7 +463,7 @@ async function uploadTeamLogo(teamId) {
     }
     const formData = new FormData();
     formData.append('logo', file);
-    const endpoint = canManageSchedule
+    const endpoint = currentAdminRole && canManageSchedule
         ? `/api/admin/teams/${encodeURIComponent(team.id)}/logo`
         : '/api/coach/me/team-logo';
     try {

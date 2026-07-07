@@ -10,23 +10,64 @@ from fastapi import HTTPException
 from openpyxl import load_workbook
 from sqlalchemy.orm import Session
 
-from models import Match
+from models import Match, MatchPlayerEvent, Player, Team
 from repositories.match_repository import (
+    delete_match_events,
     delete_matches_not_in_keys,
     find_match_by_fixture,
     get_match_by_id,
+    list_match_events,
     list_matches,
     list_played_matches,
 )
-from repositories.team_repository import get_team_by_name, list_visible_teams
-from schemas_read import MatchResponse, ScheduleResponse, StandingRowResponse, StandingsResponse
-from schemas_write import MatchBatchUpdateRequest, MatchUpdateRequest, ScheduleImportResponse
+from repositories.player_repository import get_players_by_team_name, get_team_players
+from repositories.team_repository import get_team_by_id, get_team_by_name, list_visible_teams
+from schemas_read import MatchPlayerEventResponse, MatchResponse, ScheduleResponse, StandingRowResponse, StandingsResponse
+from schemas_write import MatchBatchUpdateRequest, MatchPlayerEventUpdateItem, MatchUpdateRequest, ScheduleImportResponse
 from services.admin_common import LogWriter, require_admin
 
 LEVEL_ORDER = {"超级": 1, "甲级": 2, "乙级": 3}
 VISIBLE_LEVEL = "隐藏"
-MATCH_STATUSES = {"scheduled", "played", "postponed", "cancelled"}
+FORFEIT_STATUSES = {"home_forfeit", "away_forfeit", "double_forfeit"}
+MATCH_STATUSES = {"scheduled", "played", "postponed", "cancelled", *FORFEIT_STATUSES}
+MATCH_EVENT_TYPES = {"goal", "assist", "mvp"}
 SCHEDULE_ROOT = Path("imports") / "schedules"
+SCHEDULE_TEAM_ALIASES = {
+    "A.Bilbao": "A. Bilbao",
+    "Ajax": "AFC Ajax",
+    "AS Roma": "Associazione Sportiva Roma",
+    "At Madrid": "A. Madrid",
+    "Bayern": "FC Bayern München",
+    "Benfica": "Sport Lisboa e Benfica",
+    "Boca": "Club Atlético Boca Juniors",
+    "Bournemouth": "AFC Bournemouth",
+    "Brighton": "Brighton & Hove Albion",
+    "Como": "Como 1907",
+    "Coventry": "Coventry City",
+    "Dortmund": "Borussia Dortmund",
+    "Frankfurt": "Eintracht Frankfurt",
+    "Heidenheim": "FC Heidenheim 1846",
+    "Leeds": "Leeds United",
+    "Leicester": "Leicester City",
+    "Man Utd": "Manchester United",
+    "Newcastle": "Newcastle United",
+    "Nottm Forest": "Nottingham Forest",
+    "OL": "Olympique Lyonnais",
+    "OM": "Olympique de Marseille",
+    "PSG": "Paris Saint-Germain",
+    "R.Madrid": "R. Madrid",
+    "RBL": "RB Leipzig",
+    "Schalke": "FC Schalke 04",
+    "Sheff Utd": "Sheffield United",
+    "Sporing CP": "Sporting Clube de Portugal",
+    "Strasbourg": "RC Strasbourg Alsace",
+    "Sturm Graz": "Sportklub Sturm Graz",
+    "Talleres": "Club Atlético Talleres de Córdoba",
+    "Tottenham": "Tottenham Hotspur",
+    "West Ham": "West Ham United",
+    "Wolves": "Wolverhampton Wanderers",
+    "Zhejiang": "Oriental Dragon",
+}
 
 
 @dataclass(frozen=True)
@@ -39,6 +80,37 @@ class ParsedFixture:
 
 def _normalize_cell(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _normalize_team_lookup_name(name: str) -> str:
+    return re.sub(
+        r"[^a-z0-9]+",
+        "",
+        re.sub(
+            r"\b(fc|cf|club|football|futebol|sport|sporting|association|associazione|olympique|de|of|the)\b",
+            "",
+            str(name or "").lower().replace("&", "and"),
+        ),
+    ).strip()
+
+
+def _resolve_schedule_team(db: Session, team_id: int | None, team_name: str) -> Team | None:
+    if team_id:
+        team = get_team_by_id(db, team_id)
+        if team:
+            return team
+    raw_name = str(team_name or "").strip()
+    alias_name = SCHEDULE_TEAM_ALIASES.get(raw_name, raw_name)
+    for candidate_name in (raw_name, alias_name):
+        team = get_team_by_name(db, candidate_name)
+        if team:
+            return team
+    normalized_names = {_normalize_team_lookup_name(raw_name), _normalize_team_lookup_name(alias_name)}
+    normalized_names.discard("")
+    for team in list_visible_teams(db, VISIBLE_LEVEL):
+        if _normalize_team_lookup_name(team.name) in normalized_names:
+            return team
+    return None
 
 
 def _normalize_level(sheet_title: str) -> str:
@@ -190,10 +262,18 @@ def import_latest_schedule(db: Session, admin: str | None, write_to_log: LogWrit
 
 def get_schedule(db: Session, *, level: str | None = None, round_no: int | None = None) -> ScheduleResponse:
     matches = list_matches(db, level=level, round_no=round_no)
+    events_by_match: dict[int, list[MatchPlayerEventResponse]] = {}
+    for event in list_match_events(db, {match.id for match in matches}):
+        events_by_match.setdefault(event.match_id, []).append(MatchPlayerEventResponse.model_validate(event))
+    responses = []
+    for match in matches:
+        response = MatchResponse.model_validate(match)
+        response.events = events_by_match.get(match.id, [])
+        responses.append(response)
     return ScheduleResponse(
         levels=sorted({match.level for match in matches}, key=lambda item: (LEVEL_ORDER.get(item, 99), item)),
         rounds=sorted({match.round_no for match in matches}),
-        matches=[MatchResponse.model_validate(match) for match in matches],
+        matches=responses,
     )
 
 
@@ -261,7 +341,26 @@ def get_standings(db: Session) -> StandingsResponse:
         away["away_goals_for"] += away_score
         away["away_goals_against"] += home_score
 
-        if home_score > away_score:
+        if match.status == "home_forfeit":
+            home["losses"] += 1
+            home["home_losses"] += 1
+            away["wins"] += 1
+            away["away_wins"] += 1
+            away["points"] += 3
+            away["away_points"] += 3
+        elif match.status == "away_forfeit":
+            home["wins"] += 1
+            home["home_wins"] += 1
+            home["points"] += 3
+            home["home_points"] += 3
+            away["losses"] += 1
+            away["away_losses"] += 1
+        elif match.status == "double_forfeit":
+            home["losses"] += 1
+            home["home_losses"] += 1
+            away["losses"] += 1
+            away["away_losses"] += 1
+        elif home_score > away_score:
             home["wins"] += 1
             home["home_wins"] += 1
             home["points"] += 3
@@ -335,12 +434,32 @@ def _normalize_status(request: MatchUpdateRequest) -> str:
     if not status:
         return "played" if has_score else "scheduled"
     if status not in MATCH_STATUSES:
-        raise HTTPException(status_code=400, detail="比赛状态仅支持 scheduled、played、postponed、cancelled")
+        raise HTTPException(status_code=400, detail="比赛状态仅支持 scheduled、played、postponed、cancelled 或判负状态")
     return status
+
+
+def _get_forfeit_score(status: str) -> tuple[int, int] | None:
+    if status == "home_forfeit":
+        return 0, 0
+    if status == "away_forfeit":
+        return 3, 0
+    if status == "double_forfeit":
+        return 0, 0
+    return None
 
 
 def _apply_match_result_update(match: Match, request: MatchUpdateRequest) -> None:
     status = _normalize_status(request)
+    forfeit_score = _get_forfeit_score(status)
+    if forfeit_score is not None:
+        match.home_score, match.away_score = forfeit_score
+        match.status = status
+        if hasattr(request, "match_date"):
+            match.match_date = _parse_match_date(request.match_date)
+        match.notes = str(request.notes or "").strip() or None
+        match.updated_at = datetime.now()
+        return
+
     if status == "played":
         if request.home_score is None or request.away_score is None:
             raise HTTPException(status_code=400, detail="已赛比赛必须填写双方比分")
@@ -356,6 +475,106 @@ def _apply_match_result_update(match: Match, request: MatchUpdateRequest) -> Non
     match.updated_at = datetime.now()
 
 
+def _player_belongs_to_team(player: Player, *, team_id: int | None, team_name: str) -> bool:
+    return (team_id is not None and player.team_id == team_id) or str(player.team_name or "") == team_name
+
+
+def _resolve_event_player(
+    team_players: list[Player],
+    item: MatchPlayerEventUpdateItem,
+    *,
+    team_name: str,
+) -> Player:
+    if item.player_uid is not None:
+        for player in team_players:
+            if player.uid == item.player_uid:
+                return player
+        raise HTTPException(status_code=400, detail=f"{team_name} 中未找到球员 UID：{item.player_uid}")
+
+    player_name = str(item.player_name or "").strip()
+    matches = [player for player in team_players if str(player.name or "").strip() == player_name]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise HTTPException(status_code=400, detail=f"{team_name} 中未找到球员：{player_name}")
+    raise HTTPException(status_code=400, detail=f"{team_name} 中存在重名球员，请使用 UID 选择：{player_name}")
+
+
+def _replace_match_player_events(db: Session, match: Match, request: MatchUpdateRequest) -> None:
+    delete_match_events(db, match.id)
+    if match.status != "played":
+        return
+
+    side_by_team_name = {}
+    for raw_team_id, raw_team_name, score in (
+        (match.home_team_id, str(match.home_team_name), int(match.home_score or 0)),
+        (match.away_team_id, str(match.away_team_name), int(match.away_score or 0)),
+    ):
+        team = _resolve_schedule_team(db, raw_team_id, raw_team_name)
+        canonical_team_id = team.id if team else raw_team_id
+        canonical_team_name = team.name if team else raw_team_name
+        players = get_team_players(db, team) if team else get_players_by_team_name(db, raw_team_name)
+        side = {
+            "team_id": canonical_team_id,
+            "team_name": canonical_team_name,
+            "match_team_name": raw_team_name,
+            "score": score,
+            "players": players,
+        }
+        for lookup_name in {raw_team_name, canonical_team_name, SCHEDULE_TEAM_ALIASES.get(raw_team_name, raw_team_name)}:
+            if lookup_name:
+                side_by_team_name[str(lookup_name)] = side
+    totals = {
+        id(side): {"goal": 0, "assist": 0}
+        for side in side_by_team_name.values()
+    }
+
+    for item in request.events or []:
+        event_type = str(item.event_type or "").strip().lower()
+        if event_type not in MATCH_EVENT_TYPES:
+            raise HTTPException(status_code=400, detail="比赛球员事件仅支持 goal、assist 或 mvp")
+        quantity = int(item.quantity or 0)
+        if quantity <= 0:
+            raise HTTPException(status_code=400, detail="球员事件数量必须大于 0")
+        if event_type == "mvp":
+            quantity = 1
+        team_name = str(item.team_name or "").strip()
+        side = side_by_team_name.get(team_name)
+        if not side:
+            raise HTTPException(status_code=400, detail=f"球员事件球队不属于本场比赛：{team_name}")
+        player = _resolve_event_player(side["players"], item, team_name=side["team_name"])
+        if not _player_belongs_to_team(player, team_id=side["team_id"], team_name=side["team_name"]):
+            raise HTTPException(status_code=400, detail=f"球员不属于 {side['team_name']}：{player.name}")
+
+        side_key = id(side)
+        if event_type in totals[side_key]:
+            totals[side_key][event_type] += quantity
+        db.add(
+            MatchPlayerEvent(
+                match_id=match.id,
+                team_id=side["team_id"],
+                team_name=side["team_name"],
+                player_uid=player.uid,
+                player_name=player.name,
+                event_type=event_type,
+                quantity=quantity,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+            )
+        )
+
+    checked_side_ids = set()
+    for side in side_by_team_name.values():
+        side_key = id(side)
+        if side_key in checked_side_ids:
+            continue
+        checked_side_ids.add(side_key)
+        if totals[side_key]["goal"] > side["score"]:
+            raise HTTPException(status_code=400, detail=f"{side['match_team_name']} 的进球明细数量不能超过比分 {side['score']}")
+        if totals[side_key]["assist"] > side["score"]:
+            raise HTTPException(status_code=400, detail=f"{side['match_team_name']} 的助攻数量不能超过进球数")
+
+
 def update_match_result(
     db: Session,
     admin: str | None,
@@ -369,6 +588,7 @@ def update_match_result(
         raise HTTPException(status_code=404, detail="比赛不存在")
 
     _apply_match_result_update(match, request)
+    _replace_match_player_events(db, match, request)
     db.commit()
 
     score_text = "-" if match.home_score is None or match.away_score is None else f"{match.home_score}-{match.away_score}"
@@ -403,8 +623,16 @@ def batch_update_match_results(
                 away_score=item.away_score,
                 status=item.status,
                 notes=item.notes,
+                events=item.events,
             ),
         )
+        _replace_match_player_events(db, match, MatchUpdateRequest(
+            home_score=item.home_score,
+            away_score=item.away_score,
+            status=item.status,
+            notes=item.notes,
+            events=item.events,
+        ))
         updated += 1
 
     db.commit()

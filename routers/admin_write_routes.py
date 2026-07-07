@@ -5,6 +5,15 @@ from fastapi import APIRouter, Cookie, Depends, File, Request, Response, UploadF
 from sqlalchemy.orm import Session
 
 from schemas_read import CoachAccountAdminResponse, CoachAccountPublicResponse
+from schemas_read import (
+    CandidateListDetailResponse,
+    CandidateListMutationResponse,
+    CandidateListPlayerPreviewResponse,
+    CandidateListPlayersResponse,
+    CandidateListPublishPreviewResponse,
+    CandidateListRemovePreviewResponse,
+    CandidateListSummaryResponse,
+)
 from schemas_write import (
     AdminActionResponse,
     AdminImportResponse,
@@ -19,6 +28,10 @@ from schemas_write import (
     CoachPasswordChangeRequest,
     CoachHonorUpdateRequest,
     CoachUpdateRequest,
+    CandidateListBatchRemoveRequest,
+    CandidateListPlayerCommitRequest,
+    CandidateListPlayerPreviewRequest,
+    CandidateListUpsertRequest,
     CupMatchResultUpdateRequest,
     CupMatchTeamsUpdateRequest,
     FishPlayerRequest,
@@ -36,7 +49,7 @@ from schemas_write import (
     TransferRequest,
     UpdateUidRequest,
 )
-from services import admin_write_service, auth_service, coach_service, team_logo_service
+from services import admin_write_service, auth_service, candidate_list_service, coach_service, team_logo_service
 
 COACH_SESSION_COOKIE_NAME = "coach_session_token"
 COACH_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"}
@@ -46,6 +59,9 @@ def build_admin_write_router(
     get_db,
     verify_admin,
     verify_schedule_editor,
+    verify_schedule_manager,
+    verify_suspension_manager,
+    verify_candidate_list_manager,
     set_session_cookie,
     clear_session_cookie,
     write_to_log,
@@ -183,6 +199,141 @@ def build_admin_write_router(
         admin: str = Depends(verify_schedule_editor),
     ):
         return team_logo_service.save_team_logo(db, admin, team_id, logo, write_to_log)
+
+    @router.get("/api/admin/candidate-lists", response_model=list[CandidateListSummaryResponse])
+    def admin_list_candidate_lists(
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.list_admin_candidate_lists(db)
+
+    @router.get("/api/admin/candidate-lists/{list_id}", response_model=CandidateListDetailResponse)
+    def admin_get_candidate_list(
+        list_id: int,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.get_candidate_list(db, list_id)
+
+    @router.get("/api/admin/candidate-lists/{list_id}/players", response_model=CandidateListPlayersResponse)
+    def admin_get_candidate_list_players(
+        list_id: int,
+        version: str | None = None,
+        limit: int = 500,
+        offset: int = 0,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.get_candidate_list_players(db, list_id, version=version, limit=limit, offset=offset)
+
+    @router.post("/api/admin/candidate-lists", response_model=CandidateListMutationResponse)
+    def admin_create_candidate_list(
+        request: CandidateListUpsertRequest,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.create_candidate_list(db, admin, request)
+
+    @router.patch("/api/admin/candidate-lists/{list_id}", response_model=CandidateListMutationResponse)
+    def admin_update_candidate_list(
+        list_id: int,
+        request: CandidateListUpsertRequest,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.update_candidate_list(db, admin, list_id, request)
+
+    @router.post("/api/admin/candidate-lists/{list_id}/publish-preview", response_model=CandidateListPublishPreviewResponse)
+    def admin_candidate_list_publish_preview(
+        list_id: int,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.publish_preview(db, list_id)
+
+    @router.post("/api/admin/candidate-lists/{list_id}/publish", response_model=CandidateListMutationResponse)
+    def admin_publish_candidate_list(
+        list_id: int,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.publish_candidate_list(db, admin, list_id)
+
+    @router.post("/api/admin/candidate-lists/{list_id}/unpublish", response_model=CandidateListMutationResponse)
+    def admin_unpublish_candidate_list(
+        list_id: int,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.unpublish_candidate_list(db, admin, list_id)
+
+    @router.post("/api/admin/candidate-lists/{list_id}/archive", response_model=CandidateListMutationResponse)
+    def admin_archive_candidate_list(
+        list_id: int,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.archive_candidate_list(db, admin, list_id)
+
+    @router.post("/api/admin/candidate-lists/{list_id}/duplicate", response_model=CandidateListMutationResponse)
+    def admin_duplicate_candidate_list(
+        list_id: int,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.duplicate_candidate_list(db, admin, list_id)
+
+    @router.post("/api/admin/candidate-lists/{list_id}/lock", response_model=CandidateListMutationResponse)
+    def admin_lock_candidate_list(
+        list_id: int,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.lock_candidate_list(db, admin, list_id)
+
+    @router.post("/api/admin/candidate-lists/{list_id}/unlock", response_model=CandidateListMutationResponse)
+    def admin_unlock_candidate_list(
+        list_id: int,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.unlock_candidate_list(db, admin, list_id)
+
+    @router.post("/api/admin/candidate-lists/{list_id}/players/preview", response_model=CandidateListPlayerPreviewResponse)
+    def admin_preview_candidate_list_players(
+        list_id: int,
+        request: CandidateListPlayerPreviewRequest,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.preview_candidate_list_players(db, list_id, request)
+
+    @router.post("/api/admin/candidate-lists/{list_id}/players/commit", response_model=CandidateListMutationResponse)
+    def admin_commit_candidate_list_players(
+        list_id: int,
+        request: CandidateListPlayerCommitRequest,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.commit_candidate_list_players(db, admin, list_id, request)
+
+    @router.post("/api/admin/candidate-lists/{list_id}/players/remove-preview", response_model=CandidateListRemovePreviewResponse)
+    def admin_preview_candidate_list_player_removals(
+        list_id: int,
+        request: CandidateListBatchRemoveRequest,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.preview_candidate_list_player_removals(db, list_id, request)
+
+    @router.post("/api/admin/candidate-lists/{list_id}/players/batch-remove", response_model=CandidateListMutationResponse)
+    def admin_remove_candidate_list_players(
+        list_id: int,
+        request: CandidateListBatchRemoveRequest,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        return candidate_list_service.remove_candidate_list_players(db, admin, list_id, request)
 
     @router.post("/api/admin/coach-honors", response_model=AdminActionResponse)
     def create_coach_honor(
@@ -344,14 +495,14 @@ def build_admin_write_router(
         return admin_write_service.import_current_league_data(db, admin, write_to_log)
 
     @router.post("/api/admin/matches/import", response_model=ScheduleImportResponse)
-    def import_latest_schedule(db: Session = Depends(get_db), admin: str = Depends(verify_schedule_editor)):
+    def import_latest_schedule(db: Session = Depends(get_db), admin: str = Depends(verify_schedule_manager)):
         return admin_write_service.import_latest_schedule(db, admin, write_to_log)
 
     @router.patch("/api/admin/matches/batch", response_model=AdminActionResponse)
     def batch_update_match_results(
         request: MatchBatchUpdateRequest,
         db: Session = Depends(get_db),
-        admin: str = Depends(verify_schedule_editor),
+        admin: str = Depends(verify_schedule_manager),
     ):
         return admin_write_service.batch_update_match_results(db, admin, request, write_to_log)
 
@@ -360,7 +511,7 @@ def build_admin_write_router(
         match_id: int,
         request: MatchUpdateRequest,
         db: Session = Depends(get_db),
-        admin: str = Depends(verify_schedule_editor),
+        admin: str = Depends(verify_schedule_manager),
     ):
         return admin_write_service.update_match_result(db, admin, match_id, request, write_to_log)
 
@@ -368,7 +519,7 @@ def build_admin_write_router(
     def update_suspension_record(
         request: SuspensionRecordUpdateRequest,
         db: Session = Depends(get_db),
-        admin: str = Depends(verify_schedule_editor),
+        admin: str = Depends(verify_suspension_manager),
     ):
         return admin_write_service.update_suspension_record(db, admin, request, write_to_log)
 
@@ -377,7 +528,7 @@ def build_admin_write_router(
         note_key: str,
         request: SiteNoteUpdateRequest,
         db: Session = Depends(get_db),
-        admin: str = Depends(verify_schedule_editor),
+        admin: str = Depends(verify_suspension_manager),
     ):
         return admin_write_service.update_site_note(db, admin, note_key, request, write_to_log)
 
@@ -385,7 +536,7 @@ def build_admin_write_router(
     def initialize_cup_bracket(
         competition: str,
         db: Session = Depends(get_db),
-        admin: str = Depends(verify_schedule_editor),
+        admin: str = Depends(verify_schedule_manager),
     ):
         return admin_write_service.initialize_cup_bracket(db, admin, competition, write_to_log)
 
@@ -394,7 +545,7 @@ def build_admin_write_router(
         match_id: int,
         request: CupMatchTeamsUpdateRequest,
         db: Session = Depends(get_db),
-        admin: str = Depends(verify_schedule_editor),
+        admin: str = Depends(verify_schedule_manager),
     ):
         return admin_write_service.update_cup_match_teams(db, admin, match_id, request, write_to_log)
 
@@ -403,7 +554,7 @@ def build_admin_write_router(
         match_id: int,
         request: CupMatchResultUpdateRequest,
         db: Session = Depends(get_db),
-        admin: str = Depends(verify_schedule_editor),
+        admin: str = Depends(verify_schedule_manager),
     ):
         return admin_write_service.update_cup_match_result(db, admin, match_id, request, write_to_log)
 

@@ -25,6 +25,7 @@ INTERNAL_SHARE_HEADER_NAME = "X-Internal-Share-Token"
 INTERNAL_RENDER_SIGNING_KEY = os.environ.get("INTERNAL_RENDER_SIGNING_KEY", "").strip()
 SHARE_CACHE_ROOT = os.environ.get("HEIGO_SHARE_CACHE_ROOT", "data/share-cache").strip() or "data/share-cache"
 SHARE_TEMPLATE_VERSION = int(os.environ.get("HEIGO_SHARE_TEMPLATE_VERSION", "2"))
+COACH_SESSION_COOKIE_NAME = "coach_session_token"
 
 
 def get_db():
@@ -49,6 +50,51 @@ def verify_schedule_editor(session_token: Optional[str] = Cookie(None), db: Sess
     username = get_session_username(db, session_token)
     role = auth_service.get_admin_role(db, username)
     return username if auth_service.can_manage_schedule(role) else None
+
+
+def verify_schedule_manager(
+    session_token: Optional[str] = Cookie(None),
+    coach_session_token: Optional[str] = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+    db: Session = Depends(get_db),
+):
+    username = get_session_username(db, session_token)
+    role = auth_service.get_admin_role(db, username)
+    if username and auth_service.can_manage_schedule(role):
+        return username
+    coach_operator = auth_service.get_coach_work_operator(db, coach_session_token, "schedule")
+    if coach_operator:
+        return coach_operator
+    raise HTTPException(status_code=401, detail="未授权")
+
+
+def verify_suspension_manager(
+    session_token: Optional[str] = Cookie(None),
+    coach_session_token: Optional[str] = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+    db: Session = Depends(get_db),
+):
+    username = get_session_username(db, session_token)
+    role = auth_service.get_admin_role(db, username)
+    if username and auth_service.can_manage_suspensions(role):
+        return username
+    coach_operator = auth_service.get_coach_work_operator(db, coach_session_token, "suspensions")
+    if coach_operator:
+        return coach_operator
+    raise HTTPException(status_code=401, detail="未授权")
+
+
+def verify_candidate_list_manager(
+    session_token: Optional[str] = Cookie(None),
+    coach_session_token: Optional[str] = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+    db: Session = Depends(get_db),
+):
+    username = get_session_username(db, session_token)
+    role = auth_service.get_admin_role(db, username)
+    if username and auth_service.can_manage_candidate_lists(role):
+        return username
+    coach_operator = auth_service.get_coach_work_operator(db, coach_session_token, "candidate_lists")
+    if coach_operator:
+        return coach_operator
+    raise HTTPException(status_code=401, detail="未授权")
 
 
 def health_check():
@@ -133,6 +179,9 @@ def _register_routes(app: FastAPI) -> None:
             get_db=get_db,
             verify_admin=verify_admin,
             verify_schedule_editor=verify_schedule_editor,
+            verify_schedule_manager=verify_schedule_manager,
+            verify_suspension_manager=verify_suspension_manager,
+            verify_candidate_list_manager=verify_candidate_list_manager,
             set_session_cookie=set_session_cookie,
             clear_session_cookie=clear_session_cookie,
             write_to_log=write_to_log,
