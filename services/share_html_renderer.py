@@ -85,8 +85,17 @@ def build_player_share_page_html(
     version: str | None = None,
     step: int = 0,
     theme: str = "dark",
+    heigo_power: float | None = None,
+    top_percent: float | None = None,
 ) -> str:
-    model = build_player_share_card_model(player, version=version, step=step, theme=theme)
+    model = build_player_share_card_model(
+        player,
+        version=version,
+        step=step,
+        theme=theme,
+        heigo_power=heigo_power,
+        top_percent=top_percent,
+    )
     tokens = _theme_tokens(model.theme)
     version_suffix = f" · {model.version_label}" if model.version_label else ""
     weak_foot_copy = f" · {model.weak_foot_label}" if model.weak_foot_label else ""
@@ -166,6 +175,12 @@ def build_player_share_page_html(
         .identity h1 {{ margin: 0 0 8px; font-size: 40px; line-height: 1; }}
         .uid {{ color: var(--muted); font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }}
         .info-list {{ display: grid; gap: 8px; margin-top: 16px; }}
+        .power-grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--accent-soft); }}
+        .power-item {{ min-width: 0; }}
+        .power-item + .power-item {{ padding-left: 12px; border-left: 1px solid var(--line); }}
+        .power-label {{ color: var(--muted); font-size: 12px; font-weight: 800; }}
+        .power-value {{ margin-top: 7px; color: var(--accent); font-size: 26px; line-height: 1; font-weight: 900; font-variant-numeric: tabular-nums; }}
+        .power-percent {{ margin-left: 5px; color: var(--text); font-size: 11px; font-weight: 800; }}
         .info-row {{ display: grid; grid-template-columns: 110px 1fr; gap: 12px; align-items: center; padding-bottom: 8px; border-bottom: 1px solid var(--line); }}
         .info-row:last-child {{ border-bottom: none; padding-bottom: 0; }}
         .label {{ color: var(--muted); font-size: 13px; }}
@@ -207,6 +222,10 @@ def build_player_share_page_html(
                     <section class="info-card identity">
                         <h1>{escape(model.player_name)}</h1>
                         <div class="uid">UID: {model.uid}{escape(version_suffix)}</div>
+                        <div class="power-grid">
+                            <div class="power-item"><div class="power-label">加权战力值</div><div class="power-value">{escape(model.weighted_power_value)}</div></div>
+                            <div class="power-item"><div class="power-label">HEIGO战力 <span class="power-percent">{escape(model.top_percent_label)}</span></div><div class="power-value">{escape(model.heigo_power_value)}</div></div>
+                        </div>
                         <div class="info-list">{info_rows_markup}</div>
                     </section>
                     <section class="info-card">

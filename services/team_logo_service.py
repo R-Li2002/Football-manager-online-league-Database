@@ -45,6 +45,10 @@ def save_own_team_logo(
     identity = get_coach_session_identity(db, session_token)
     if not identity.authenticated or not identity.coach_uid:
         raise HTTPException(status_code=401, detail="请先登录教练账号")
+    if identity.must_change_password:
+        raise HTTPException(status_code=403, detail="首次登录必须先修改默认密码")
+    if not identity.qq_number:
+        raise HTTPException(status_code=403, detail="请先绑定 QQ 号后再使用教练功能")
     coach = db.query(Coach).filter(Coach.uid == identity.coach_uid).first()
     if not coach or not coach.team_id:
         raise HTTPException(status_code=403, detail="当前教练未绑定联赛球队")

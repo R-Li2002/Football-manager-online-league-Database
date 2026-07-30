@@ -1,16 +1,26 @@
 import unittest
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import Coach, CoachAccount, CoachHonor, CoachSession, Team
-from schemas_write import CoachAccountUpsertRequest, CoachHonorUpdateRequest, CoachLoginRequest, CoachUpdateRequest
+from models import Coach, CoachAccount, CoachHonor, CoachReactionEvent, CoachReactionSummary, CoachSession, Team
+from schemas_write import (
+    CoachAccountUpsertRequest,
+    CoachHonorUpdateRequest,
+    CoachLoginRequest,
+    CoachMergeRequest,
+    CoachPasswordChangeRequest,
+    CoachQqBindingRequest,
+    CoachTeamAssignmentRequest,
+    CoachUpdateRequest,
+)
 from services import coach_service
 
 
@@ -75,6 +85,105 @@ class CoachServiceTest(unittest.TestCase):
         self.assertEqual(detail.nickname, "Coach A+")
         self.assertEqual(detail.title, "冠军教头")
         self.assertEqual(detail.honors[0].honor, "冠军")
+        self.assertEqual(self.db.query(Team).filter(Team.name == "Alpha").one().manager, "Coach A+")
+
+    def test_assign_coach_team_updates_team_manager_and_unbinds_previous_coach(self):
+        payload = coach_service.get_coaches(self.db)
+        coach_a = next(item for item in payload.coaches if item.nickname == "Coach A")
+        beta = self.db.query(Team).filter(Team.name == "Beta").one()
+
+        coach_service.assign_coach_team(
+            self.db,
+            "admin",
+            coach_a.uid,
+            CoachTeamAssignmentRequest(team_id=beta.id),
+            lambda *_args: None,
+        )
+
+        previous_beta_coach = self.db.query(Coach).filter(Coach.nickname == "Coach B").one()
+        self.assertIsNone(previous_beta_coach.team_id)
+        self.assertEqual(beta.manager, "Coach A")
+        self.assertEqual(self.db.query(Team).filter(Team.name == "Alpha").one().manager, "-")
+
+    def test_merge_coach_moves_profile_data_reactions_and_selected_account(self):
+        payload = coach_service.get_coaches(self.db)
+        source = next(item for item in payload.coaches if item.nickname == "Coach A")
+        target = next(item for item in payload.coaches if item.nickname == "Coach B")
+        source_row = self.db.query(Coach).filter(Coach.uid == source.uid).one()
+        target_row = self.db.query(Coach).filter(Coach.uid == target.uid).one()
+        source_row.team_id = None
+        source_row.team_name = None
+        source_row.level = None
+        target_row.bio = None
+        source_row.bio = "旧资料"
+        self.db.add_all([
+            CoachAccount(coach_uid=source.uid, username="old-login", password_hash="old-hash"),
+            CoachAccount(coach_uid=target.uid, username="new-login", password_hash="new-hash"),
+            CoachHonor(coach_uid=source.uid, honor="冠军"),
+            CoachReactionSummary(coach_uid=source.uid, flowers=2, eggs=3),
+            CoachReactionSummary(coach_uid=target.uid, flowers=5, eggs=7),
+            CoachReactionEvent(coach_uid=source.uid, visitor_token="visitor", reaction_type="flower", created_at=datetime.now()),
+        ])
+        self.db.commit()
+
+        response = coach_service.merge_coach(
+            self.db,
+            "admin",
+            source.uid,
+            CoachMergeRequest(target_coach_uid=target.uid),
+            lambda *_args: None,
+        )
+
+        self.assertTrue(response["success"])
+        self.assertIsNone(self.db.query(Coach).filter(Coach.uid == source.uid).first())
+        self.assertEqual(self.db.query(Coach).filter(Coach.uid == target.uid).one().bio, "旧资料")
+        self.assertEqual(self.db.query(CoachHonor).one().coach_uid, target.uid)
+        self.assertEqual(self.db.query(CoachReactionEvent).one().coach_uid, target.uid)
+        summary = self.db.query(CoachReactionSummary).filter(CoachReactionSummary.coach_uid == target.uid).one()
+        self.assertEqual((summary.flowers, summary.eggs), (7, 10))
+        account = self.db.query(CoachAccount).one()
+        self.assertEqual((account.coach_uid, account.username), (target.uid, "new-login"))
+
+    def test_new_account_requires_password_change_then_can_bind_and_login_with_qq(self):
+        payload = coach_service.get_coaches(self.db)
+        coach_uid = payload.coaches[0].uid
+        coach_service.upsert_coach_account(
+            self.db,
+            "admin",
+            coach_uid,
+            CoachAccountUpsertRequest(username="coach-login", password="default123"),
+            lambda *_args: None,
+        )
+
+        token, identity = coach_service.login_coach(self.db, CoachLoginRequest(username="coach-login", password="default123"))
+        self.assertTrue(identity.must_change_password)
+        coach_service.change_own_coach_password(
+            self.db,
+            token,
+            CoachPasswordChangeRequest(current_password="default123", new_password="private456"),
+            lambda *_args: None,
+        )
+        with self.assertRaises(HTTPException) as blocked:
+            coach_service.update_own_coach_profile(
+                self.db,
+                token,
+                CoachUpdateRequest(title="不应保存"),
+                lambda *_args: None,
+            )
+        self.assertEqual(blocked.exception.status_code, 403)
+        coach_service.bind_own_coach_qq(
+            self.db,
+            token,
+            CoachQqBindingRequest(qq_number="12345678", current_password="private456"),
+            lambda *_args: None,
+        )
+
+        _qq_token, qq_identity = coach_service.login_coach(
+            self.db,
+            CoachLoginRequest(username="12345678", password="private456"),
+        )
+        self.assertFalse(qq_identity.must_change_password)
+        self.assertEqual(qq_identity.qq_number, "12345678")
 
     def test_delete_honor(self):
         payload = coach_service.get_coaches(self.db)

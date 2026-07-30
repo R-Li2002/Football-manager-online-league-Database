@@ -9,7 +9,7 @@ import secrets
 from typing import Any
 
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import case
+from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 
 from auth_utils import hash_password, verify_password
@@ -30,7 +30,10 @@ from schemas_write import (
     CoachAssistantUpdateRequest,
     CoachHonorUpdateRequest,
     CoachLoginRequest,
+    CoachMergeRequest,
     CoachPasswordChangeRequest,
+    CoachQqBindingRequest,
+    CoachTeamAssignmentRequest,
     CoachUpdateRequest,
 )
 from services.admin_common import LogWriter, require_admin
@@ -101,6 +104,13 @@ def _validate_coach_password(password: str) -> str:
     return normalized
 
 
+def _validate_qq_number(qq_number: str) -> str:
+    normalized = re.sub(r"\s+", "", str(qq_number or ""))
+    if not re.fullmatch(r"[1-9]\d{4,11}", normalized):
+        raise HTTPException(status_code=400, detail="QQ号需为 5-12 位数字，且不能以 0 开头")
+    return normalized
+
+
 def _coach_uid_for_nickname(nickname: str) -> str:
     normalized = re.sub(r"\s+", " ", str(nickname or "").strip())
     digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
@@ -158,6 +168,124 @@ def sync_coaches_from_teams(db: Session, admin: str | None, write_to_log: LogWri
     created = refresh_coach_assignments(db)
     write_to_log("教练同步", f"从球队主教练字段同步，新增 {created} 名教练", operator)
     return {"success": True, "message": f"教练同步完成，新增 {created} 名"}
+
+
+def assign_coach_team(
+    db: Session,
+    admin: str | None,
+    coach_uid: str,
+    request: CoachTeamAssignmentRequest,
+    write_to_log: LogWriter,
+) -> dict[str, Any]:
+    operator = require_admin(admin)
+    coach = db.query(Coach).filter(Coach.uid == coach_uid).first()
+    if not coach:
+        raise HTTPException(status_code=404, detail="教练不存在")
+
+    now = datetime.now()
+    previous_team = db.query(Team).filter(Team.id == coach.team_id).first() if coach.team_id else None
+    if request.team_id is None:
+        if previous_team and str(previous_team.manager or "").strip() == coach.nickname:
+            previous_team.manager = "-"
+        coach.team_id = None
+        coach.team_name = None
+        coach.level = None
+        coach.updated_at = now
+        db.commit()
+        write_to_log("教练球队关联", f"{coach.nickname} 已解除球队关联", operator)
+        return {"success": True, "message": "已解除教练与球队的关联"}
+
+    team = db.query(Team).filter(Team.id == request.team_id, Team.level.in_(LEAGUE_LEVELS)).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="球队不存在或不在当前三级联赛")
+
+    if previous_team and previous_team.id != team.id and str(previous_team.manager or "").strip() == coach.nickname:
+        previous_team.manager = "-"
+    for other in db.query(Coach).filter(Coach.team_id == team.id, Coach.uid != coach.uid).all():
+        other.team_id = None
+        other.team_name = None
+        other.level = None
+        other.updated_at = now
+    team.manager = coach.nickname
+    coach.team_id = team.id
+    coach.team_name = team.name
+    coach.level = team.level
+    coach.updated_at = now
+    db.commit()
+    write_to_log("教练球队关联", f"{coach.nickname} -> {team.name}", operator)
+    return {"success": True, "message": f"已将 {coach.nickname} 关联到 {team.name}"}
+
+
+def merge_coach(
+    db: Session,
+    admin: str | None,
+    source_coach_uid: str,
+    request: CoachMergeRequest,
+    write_to_log: LogWriter,
+) -> dict[str, Any]:
+    operator = require_admin(admin)
+    target_uid = str(request.target_coach_uid or "").strip()
+    if not target_uid or target_uid == source_coach_uid:
+        raise HTTPException(status_code=400, detail="请选择另一个教练作为合并目标")
+    source = db.query(Coach).filter(Coach.uid == source_coach_uid).first()
+    target = db.query(Coach).filter(Coach.uid == target_uid).first()
+    if not source or not target:
+        raise HTTPException(status_code=404, detail="来源教练或目标教练不存在")
+    if source.team_id and target.team_id and source.team_id != target.team_id:
+        raise HTTPException(status_code=400, detail="两个教练分别关联不同球队，请先确认球队归属")
+    source_nickname = source.nickname
+    target_nickname = target.nickname
+
+    source_account = _get_coach_account(db, source.uid)
+    target_account = _get_coach_account(db, target.uid)
+
+    now = datetime.now()
+    team_id = target.team_id or source.team_id
+    if team_id:
+        team = db.query(Team).filter(Team.id == team_id).first()
+        if team:
+            team.manager = target.nickname
+            target.team_id = team.id
+            target.team_name = team.name
+            target.level = team.level
+    for team in db.query(Team).filter(Team.manager == source.nickname).all():
+        team.manager = target.nickname
+
+    target.avatar_path = target.avatar_path or source.avatar_path
+    target.title = target.title or source.title
+    target.title_color = target.title_color or source.title_color
+    target.bio = target.bio or source.bio
+    if source.created_at and (not target.created_at or source.created_at < target.created_at):
+        target.created_at = source.created_at
+    target.updated_at = now
+
+    db.query(CoachHonor).filter(CoachHonor.coach_uid == source.uid).update({CoachHonor.coach_uid: target.uid}, synchronize_session=False)
+    db.query(CoachAssistant).filter(CoachAssistant.coach_uid == source.uid).update({CoachAssistant.coach_uid: target.uid}, synchronize_session=False)
+    db.query(CoachReactionEvent).filter(CoachReactionEvent.coach_uid == source.uid).update({CoachReactionEvent.coach_uid: target.uid}, synchronize_session=False)
+
+    source_summary = _get_reaction_summary(db, source.uid)
+    target_summary = _get_reaction_summary(db, target.uid)
+    if source_summary:
+        if target_summary:
+            target_summary.flowers += source_summary.flowers
+            target_summary.eggs += source_summary.eggs
+            target_summary.updated_at = now
+            db.delete(source_summary)
+        else:
+            source_summary.coach_uid = target.uid
+            source_summary.updated_at = now
+
+    db.query(CoachSession).filter(CoachSession.coach_uid.in_([source.uid, target.uid])).delete(synchronize_session=False)
+    if source_account:
+        db.delete(source_account)
+
+    kept_username = target_account.username if target_account else None
+    db.flush()
+    db.delete(source)
+    db.commit()
+    account_note = f"，保留登录账号 {kept_username}" if kept_username else ""
+    write_to_log("教练合并", f"{source_nickname} -> {target_nickname}{account_note}", operator)
+    return {"success": True, "message": f"已将 {source_nickname} 合并到 {target_nickname}{account_note}"}
 
 
 def _remaining_cooldown_seconds(latest_reaction_at: datetime | None, now: datetime) -> int:
@@ -290,7 +418,9 @@ def get_coach_account_admin_status(db: Session, admin: str | None, coach_uid: st
     return CoachAccountAdminResponse(
         exists=True,
         username=account.username,
+        qq_number=account.qq_number,
         is_active=bool(account.is_active),
+        must_change_password=bool(account.must_change_password),
         **_coach_account_work_permissions(account),
         last_login_at=account.last_login_at,
     )
@@ -311,6 +441,9 @@ def upsert_coach_account(
     existing_username = db.query(CoachAccount).filter(CoachAccount.username == username).first()
     if existing_username and existing_username.coach_uid != coach_uid:
         raise HTTPException(status_code=400, detail="账号名已被其他教练使用")
+    qq_collision = db.query(CoachAccount).filter(CoachAccount.qq_number == username, CoachAccount.coach_uid != coach_uid).first()
+    if qq_collision:
+        raise HTTPException(status_code=400, detail="该账号名已被其他教练绑定为 QQ 号")
     now = datetime.now()
     account = _get_coach_account(db, coach_uid)
     if not account:
@@ -318,9 +451,11 @@ def upsert_coach_account(
         account = CoachAccount(coach_uid=coach_uid, created_at=now)
         db.add(account)
         account.password_hash = hash_password(password)
+        account.must_change_password = 1
     elif str(request.password or "").strip():
         password = _validate_coach_password(request.password or "")
         account.password_hash = hash_password(password)
+        account.must_change_password = 1
     account.username = username
     account.is_active = 1 if request.is_active else 0
     account.can_manage_schedule = 1 if request.can_manage_schedule else 0
@@ -377,17 +512,26 @@ def get_coach_session_identity(db: Session, session_token: str | None) -> CoachA
         authenticated=True,
         coach_uid=coach.uid,
         username=account.username,
+        qq_number=account.qq_number,
         nickname=coach.nickname,
+        avatar_path=_safe_coach_avatar_path(coach.avatar_path),
+        level=coach.level,
         team_id=coach.team_id,
         team_name=coach.team_name,
+        must_change_password=bool(account.must_change_password),
         **_coach_account_work_permissions(account),
     )
 
 
 def login_coach(db: Session, request: CoachLoginRequest) -> tuple[str, CoachAccountPublicResponse]:
-    username = str(request.username or "").strip()
+    username = re.sub(r"\s+", "", str(request.username or ""))
     password = str(request.password or "")
-    account = db.query(CoachAccount).filter(CoachAccount.username == username).first()
+    account = (
+        db.query(CoachAccount)
+        .filter(or_(CoachAccount.qq_number == username, CoachAccount.username == username))
+        .order_by(case((CoachAccount.qq_number == username, 0), else_=1))
+        .first()
+    )
     if not account or not account.is_active or not verify_password(password, account.password_hash):
         raise HTTPException(status_code=401, detail="账号或密码错误")
     coach = db.query(Coach).filter(Coach.uid == account.coach_uid).first()
@@ -400,9 +544,13 @@ def login_coach(db: Session, request: CoachLoginRequest) -> tuple[str, CoachAcco
         authenticated=True,
         coach_uid=coach.uid,
         username=account.username,
+        qq_number=account.qq_number,
         nickname=coach.nickname,
+        avatar_path=_safe_coach_avatar_path(coach.avatar_path),
+        level=coach.level,
         team_id=coach.team_id,
         team_name=coach.team_name,
+        must_change_password=bool(account.must_change_password),
         **_coach_account_work_permissions(account),
     )
 
@@ -419,14 +567,17 @@ def change_own_coach_password(
     request: CoachPasswordChangeRequest,
     write_to_log: LogWriter,
 ) -> dict[str, Any]:
-    coach = _require_coach_owner(db, session_token)
+    coach = _require_coach_owner(db, session_token, allow_password_change=True)
     account = db.query(CoachAccount).filter(CoachAccount.coach_uid == coach.uid).first()
     if not account or not account.is_active:
         raise HTTPException(status_code=401, detail="教练账号不可用")
     if not verify_password(str(request.current_password or ""), account.password_hash):
         raise HTTPException(status_code=400, detail="当前密码不正确")
     new_password = _validate_coach_password(request.new_password)
+    if verify_password(new_password, account.password_hash):
+        raise HTTPException(status_code=400, detail="新密码不能与当前密码相同")
     account.password_hash = hash_password(new_password)
+    account.must_change_password = 0
     account.updated_at = datetime.now()
     db.query(CoachSession).filter(CoachSession.coach_uid == coach.uid, CoachSession.token != session_token).delete()
     db.commit()
@@ -434,12 +585,72 @@ def change_own_coach_password(
     return {"success": True, "message": "密码已修改"}
 
 
-def _require_coach_owner(db: Session, session_token: str | None, coach_uid: str | None = None) -> Coach:
+def bind_own_coach_qq(
+    db: Session,
+    session_token: str | None,
+    request: CoachQqBindingRequest,
+    write_to_log: LogWriter,
+) -> dict[str, Any]:
+    coach = _require_coach_owner(db, session_token, allow_qq_binding=True)
+    account = _get_coach_account(db, coach.uid)
+    if not account or not account.is_active:
+        raise HTTPException(status_code=401, detail="教练账号不可用")
+    if not verify_password(str(request.current_password or ""), account.password_hash):
+        raise HTTPException(status_code=400, detail="当前密码不正确")
+    qq_number = _validate_qq_number(request.qq_number)
+    existing = db.query(CoachAccount).filter(CoachAccount.qq_number == qq_number, CoachAccount.coach_uid != coach.uid).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="该 QQ 号已绑定其他教练")
+    username_collision = db.query(CoachAccount).filter(CoachAccount.username == qq_number, CoachAccount.coach_uid != coach.uid).first()
+    if username_collision:
+        raise HTTPException(status_code=400, detail="该 QQ 号与其他教练的旧账号名冲突")
+    account.qq_number = qq_number
+    account.updated_at = datetime.now()
+    db.query(CoachSession).filter(CoachSession.coach_uid == coach.uid, CoachSession.token != session_token).delete()
+    db.commit()
+    write_to_log("教练 QQ 绑定", f"{coach.uid} / {coach.nickname} / {qq_number}", f"coach:{coach.nickname}")
+    return {"success": True, "message": "QQ 号已绑定，以后可直接使用 QQ 号登录"}
+
+
+def unbind_coach_qq(
+    db: Session,
+    admin: str | None,
+    coach_uid: str,
+    write_to_log: LogWriter,
+) -> dict[str, Any]:
+    operator = require_admin(admin)
+    coach = db.query(Coach).filter(Coach.uid == coach_uid).first()
+    if not coach:
+        raise HTTPException(status_code=404, detail="教练不存在")
+    account = _get_coach_account(db, coach_uid)
+    if not account or not account.qq_number:
+        return {"success": True, "message": "该教练没有绑定 QQ 号"}
+    previous_qq = account.qq_number
+    account.qq_number = None
+    account.updated_at = datetime.now()
+    db.query(CoachSession).filter(CoachSession.coach_uid == coach_uid).delete()
+    db.commit()
+    write_to_log("教练 QQ 解绑", f"{coach.uid} / {coach.nickname} / {previous_qq}", operator)
+    return {"success": True, "message": "QQ 号已解绑，相关登录会话已退出"}
+
+
+def _require_coach_owner(
+    db: Session,
+    session_token: str | None,
+    coach_uid: str | None = None,
+    *,
+    allow_password_change: bool = False,
+    allow_qq_binding: bool = False,
+) -> Coach:
     identity = get_coach_session_identity(db, session_token)
     if not identity.authenticated or not identity.coach_uid:
         raise HTTPException(status_code=401, detail="请先登录教练账号")
     if coach_uid and identity.coach_uid != coach_uid:
         raise HTTPException(status_code=403, detail="只能维护自己的教练主页")
+    if identity.must_change_password and not allow_password_change:
+        raise HTTPException(status_code=403, detail="首次登录必须先修改默认密码")
+    if not identity.qq_number and not (allow_password_change or allow_qq_binding):
+        raise HTTPException(status_code=403, detail="请先绑定 QQ 号后再使用教练功能")
     coach = db.query(Coach).filter(Coach.uid == identity.coach_uid).first()
     if not coach:
         raise HTTPException(status_code=404, detail="教练不存在")
@@ -482,7 +693,12 @@ def _update_coach_profile_for_operator(
         raise HTTPException(status_code=404, detail="教练不存在")
     nickname = str(request.nickname or "").strip()
     if allow_nickname and nickname:
+        previous_nickname = coach.nickname
         coach.nickname = nickname[:80]
+        if coach.team_id:
+            team = db.query(Team).filter(Team.id == coach.team_id).first()
+            if team and str(team.manager or "").strip() == previous_nickname:
+                team.manager = coach.nickname
     coach.title = str(request.title or "").strip()[:80] or None
     if allow_title_color:
         title_color = str(request.title_color or "white").strip().lower()

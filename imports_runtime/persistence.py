@@ -25,7 +25,7 @@ from imports_runtime.constants import (
     WORKBOOK_SHEET_OVERVIEW,
 )
 from imports_runtime.reporting import ImportReport, dataset_summary
-from imports_runtime.source_resolver import resolve_input_files
+from imports_runtime.source_resolver import resolve_explicit_path, resolve_input_files
 from imports_runtime.validators import (
     apply_model_updates,
     clean_string,
@@ -105,6 +105,7 @@ def import_teams(db: Session, workbook_path: Path, report: ImportReport) -> set[
         level_column = resolve_column(df, TEAM_COLUMN_ALIASES["level"])
         manager_column = resolve_column(df, TEAM_COLUMN_ALIASES["manager"], required=False)
         extra_wage_column = resolve_column(df, TEAM_COLUMN_ALIASES["extra_wage"], required=False)
+        wage_cap_column = resolve_column(df, TEAM_COLUMN_ALIASES["wage_cap"], required=False)
         after_tax_column = resolve_column(df, TEAM_COLUMN_ALIASES["after_tax"], required=False)
         notes_column = resolve_column(df, TEAM_COLUMN_ALIASES["notes"], required=False)
     except KeyError as exc:
@@ -143,6 +144,8 @@ def import_teams(db: Session, workbook_path: Path, report: ImportReport) -> set[
             "after_tax": parse_optional_float(row.get(after_tax_column)) if after_tax_column else 0.0,
             "notes": clean_string(row.get(notes_column)) if notes_column else "",
         }
+        if wage_cap_column:
+            field_values["wage_cap"] = parse_optional_float(row.get(wage_cap_column), default=None)
 
         existing = existing_teams.get(team_name)
         if existing is None:
@@ -685,4 +688,46 @@ def run_import(
     finally:
         db.close()
 
+    return report
+
+
+def run_attribute_import(
+    attributes_csv_path: str | Path,
+    *,
+    dry_run: bool = False,
+    target_engine=None,
+    root_dir: str | Path | None = None,
+) -> ImportReport:
+    active_engine = target_engine or engine
+    init_database(target_engine=active_engine)
+    configured_root = os.environ.get("HEIGO_IMPORT_ROOT")
+    workspace_root = (
+        Path(root_dir)
+        if root_dir
+        else Path(configured_root).expanduser().resolve()
+        if configured_root
+        else Path(__file__).resolve().parents[1]
+    )
+    resolved_attributes = resolve_explicit_path(attributes_csv_path, workspace_root, "player attributes")
+    report = ImportReport(
+        workbook_path="",
+        attributes_csv_path=str(resolved_attributes),
+        dry_run=dry_run,
+        strict_mode=True,
+        skip_attributes=False,
+    )
+    session_factory = sessionmaker(bind=active_engine, autocommit=False, autoflush=False)
+    db = session_factory()
+    try:
+        import_player_attributes(db, resolved_attributes, report)
+        if report.has_errors or dry_run:
+            db.rollback()
+        else:
+            db.commit()
+            report.committed = True
+    except Exception as exc:
+        db.rollback()
+        report.fatal_error = str(exc)
+    finally:
+        db.close()
     return report

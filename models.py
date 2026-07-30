@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 
 from database import Base
 from domain_types import (
@@ -64,6 +64,44 @@ class SiteNote(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class HomePromotion(Base):
+    __tablename__ = "home_promotions"
+    __table_args__ = (
+        UniqueConstraint("source_type", "source_key", name="uq_home_promotions_source"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    content_type = Column(String, index=True, nullable=False, default="announcement")
+    theme = Column(String, nullable=False, default="violet")
+    icon = Column(String, nullable=False, default="megaphone")
+    eyebrow = Column(String, nullable=False, default="HEIGO Broadcast")
+    title = Column(String, nullable=False)
+    body = Column(Text, nullable=False, default="")
+    image_url = Column(String)
+    action_label = Column(String)
+    action_kind = Column(String, nullable=False, default="none")
+    action_target = Column(String)
+    is_active = Column(Integer, index=True, nullable=False, default=1)
+    is_pinned = Column(Integer, index=True, nullable=False, default=0)
+    is_dismissible = Column(Integer, nullable=False, default=1)
+    sort_order = Column(Integer, index=True, nullable=False, default=100)
+    starts_at = Column(DateTime, index=True)
+    ends_at = Column(DateTime, index=True)
+    source_type = Column(String, index=True, nullable=False, default="custom")
+    source_key = Column(String, index=True)
+    created_by = Column(String)
+    updated_by = Column(String)
+    created_at = Column(DateTime, index=True, default=datetime.now)
+    updated_at = Column(DateTime, index=True, default=datetime.now, onupdate=datetime.now)
+
+
+class SiteVisitStat(Base):
+    __tablename__ = "site_visit_stats"
+
+    visit_date = Column(String(10), primary_key=True)
+    visit_count = Column(Integer, nullable=False, default=0)
+
+
 class Team(Base):
     __tablename__ = "teams"
 
@@ -76,6 +114,7 @@ class Team(Base):
     team_size = Column(Integer, default=0)
     gk_count = Column(Integer, default=0)
     extra_wage = Column(Float, default=0)
+    wage_cap = Column(Float, nullable=True)
     after_tax = Column(Float, default=0)
     final_wage = Column(Float, default=0)
     count_8m = Column(Integer, default=0)
@@ -90,6 +129,17 @@ class Team(Base):
     stats_cache_refresh_scopes = Column(String, default="")
     stats_cache_refresh_at = Column(DateTime)
     notes = Column(String)
+
+
+class TeamLineup(Base):
+    __tablename__ = "team_lineups"
+
+    id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
+    formation = Column(String, nullable=False, default="4-3-3")
+    picks_json = Column(Text, nullable=False, default="{}")
+    updated_by = Column(String)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
 class Player(Base):
@@ -142,6 +192,63 @@ class MatchPlayerEvent(Base):
     event_type = Column(String, index=True, nullable=False)
     quantity = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class CompetitionRoundWorkState(Base):
+    __tablename__ = "competition_round_work_states"
+    __table_args__ = (
+        UniqueConstraint("level", "round_start", name="uq_competition_round_work_level_start"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    level = Column(String, index=True, nullable=False)
+    round_start = Column(Integer, index=True, nullable=False)
+    round_end = Column(Integer, nullable=False)
+    assignee_principal_id = Column(String, index=True)
+    assignee_display_name = Column(String)
+    assigned_at = Column(DateTime)
+    assigned_by = Column(String, index=True)
+    suspension_confirmed_at = Column(DateTime)
+    suspension_confirmed_by = Column(String, index=True)
+    submitted_at = Column(DateTime)
+    submitted_by = Column(String, index=True)
+    completed_at = Column(DateTime)
+    completed_by = Column(String, index=True)
+    note = Column(Text)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class CompetitionRoundWorkLog(Base):
+    __tablename__ = "competition_round_work_logs"
+
+    id = Column(Integer, primary_key=True)
+    state_id = Column(Integer, ForeignKey("competition_round_work_states.id", ondelete="CASCADE"), index=True, nullable=False)
+    level = Column(String, index=True, nullable=False)
+    round_start = Column(Integer, index=True, nullable=False)
+    action = Column(String, index=True, nullable=False)
+    operator_principal_id = Column(String, index=True, nullable=False)
+    operator_display_name = Column(String, nullable=False)
+    from_status = Column(String)
+    to_status = Column(String)
+    detail = Column(Text)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+class CompetitionResponsibilityAssignment(Base):
+    __tablename__ = "competition_responsibility_assignments"
+    __table_args__ = (
+        UniqueConstraint("level", "responsibility_type", name="uq_competition_responsibility_level_type"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    level = Column(String, index=True, nullable=False)
+    responsibility_type = Column(String, index=True, nullable=False)
+    principal_id = Column(String, index=True, nullable=False)
+    display_name = Column(String, nullable=False)
+    assigned_by = Column(String, index=True, nullable=False)
+    assigned_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
@@ -291,8 +398,10 @@ class CoachAccount(Base):
     id = Column(Integer, primary_key=True, index=True)
     coach_uid = Column(String, ForeignKey("coaches.uid", ondelete="CASCADE"), unique=True, index=True, nullable=False)
     username = Column(String, unique=True, index=True, nullable=False)
+    qq_number = Column(String, unique=True, index=True)
     password_hash = Column(String, nullable=False)
     is_active = Column(Integer, nullable=False, default=1)
+    must_change_password = Column(Integer, nullable=False, default=1)
     can_manage_schedule = Column(Integer, nullable=False, default=0)
     can_manage_suspensions = Column(Integer, nullable=False, default=0)
     can_manage_candidate_lists = Column(Integer, nullable=False, default=0)

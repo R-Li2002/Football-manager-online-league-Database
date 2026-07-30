@@ -9,6 +9,47 @@ class HealthResponse(BaseModel):
     timestamp: str
 
 
+class SiteVisitStatsResponse(BaseModel):
+    total_count: int
+    today_count: int
+    visit_date: str
+
+
+class HomeSummaryResponse(BaseModel):
+    team_count: int = 0
+    player_count: int = 0
+    database_player_count: int = 0
+    default_attribute_version: str = ""
+
+
+class HomePromotionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    content_type: Literal["announcement", "honor", "update", "event"] = "announcement"
+    theme: Literal["violet", "blue", "green", "gold", "rose", "neutral"] = "violet"
+    icon: Literal["megaphone", "trophy", "list", "star", "whistle", "info"] = "megaphone"
+    eyebrow: str = "HEIGO Broadcast"
+    title: str
+    body: str = ""
+    image_url: Optional[str] = None
+    action_label: Optional[str] = None
+    action_kind: Literal["none", "tab", "url"] = "none"
+    action_target: Optional[str] = None
+    is_active: bool = True
+    is_pinned: bool = False
+    is_dismissible: bool = True
+    sort_order: int = 100
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+    source_type: str = "custom"
+    source_key: Optional[str] = None
+    created_by: Optional[str] = None
+    updated_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
 class AuthStatusResponse(BaseModel):
     authenticated: bool
     username: Optional[str] = None
@@ -17,6 +58,166 @@ class AuthStatusResponse(BaseModel):
     can_manage_schedule: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
+
+
+class WorkspaceIdentityResponse(BaseModel):
+    principal_id: str
+    source: Literal["admin_account", "coach_account"]
+    account_type: Literal["administrator", "worker", "coach", "coach_worker"]
+    username: str
+    qq_number: Optional[str] = None
+    display_name: str
+    role: Optional[str] = None
+    coach_uid: Optional[str] = None
+    team_name: Optional[str] = None
+    is_full_admin: bool = False
+    capabilities: list[str] = Field(default_factory=list)
+    capability_labels: list[str] = Field(default_factory=list)
+
+
+class WorkspaceSessionResponse(BaseModel):
+    authenticated: bool = False
+    identity: Optional[WorkspaceIdentityResponse] = None
+
+
+class WorkspaceMetricResponse(BaseModel):
+    key: str
+    label: str
+    value: int = 0
+    detail: str = ""
+    target_tab: Optional[str] = None
+    target_subtab: Optional[str] = None
+
+
+class WorkspaceRecentActionResponse(BaseModel):
+    id: int
+    summary: str
+    status: str
+    category: str
+    created_at: Optional[datetime] = None
+
+
+class WorkspaceTaskResponse(BaseModel):
+    level: str
+    round_start: int
+    round_label: str
+    status: str
+    status_label: str
+    assignee_principal_id: Optional[str] = None
+    assignee_display_name: Optional[str] = None
+    is_mine: bool = False
+    responsibility_labels: list[str] = Field(default_factory=list)
+    pending_count: int = 0
+    target_subtab: str = "schedule"
+
+
+class WorkspaceDashboardResponse(BaseModel):
+    identity: WorkspaceIdentityResponse
+    metrics: list[WorkspaceMetricResponse] = Field(default_factory=list)
+    tasks: list[WorkspaceTaskResponse] = Field(default_factory=list)
+    recent_actions: list[WorkspaceRecentActionResponse] = Field(default_factory=list)
+
+
+class CompetitionWorkTaskResponse(BaseModel):
+    match_id: int
+    level: str
+    round_no: int
+    home_team_name: str
+    away_team_name: str
+    home_score: Optional[int] = None
+    away_score: Optional[int] = None
+    status: str
+    issue_codes: list[str] = Field(default_factory=list)
+    issue_messages: list[str] = Field(default_factory=list)
+
+
+class CompetitionWorkLogResponse(BaseModel):
+    id: int
+    action: str
+    action_label: str
+    operator_principal_id: str
+    operator_display_name: str
+    from_status: Optional[str] = None
+    to_status: Optional[str] = None
+    detail: str = ""
+    created_at: Optional[datetime] = None
+
+
+class CompetitionResponsibilityResponse(BaseModel):
+    level: str
+    schedule_principal_id: Optional[str] = None
+    schedule_display_name: Optional[str] = None
+    suspension_principal_id: Optional[str] = None
+    suspension_display_name: Optional[str] = None
+
+
+class CompetitionRoundWorkSummaryResponse(BaseModel):
+    level: str
+    round_start: int
+    round_end: int
+    round_label: str
+    workflow_status: str = "unassigned"
+    workflow_status_label: str = "待任命"
+    schedule_principal_id: Optional[str] = None
+    schedule_display_name: Optional[str] = None
+    suspension_principal_id: Optional[str] = None
+    suspension_display_name: Optional[str] = None
+    is_my_schedule_task: bool = False
+    is_my_suspension_task: bool = False
+    can_confirm_suspensions: bool = False
+    assignee_principal_id: Optional[str] = None
+    assignee_display_name: Optional[str] = None
+    assigned_at: Optional[datetime] = None
+    assigned_by: Optional[str] = None
+    submitted_at: Optional[datetime] = None
+    submitted_by: Optional[str] = None
+    changed_after_submission: bool = False
+    is_mine: bool = False
+    can_submit: bool = False
+    can_review: bool = False
+    total_matches: int = 0
+    result_ready_count: int = 0
+    event_ready_count: int = 0
+    missing_result_count: int = 0
+    missing_event_count: int = 0
+    invalid_count: int = 0
+    suspension_confirmed: bool = False
+    suspension_confirmed_at: Optional[datetime] = None
+    suspension_confirmed_by: Optional[str] = None
+    completion_ready: bool = False
+    completed: bool = False
+    completed_at: Optional[datetime] = None
+    completed_by: Optional[str] = None
+    changed_after_completion: bool = False
+    note: str = ""
+    tasks: list[CompetitionWorkTaskResponse] = Field(default_factory=list)
+    history: list[CompetitionWorkLogResponse] = Field(default_factory=list)
+
+
+class CompetitionWorkSummaryResponse(BaseModel):
+    levels: list[CompetitionRoundWorkSummaryResponse] = Field(default_factory=list)
+
+
+class WorkspaceAccountResponse(BaseModel):
+    principal_id: str
+    source: Literal["admin_account", "coach_account"]
+    account_type: Literal["administrator", "worker", "coach", "coach_worker"]
+    username: Optional[str] = None
+    qq_number: Optional[str] = None
+    display_name: str
+    coach_uid: Optional[str] = None
+    team_id: Optional[int] = None
+    team_name: Optional[str] = None
+    level: Optional[str] = None
+    is_active: bool = False
+    must_change_password: bool = False
+    role: Optional[str] = None
+    capabilities: list[str] = Field(default_factory=list)
+    last_login_at: Optional[datetime] = None
+
+
+class WorkspaceAccountsResponse(BaseModel):
+    items: list[WorkspaceAccountResponse] = Field(default_factory=list)
 
 
 class LogsResponse(BaseModel):
@@ -124,6 +325,9 @@ class TeamResponse(BaseModel):
     wage: float
     team_size: int
     gk_count: int
+    extra_wage: float = 0
+    wage_cap: Optional[float] = None
+    after_tax: float = 0
     final_wage: float
     count_8m: int
     count_7m: int
@@ -135,6 +339,17 @@ class TeamResponse(BaseModel):
     total_growth: int
     notes: Optional[str]
     stat_sources: TeamStatSourcesResponse
+
+
+class TeamLineupResponse(BaseModel):
+    team_id: int
+    team_name: str
+    formation: str = "4-3-3"
+    picks: dict[str, int] = Field(default_factory=dict)
+    is_saved: bool = False
+    can_edit: bool = False
+    updated_by: Optional[str] = None
+    updated_at: Optional[datetime] = None
 
 
 class MatchPlayerEventResponse(BaseModel):
@@ -260,9 +475,21 @@ class PlayerRankingRowResponse(BaseModel):
     appearances: int = 0
 
 
+class PlayerRankingCoverageResponse(BaseModel):
+    level: str
+    played_matches: int = 0
+    matches_with_events: int = 0
+    matches_missing_events: int = 0
+    event_rows: int = 0
+    goal_quantity: int = 0
+    assist_quantity: int = 0
+    mvp_quantity: int = 0
+
+
 class PlayerRankingsResponse(BaseModel):
     levels: list[str] = Field(default_factory=list)
     rows: list[PlayerRankingRowResponse] = Field(default_factory=list)
+    coverage: list[PlayerRankingCoverageResponse] = Field(default_factory=list)
 
 
 class SuspensionPlayerResponse(BaseModel):
@@ -283,6 +510,7 @@ class SuspensionTeamResponse(BaseModel):
     team_name: str
     manager: Optional[str] = None
     level: str
+    is_orphaned: bool = False
     one_yellow: list[SuspensionPlayerResponse] = Field(default_factory=list)
     two_yellows: list[SuspensionPlayerResponse] = Field(default_factory=list)
     suspended: list[SuspensionPlayerResponse] = Field(default_factory=list)
@@ -327,6 +555,7 @@ class TeamInfoResponse(BaseModel):
     manager: Optional[str] = None
     level: str
     wage: float
+    wage_cap: Optional[float] = None
     notes: Optional[str] = None
 
 
@@ -341,6 +570,9 @@ class AttributeSearchResponse(BaseModel):
     nationality: str
     club: str
     heigo_club: str
+    weighted_power: Optional[float] = None
+    heigo_power: Optional[float] = None
+    top_percent: Optional[float] = None
 
 
 class AdvancedAttributeSearchResponse(BaseModel):
@@ -522,9 +754,13 @@ class CoachAccountPublicResponse(BaseModel):
     authenticated: bool = False
     coach_uid: Optional[str] = None
     username: Optional[str] = None
+    qq_number: Optional[str] = None
     nickname: Optional[str] = None
+    avatar_path: Optional[str] = None
+    level: Optional[str] = None
     team_id: Optional[int] = None
     team_name: Optional[str] = None
+    must_change_password: bool = False
     can_manage_schedule: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
@@ -533,7 +769,9 @@ class CoachAccountPublicResponse(BaseModel):
 class CoachAccountAdminResponse(BaseModel):
     exists: bool = False
     username: Optional[str] = None
+    qq_number: Optional[str] = None
     is_active: bool = False
+    must_change_password: bool = False
     can_manage_schedule: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
@@ -591,6 +829,60 @@ class PlayerReactionLeaderboardResponse(BaseModel):
     team: Optional[str] = None
     data_version: str
     items: list[PlayerReactionLeaderboardItemResponse] = Field(default_factory=list)
+
+
+class PlayerPowerRankingItemResponse(BaseModel):
+    rank: int
+    uid: int
+    name: str
+    display_name: str
+    growth_step: int = 0
+    ca_gain: int = 0
+    ca: int
+    projected_ca: int
+    pa: int
+    potential_gap: int = 0
+    position: str
+    weighted_power: float
+    heigo_power: float
+    top_percent: float
+    heigo_club: str
+    club: str
+    data_version: str
+
+
+class PlayerPowerRankingResponse(BaseModel):
+    shape: Literal["all", "current", "1", "2", "3", "4", "5"] = "all"
+    limit: int | Literal["all"]
+    team: Optional[str] = None
+    data_version: str
+    items: list[PlayerPowerRankingItemResponse] = Field(default_factory=list)
+
+
+class TeamPowerSummaryItemResponse(BaseModel):
+    team_id: int
+    team_name: str
+    level: str
+    roster_average: Optional[float] = None
+    roster_rank: Optional[int] = None
+    roster_player_count: int = 0
+    lineup_average: Optional[float] = None
+    lineup_rank: Optional[int] = None
+    lineup_player_count: int = 0
+
+
+class TeamPowerSummariesResponse(BaseModel):
+    data_version: str
+    items: list[TeamPowerSummaryItemResponse] = Field(default_factory=list)
+
+
+class PlayerPowerCalibrationResponse(BaseModel):
+    data_version: str
+    player_count: int
+    median_score: float
+    mad: float
+    robust_scale: float
+    sorted_scores: list[float] = Field(default_factory=list)
 
 
 class PlayerAttributeDetailResponse(BaseModel):
@@ -736,6 +1028,7 @@ class TeamExportRow(BaseModel):
     team_size: int = Field(alias="球队人数")
     gk_count: int = Field(alias="门将人数")
     extra_wage: float = Field(alias="额外工资")
+    wage_cap: float = Field(alias="工资帽")
     after_tax: float = Field(alias="税后")
     final_wage: float = Field(alias="最终工资")
     count_8m: int = Field(alias="8M")

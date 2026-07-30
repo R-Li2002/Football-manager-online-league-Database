@@ -29,14 +29,15 @@ TEAM_HEADER_ROW = [
     "主教",
     "级别",
     "额外工资",
+    "工资帽",
     "税后",
     "备注",
 ]
 
 
 DEFAULT_TEAM_ROWS = [
-    {"info_key": "届数", "info_value": 85, "name": "Alpha FC", "manager": "Coach A", "level": "超级", "extra_wage": 0.2, "after_tax": 0, "notes": ""},
-    {"info_key": "成长年龄上限", "info_value": 24, "name": "Beta FC", "manager": "Coach B", "level": "甲级", "extra_wage": 0.0, "after_tax": 0, "notes": "+0.1M"},
+    {"info_key": "届数", "info_value": 85, "name": "Alpha FC", "manager": "Coach A", "level": "超级", "extra_wage": 0.2, "wage_cap": 10.25, "after_tax": 0, "notes": ""},
+    {"info_key": "成长年龄上限", "info_value": 24, "name": "Beta FC", "manager": "Coach B", "level": "甲级", "extra_wage": 0.0, "wage_cap": None, "after_tax": 0, "notes": "+0.1M"},
 ]
 
 DEFAULT_PLAYER_ROWS = [
@@ -89,6 +90,7 @@ def write_workbook(
                 team["manager"],
                 team["level"],
                 team["extra_wage"],
+                team.get("wage_cap"),
                 team["after_tax"],
                 team["notes"],
             ]
@@ -563,6 +565,7 @@ class ImportDataTests(unittest.TestCase):
         try:
             visible_teams = session.query(Team).filter(Team.level != HIDDEN_SEA_TEAM_LEVEL).all()
             self.assertEqual(len(visible_teams), 2)
+            self.assertEqual(session.query(Team).filter(Team.name == "Alpha FC").one().wage_cap, 10.25)
             self.assertTrue(all(team.stats_cache_refresh_mode == "full_recalc" for team in visible_teams))
             self.assertTrue(all(team.stats_cache_refresh_scopes == "roster,wage" for team in visible_teams))
 

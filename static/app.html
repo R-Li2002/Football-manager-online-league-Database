@@ -16,16 +16,17 @@
                     <div class="brand-copy">
                         <span class="brand-eyebrow">HEIGO League Data Hub</span>
                         <h1>HEIGO 联赛数据台</h1>
-                        <p>围绕玩家查询体验打造的联赛名单、属性与运营信息工作台。</p>
+                        <p>围绕球队中心、球员属性与赛事数据打造的联赛信息工作台。</p>
                     </div>
                 </div>
                 <div class="shell-actions">
-                    <button class="btn btn-primary shell-button" type="button" onclick="showJoinHeigoModal()">加入Heigo</button>
-                    <button class="btn btn-success shell-button" onclick="exportData()">导出 Excel</button>
-                    <button class="btn btn-secondary shell-button theme-toggle" onclick="toggleTheme()">
-                        <span id="themeIcon">🌙</span>
+                    <button class="shell-utility-button" type="button" onclick="showJoinHeigoModal()"><span class="shell-utility-mark" aria-hidden="true">＋</span><span>加入 HEIGO</span></button>
+                    <button class="shell-utility-button" id="homeRosterExportButton" type="button" onclick="exportData()"><span class="shell-utility-mark" aria-hidden="true">⇩</span><span>导出 Excel</span></button>
+                    <button class="shell-utility-button theme-toggle" type="button" onclick="toggleTheme()">
+                        <span id="themeIcon" class="shell-utility-mark" aria-hidden="true">☾</span>
                         <span id="themeText">切换夜间</span>
                     </button>
+                    <div id="globalCoachAccount" class="global-coach-account" aria-live="polite"></div>
                 </div>
             </div>
         </header>
@@ -33,11 +34,11 @@
         <div class="nav-tabs glass-card">
             <button class="nav-tab active" data-tab="home" onclick="showTab('home', this)"><span class="nav-tab-icon" aria-hidden="true">⌂</span><span>首页</span></button>
             <button class="nav-tab" data-tab="overview" onclick="showTab('overview', this)"><span class="nav-tab-icon" aria-hidden="true">◫</span><span>联赛概览</span></button>
-            <button class="nav-tab" data-tab="players" onclick="showTab('players', this)"><span class="nav-tab-icon" aria-hidden="true">☰</span><span>联赛名单</span></button>
+            <button class="nav-tab" data-tab="team" onclick="openTeamCenter({triggerElement: this})"><span class="nav-tab-icon team-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="team-nav-shirt" d="M8.1 4.4 5.2 5.6 2.8 9.4 6 11.2l1.3-1.7V20h9.4V9.5l1.3 1.7 3.2-1.8-2.4-3.8-2.9-1.2C15.3 6.1 14 7 12 7s-3.3-.9-3.9-2.6Z"/><path class="team-nav-stripe" d="M12 7.3v12.2"/></svg></span><span>球队中心</span></button>
             <button class="nav-tab" data-tab="competition" onclick="showTab('competition', this)"><span class="nav-tab-icon nav-stat-icon" aria-hidden="true"><i></i><i></i><i></i></span><span>数据统计</span></button>
             <button class="nav-tab" data-tab="coaches" onclick="showTab('coaches', this)"><span class="nav-tab-icon coach-nav-icon" aria-hidden="true">◉</span><span>教练主页</span></button>
             <button class="nav-tab" data-tab="database" onclick="showTab('database', this)"><span class="nav-tab-icon" aria-hidden="true">⌕</span><span>球员库</span></button>
-            <button class="nav-tab hidden-tab" id="adminTab" data-tab="admin" onclick="showTab('admin', this)"><span class="nav-tab-icon" aria-hidden="true">⚙</span><span>维护中心</span></button>
+            <button class="nav-tab hidden-tab" id="adminTab" data-tab="admin" onclick="showTab('admin', this)"><span class="nav-tab-icon" aria-hidden="true">⚙</span><span>联赛工作台</span></button>
         </div>
 
         <nav class="mobile-bottom-nav" aria-label="移动端主导航">
@@ -45,9 +46,9 @@
                 <span class="mobile-bottom-nav-icon" aria-hidden="true">⌂</span>
                 <span>首页</span>
             </button>
-            <button class="mobile-bottom-nav-item" type="button" data-mobile-tab="players" onclick="showTab('players')">
-                <span class="mobile-bottom-nav-icon" aria-hidden="true">☰</span>
-                <span>名单</span>
+            <button class="mobile-bottom-nav-item" type="button" data-mobile-tab="team" onclick="openTeamCenter()">
+                <span class="mobile-bottom-nav-icon team-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="team-nav-shirt" d="M8.1 4.4 5.2 5.6 2.8 9.4 6 11.2l1.3-1.7V20h9.4V9.5l1.3 1.7 3.2-1.8-2.4-3.8-2.9-1.2C15.3 6.1 14 7 12 7s-3.3-.9-3.9-2.6Z"/><path class="team-nav-stripe" d="M12 7.3v12.2"/></svg></span>
+                <span>球队</span>
             </button>
             <button class="mobile-bottom-nav-item" type="button" data-mobile-tab="competition" onclick="showTab('competition')">
                 <span class="mobile-bottom-nav-icon mobile-stat-icon" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -73,12 +74,15 @@
             </button>
             <button class="mobile-more-menu-item hidden-tab" id="mobileAdminTab" type="button" data-mobile-tab="admin" onclick="showTab('admin')">
                 <span aria-hidden="true">⚙</span>
-                <span>维护中心</span>
+                <span>联赛工作台</span>
             </button>
         </div>
 
         <div id="home" class="tab-content active">
             <section class="home-landing">
+                <section id="homePromotionBoard" class="home-promotion-board is-loading" aria-label="主页宣传" aria-busy="true">
+                    <div class="home-promotion-loading" aria-hidden="true"><span></span><span></span><span></span></div>
+                </section>
                 <div class="home-hero glass-card">
                     <div class="home-hero-copy">
                         <span class="hero-kicker">HEIGO Search</span>
@@ -86,14 +90,6 @@
                         <p>统一搜索球队、联赛球员、教练主页和球员库数据，快速跳转到你要查看的内容。</p>
                     </div>
                     <div class="home-search-shell">
-                        <div class="home-announcement" role="status">
-                            <div class="home-announcement-copy">
-                                <span class="panel-kicker">Candidate Lists</span>
-                                <h3>87届初期强制名单已发布</h3>
-                                <p>教练可进入球员库的候选名单范围，并继续按位置、能力和俱乐部筛选球员。</p>
-                            </div>
-                            <button class="btn btn-primary home-announcement-action" type="button" onclick="showTab('database'); showDatabaseSubtab('candidates')">查看名单</button>
-                        </div>
                         <label class="home-search-label" for="heroPlayerSearch">搜索球队、球员、教练或 UID</label>
                         <div class="home-search-bar">
                             <input type="text" id="heroPlayerSearch" placeholder="输入球队、球员、教练或 UID...">
@@ -116,10 +112,10 @@
                         <h3>联赛概览 / 球队列表</h3>
                         <p>查看联赛规则、球队总览、工资合规性和最近一次数据状态。</p>
                     </button>
-                    <button class="home-shortcut-card surface-card" onclick="showTab('players')">
-                        <span class="panel-kicker">League Roster</span>
-                        <h3>联赛名单</h3>
-                        <p>按球队、姓名和排序方式筛选当前联赛内球员。</p>
+                    <button class="home-shortcut-card surface-card" onclick="openTeamCenter()">
+                        <span class="panel-kicker">Team Center</span>
+                        <h3>球队中心</h3>
+                        <p>查看球队阵容、战力、赛程与纪律状态。</p>
                     </button>
                     <button class="home-shortcut-card surface-card" onclick="showTab('competition')">
                         <span class="panel-kicker">Data Center</span>
@@ -173,8 +169,14 @@
 
             <div class="teams-table">
                 <div class="table-header-row">
-                    <h2 class="table-title">球队列表</h2>
-                    <div class="overview-view-toggle" role="tablist" aria-label="球队列表视图切换">
+                    <div class="league-list-heading">
+                        <h2 class="table-title">球队列表</h2>
+                        <div class="league-data-switch" role="tablist" aria-label="联赛名单范围切换">
+                            <button class="league-data-switch-button is-active" type="button" role="tab" aria-selected="true">球队概览</button>
+                            <button class="league-data-switch-button" type="button" role="tab" aria-selected="false" onclick="openFullLeagueRoster()">完整联赛名单</button>
+                        </div>
+                    </div>
+                    <div class="overview-view-toggle" role="tablist" aria-label="球队概览样式切换">
                         <button class="overview-view-button is-active" id="overviewTableViewButton" type="button" onclick="setTeamOverviewView('table')" aria-selected="true">表格</button>
                         <button class="overview-view-button" id="overviewCardViewButton" type="button" onclick="setTeamOverviewView('card')" aria-selected="false">卡片</button>
                     </div>
@@ -195,6 +197,17 @@
                 </div>
                 <div id="teamStatDebugContent"><div class="loading">等待管理员登录...</div></div>
             </div>
+        </div>
+
+        <div id="team" class="tab-content">
+            <main id="teamDetailRoot" class="team-detail-page" aria-live="polite">
+                <div class="team-detail-empty surface-card">
+                    <span class="panel-kicker">Team Hub</span>
+                    <h2>选择一支球队查看完整档案</h2>
+                    <p>球队概况、阵容结构、核心球员、赛程与纪律状态会集中显示在这里。</p>
+                    <button class="btn btn-primary" type="button" onclick="showTab('overview')">前往球队概览</button>
+                </div>
+            </main>
         </div>
 
         <div id="players" class="tab-content">
@@ -238,8 +251,14 @@
 
                     <div class="table-container surface-card">
                         <div class="table-header-row roster-table-header-row">
-                            <h2 id="tableTitle" class="table-title">全部联赛名单</h2>
-                            <div id="rosterViewToggle" class="roster-view-toggle capture-exclude" aria-label="联赛名单视图切换"></div>
+                            <div class="league-list-heading">
+                                <h2 id="tableTitle" class="table-title">全部联赛名单</h2>
+                                <div class="league-data-switch" role="tablist" aria-label="联赛名单范围切换">
+                                    <button class="league-data-switch-button" type="button" role="tab" aria-selected="false" onclick="showTab('overview')">球队概览</button>
+                                    <button class="league-data-switch-button is-active" type="button" role="tab" aria-selected="true">完整联赛名单</button>
+                                </div>
+                            </div>
+                            <div id="rosterViewToggle" class="roster-view-toggle capture-exclude" aria-label="联赛名单样式切换"></div>
                         </div>
                         <div id="playersTable"><div class="loading">加载中...</div></div>
                     </div>
@@ -251,6 +270,8 @@
             <div class="database-subtabs surface-card" role="tablist" aria-label="球员库功能切换">
                 <button class="database-subtab active" id="dbSubtabSearch" type="button" onclick="showDatabaseSubtab('search')" role="tab" aria-selected="true">球员搜索</button>
                 <button class="database-subtab" id="dbSubtabCandidates" type="button" onclick="showDatabaseSubtab('candidates')" role="tab" aria-selected="false">候选名单</button>
+                <button class="database-subtab" id="dbSubtabPower" type="button" onclick="showDatabaseSubtab('power')" role="tab" aria-selected="false">战力排行榜</button>
+                <button class="database-subtab" id="dbSubtabTactics" type="button" onclick="showDatabaseSubtab('tactics')" role="tab" aria-selected="false">战术板</button>
                 <button class="database-subtab" id="dbSubtabLeaderboard" type="button" onclick="showDatabaseSubtab('leaderboard')" role="tab" aria-selected="false">互动排行榜</button>
             </div>
 
@@ -289,7 +310,7 @@
                             class="database-advanced-panel"
                             id="dbAdvancedSearchPanel"
                             role="dialog"
-                            aria-modal="false"
+                            aria-modal="true"
                             aria-labelledby="dbAdvancedSearchTitle"
                             hidden
                         ></div>
@@ -325,6 +346,50 @@
                     <div id="candidateListsBoard"><div class="loading">加载中...</div></div>
                     <div id="candidateListAdminPanel" class="candidate-admin-panel surface-card" hidden></div>
                 </div>
+            </div>
+
+            <div class="list-view" id="dbPowerRankingView">
+                <div class="power-ranking-hero surface-card">
+                    <div>
+                        <span class="power-ranking-kicker">WEIGHTED POWER</span>
+                        <h2>战力排行榜</h2>
+                        <p>统计 HEIGO 球队名单内球员；HEIGO战力与“前百分之几”并排展示，表示球员相对当前 54 队名单的位置。+1 至 +5 分别需要 11、30、50、70、90 点 CA 成长空间。</p>
+                    </div>
+                    <div class="power-ranking-scale" aria-label="成长形态所需CA空间">
+                        <span>+1<small>11 CA</small></span><span>+2<small>30 CA</small></span><span>+3<small>50 CA</small></span><span>+4<small>70 CA</small></span><span>+5<small>90 CA</small></span>
+                    </div>
+                </div>
+                <div class="search-section power-ranking-filter-card">
+                    <div class="search-controls leaderboard-controls">
+                        <div class="form-group">
+                            <label for="dbPowerShapeSelect">球员形态</label>
+                            <select id="dbPowerShapeSelect" onchange="loadPowerRanking({pushHistory: true, historyMode: 'replace'})">
+                                <option value="all">全部形态</option>
+                                <option value="current">仅当前</option>
+                                <option value="1">仅 +1</option><option value="2">仅 +2</option><option value="3">仅 +3</option><option value="4">仅 +4</option><option value="5">仅 +5</option>
+                            </select>
+                        </div>
+                        <div class="form-group leaderboard-limit-group">
+                            <label for="dbPowerLimitSelect">显示数量</label>
+                            <select id="dbPowerLimitSelect" onchange="loadPowerRanking({pushHistory: true, historyMode: 'replace'})">
+                                <option value="20">Top 20</option><option value="50" selected>Top 50</option><option value="100">Top 100</option><option value="all">全部结果（54队）</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="dbPowerTeamSelect">球队筛选</label>
+                            <select id="dbPowerTeamSelect" onchange="loadPowerRanking({pushHistory: true, historyMode: 'replace'})"><option value="">-- 全部球队 --</option></select>
+                        </div>
+                        <div class="leaderboard-actions"><button class="btn btn-secondary" type="button" onclick="resetPowerRankingFilters()">重置筛选</button></div>
+                    </div>
+                </div>
+                <div class="table-container power-ranking-results">
+                    <div class="table-header-row"><div><h2 id="dbPowerRankingTitle" class="table-title">战力排行榜</h2><p class="database-table-meta">门将暂不纳入此套外场球员战力模型</p></div></div>
+                    <div id="dbPowerRankingTable"><div class="loading">加载中...</div></div>
+                </div>
+            </div>
+
+            <div class="list-view" id="dbTacticsView">
+                <div id="dbTacticsBoard"><div class="loading">正在准备战术板...</div></div>
             </div>
 
             <div class="list-view" id="dbReactionLeaderboardView">
@@ -406,6 +471,7 @@
                     <button class="database-subtab" id="competitionSubtabSuspensions" type="button" onclick="showCompetitionSubtab('suspensions')" role="tab" aria-selected="false">伤停</button>
                 </div>
                 <div class="competition-actions competition-actions-inline" id="competitionAdminActions"></div>
+                <section class="competition-work-panel" id="competitionWorkPanel" hidden></section>
 
                 <div class="competition-level-tabs surface-card" role="tablist" aria-label="联赛级别切换">
                     <button class="competition-level-tab active" id="competitionLevelSuper" type="button" onclick="setCompetitionLevel('超级')">超级</button>
@@ -416,8 +482,21 @@
                     <button class="competition-level-tab cup-tab wumingjian-tab" id="competitionLevelWumingjianCup" type="button" onclick="setCompetitionLevel('无铭剑杯')">无铭剑杯</button>
                 </div>
 
+                <div class="cup-phase-switch surface-card" id="cupPhaseTabs" role="tablist" aria-label="杯赛阶段切换" hidden>
+                    <button class="cup-phase-tab" id="cupPhaseGroupTab" type="button" onclick="setCupPhase('group')" role="tab" aria-selected="false">
+                        <span class="cup-phase-index">01</span>
+                        <span class="cup-phase-copy"><strong>小组赛阶段</strong><small>GROUP STAGE</small></span>
+                    </button>
+                    <span class="cup-phase-connector" aria-hidden="true"><i></i></span>
+                    <button class="cup-phase-tab active" id="cupPhaseKnockoutTab" type="button" onclick="setCupPhase('knockout')" role="tab" aria-selected="true">
+                        <span class="cup-phase-index">02</span>
+                        <span class="cup-phase-copy"><strong>淘汰赛阶段</strong><small>KNOCKOUT STAGE</small></span>
+                    </button>
+                </div>
+
                 <div class="list-view active" id="competitionStandingsView">
                     <div id="standingsBoard"><div class="loading">加载中...</div></div>
+                    <div id="cupGroupStageBoard" class="cup-group-stage-board" style="display:none;"></div>
                     <div id="cupBracketBoard" class="cup-bracket-board" style="display:none;"><div class="loading">加载中...</div></div>
                 </div>
 
@@ -452,32 +531,164 @@
         </div>
 
         <div id="admin" class="tab-content">
-            <div id="adminLogin" class="admin-section">
-                <h3>管理员验证</h3>
-                <div class="login-form">
-                    <div class="form-group">
-                        <label>用户名</label>
-                        <input type="text" id="adminUsername" placeholder="输入用户名">
-                    </div>
-                    <div class="form-group">
-                        <label>密码</label>
-                        <input type="password" id="adminPassword" placeholder="输入密码">
-                    </div>
-                    <button class="btn btn-primary" onclick="adminLogin()">验证</button>
+            <div id="adminLogin" class="workspace-login-shell">
+                <div class="workspace-login-head">
+                    <span class="panel-kicker">League Workspace</span>
+                    <h2>联赛工作台登录</h2>
+                    <p>管理员、赛事工作人员和拥有工作权限的教练从这里进入联赛工作。</p>
                 </div>
+                <div class="workspace-login-tabs" role="tablist" aria-label="工作台登录方式">
+                    <button class="workspace-login-tab active" id="workspaceAdminLoginTab" type="button" onclick="showWorkspaceLoginMode('admin')" role="tab" aria-selected="true">管理员 / 工作人员</button>
+                    <button class="workspace-login-tab" id="workspaceCoachLoginTab" type="button" onclick="showWorkspaceLoginMode('coach')" role="tab" aria-selected="false">教练账号</button>
+                </div>
+                <form class="workspace-login-form active" id="workspaceAdminLoginForm" onsubmit="event.preventDefault(); adminLogin();">
+                    <label class="form-group" for="adminUsername"><span>账号</span><input type="text" id="adminUsername" autocomplete="username" placeholder="管理员或赛事工作账号"></label>
+                    <label class="form-group" for="adminPassword"><span>密码</span><input type="password" id="adminPassword" autocomplete="current-password" placeholder="输入密码"></label>
+                    <button class="btn btn-primary" type="submit">进入工作台</button>
+                </form>
+                <form class="workspace-login-form" id="workspaceCoachLoginForm" onsubmit="event.preventDefault(); workspaceCoachLogin();">
+                    <label class="form-group" for="workspaceCoachUsername"><span>QQ号 / 旧账号</span><input type="text" id="workspaceCoachUsername" autocomplete="username" placeholder="优先输入已绑定 QQ 号"></label>
+                    <label class="form-group" for="workspaceCoachPassword"><span>密码</span><input type="password" id="workspaceCoachPassword" autocomplete="current-password" placeholder="输入密码"></label>
+                    <button class="btn btn-primary" type="submit">以教练身份进入</button>
+                </form>
             </div>
 
             <div id="adminPanel" style="display:none;">
+                <div class="workspace-shell">
+                    <aside class="workspace-sidebar">
+                        <div class="workspace-identity" id="workspaceIdentityCard"><div class="loading">读取工作身份...</div></div>
+                        <nav class="workspace-nav" aria-label="联赛工作台功能">
+                            <button class="workspace-nav-item active" type="button" data-workspace-view="home" onclick="showWorkspaceView('home')">我的工作</button>
+                            <button class="workspace-nav-item" type="button" data-workspace-capability="schedule.write" onclick="openWorkspaceTask('competition', 'schedule')">比赛与赛程</button>
+                            <button class="workspace-nav-item" type="button" data-workspace-capability="suspensions.write" onclick="openWorkspaceTask('competition', 'suspensions')">纪律与伤停</button>
+                            <button class="workspace-nav-item" type="button" data-workspace-capability="candidate_lists.write" onclick="openWorkspaceTask('database', 'candidates')">候选名单</button>
+                            <button class="workspace-nav-item" type="button" data-workspace-imports data-workspace-view="imports" onclick="showWorkspaceView('imports')">数据导入</button>
+                            <button class="workspace-nav-item" type="button" data-workspace-admin-only data-workspace-view="promotions" onclick="showWorkspaceView('promotions')">主页宣传</button>
+                            <button class="workspace-nav-item" type="button" data-workspace-admin-only onclick="showWorkspaceView('accounts')">人员与权限</button>
+                            <button class="workspace-nav-item" type="button" data-workspace-admin-only onclick="showWorkspaceView('operations')">数据与系统</button>
+                            <button class="workspace-nav-item" type="button" data-workspace-admin-only onclick="showWorkspaceView('operations', 'operationsAuditCard')">操作记录</button>
+                        </nav>
+                        <button class="btn btn-secondary workspace-logout" id="workspaceLogoutButton" type="button" onclick="workspaceLogout()">退出工作身份</button>
+                    </aside>
+                    <main class="workspace-main">
+                        <section class="workspace-view active" id="workspaceHomeView">
+                            <div class="workspace-page-head">
+                                <div><span class="panel-kicker">My Work</span><h2>我的工作</h2><p>集中查看当前权限、待处理事项和最近操作。</p></div>
+                                <button class="btn btn-secondary" type="button" onclick="loadWorkspaceDashboard({force:true})">刷新</button>
+                            </div>
+                            <div class="workspace-metrics" id="workspaceMetrics"><div class="loading">加载工作摘要...</div></div>
+                            <section class="workspace-task-panel">
+                                <div class="workspace-section-head"><h3>我的任务</h3><span id="workspaceTaskScopeLabel">按当前身份分配</span></div>
+                                <div id="workspaceTaskList"><div class="loading">加载任务...</div></div>
+                            </section>
+                            <section class="workspace-recent-panel">
+                                <div class="workspace-section-head"><h3>最近操作</h3><span>当前工作身份</span></div>
+                                <div id="workspaceRecentActions"><div class="loading">加载操作记录...</div></div>
+                            </section>
+                        </section>
+
+                        <section class="workspace-view" id="workspaceAccountsView">
+                            <div class="workspace-page-head">
+                                <div><span class="panel-kicker">People & Access</span><h2>人员与权限</h2><p>集中管理教练账号状态和联赛工作权限。</p></div>
+                                <button class="btn btn-secondary" type="button" onclick="loadWorkspaceAccounts({force:true})">刷新</button>
+                            </div>
+                            <div class="workspace-account-filters">
+                                <input id="workspaceAccountSearch" type="search" placeholder="搜索教练、球队或账号" oninput="renderWorkspaceAccounts()">
+                                <select id="workspaceAccountTypeFilter" onchange="renderWorkspaceAccounts()">
+                                    <option value="">全部账号</option>
+                                    <option value="coach_worker">教练工作账号</option>
+                                    <option value="coach">普通教练</option>
+                                    <option value="worker">赛事工作人员</option>
+                                    <option value="administrator">完整管理员</option>
+                                </select>
+                            </div>
+                            <div id="workspaceAccountsTable"><div class="loading">加载账号列表...</div></div>
+                        </section>
+
+                        <section class="workspace-view" id="workspacePromotionsView">
+                            <div class="workspace-page-head">
+                                <div><span class="panel-kicker">Home Broadcast</span><h2>主页宣传</h2><p>统一管理冠军荣誉、名单发布、联赛通知与活动标语。</p></div>
+                                <div class="workspace-promotion-head-actions">
+                                    <button class="btn btn-secondary" type="button" onclick="syncWorkspaceChampionPromotions()">同步杯赛冠军</button>
+                                    <button class="btn btn-secondary" type="button" onclick="syncWorkspaceLeagueChampionPromotions()">同步联赛冠军</button>
+                                    <button class="btn btn-primary" type="button" onclick="showWorkspacePromotionEditor()">新增宣传</button>
+                                </div>
+                            </div>
+                            <div class="workspace-promotion-guide">
+                                <div><strong>公开展示</strong><span>已启用且处于发布时间范围内</span></div>
+                                <div><strong>置顶优先</strong><span>置顶内容优先，再按排序值排列</span></div>
+                                <div><strong>可随时回收</strong><span>下线保留配置，删除永久移除</span></div>
+                            </div>
+                            <div id="workspacePromotionsList"><div class="loading">加载主页宣传...</div></div>
+                        </section>
+
+                        <section class="workspace-view" id="workspaceImportsView">
+                            <div class="workspace-page-head">
+                                <div><span class="panel-kicker">Data Intake</span><h2>数据导入</h2><p>名单、球员数据库和赛程文件在同一处集中更新。</p></div>
+                                <button class="btn btn-secondary" type="button" onclick="showWorkspaceView('home')">返回我的工作</button>
+                            </div>
+                            <div class="admin-section workspace-imports-section">
+                                <div class="maintenance-header">
+                                    <h3>正式导入</h3>
+                                    <p>上传前确认文件来源和影响范围；系统继续沿用原有校验、备份与权限边界。</p>
+                                </div>
+                                <div class="maintenance-grid workspace-import-grid">
+                                    <div class="admin-action-card maintenance-card warning" data-workspace-admin-only>
+                                        <div class="maintenance-badge warning">高影响</div>
+                                        <h4>上传联赛名单</h4>
+                                        <div class="maintenance-copy">上传包含信息总览和联赛名单的 HEIGO Excel，全量同步球队与球员名单。</div>
+                                        <div class="maintenance-impact"><strong>影响范围：</strong>联赛规则、球队名单和缓存摘要。</div>
+                                        <input class="maintenance-file-input" id="rosterImportFile" type="file" accept=".xlsx,.xlsm">
+                                        <button class="btn btn-danger" id="rosterImportButton" type="button" onclick="uploadAdminImportFile('roster')">上传并更新名单</button>
+                                    </div>
+                                    <div class="admin-action-card maintenance-card warning" data-workspace-admin-only>
+                                        <div class="maintenance-badge warning">高影响</div>
+                                        <h4>上传球员数据库</h4>
+                                        <div class="maintenance-copy">上传球员属性 CSV 或 XLSX，文件名中的四位版本号会保存为属性版本。</div>
+                                        <div class="maintenance-impact"><strong>影响范围：</strong>对应版本球员属性库，不修改当前名单和赛程。</div>
+                                        <input class="maintenance-file-input" id="attributesImportFile" type="file" accept=".csv,.xlsx">
+                                        <button class="btn btn-danger" id="attributesImportButton" type="button" onclick="uploadAdminImportFile('attributes')">上传并更新数据库</button>
+                                    </div>
+                                    <div class="admin-action-card maintenance-card schedule-import-card" data-workspace-imports>
+                                        <div class="maintenance-badge schedule">赛程维护</div>
+                                        <h4>上传赛程</h4>
+                                        <div class="maintenance-copy">上传赛程 Excel 并同步轮次与对阵；已录入比赛的比分和状态会保留。</div>
+                                        <div class="maintenance-impact"><strong>影响范围：</strong>联赛赛程、积分榜和比赛工作任务。</div>
+                                        <input class="maintenance-file-input" id="scheduleImportFile" type="file" accept=".xlsx,.xlsm">
+                                        <button class="btn btn-primary" id="scheduleImportButton" type="button" onclick="uploadWorkspaceScheduleFile()">上传并更新赛程</button>
+                                    </div>
+                                    <div class="admin-action-card maintenance-card" data-workspace-admin-only>
+                                        <div class="maintenance-badge">服务器文件</div>
+                                        <h4>导入服务器最新名单</h4>
+                                        <div class="maintenance-copy">读取 imports 目录中最新的 HEIGO 名单 Excel。</div>
+                                        <button class="btn btn-secondary" type="button" onclick="runFormalImport()">从服务器文件导入</button>
+                                    </div>
+                                    <div class="admin-action-card maintenance-card" data-workspace-imports>
+                                        <div class="maintenance-badge schedule">服务器赛程</div>
+                                        <h4>导入服务器最新赛程</h4>
+                                        <div class="maintenance-copy">读取 imports/schedules 目录中的最新赛程 Excel。</div>
+                                        <button class="btn btn-secondary" type="button" onclick="importWorkspaceLatestSchedule()">从服务器文件导入</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="admin-section" data-workspace-admin-only>
+                                <h3>正式导入摘要</h3>
+                                <div id="formalImportSummaryCard" class="import-summary-card">
+                                    <div class="import-summary-placeholder">本次会话还没有执行正式导入。执行后，这里会显示新增、更新、未变和清理摘要。</div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="workspace-view" id="workspaceOperationsView">
                 <div class="admin-shell">
                     <div class="admin-hero glass-card">
                         <div>
                             <span class="panel-kicker">League Operations</span>
-                            <h3>维护中心</h3>
-                            <p>正式导入、批量维护、运维审计和系统状态都集中在这里处理，避免干扰前台查询流程。</p>
+                            <h3>数据与系统维护</h3>
+                            <p>完整管理员在这里执行球员操作、数据重算和系统诊断；正式导入已集中到“数据导入”。</p>
                         </div>
                         <div class="admin-hero-actions">
-                            <button class="btn btn-secondary" onclick="showTab('players')">返回名单页</button>
-                            <button class="btn btn-secondary" onclick="adminLogout()">退出登录</button>
+                            <button class="btn btn-secondary" onclick="showWorkspaceView('home')">返回我的工作</button>
                         </div>
                     </div>
 
@@ -575,34 +786,6 @@
                     </div>
 
                     <div class="admin-stack-grid">
-                        <div class="admin-side-stack">
-                            <div class="admin-section">
-                                <div class="maintenance-header">
-                                    <h3>正式导入</h3>
-                                    <p>高影响操作。执行前确认数据来源、影响范围和当前联赛窗口。</p>
-                                </div>
-                                <div class="maintenance-grid">
-                                    <div class="admin-action-card maintenance-card warning">
-                                        <div class="maintenance-badge warning">高影响</div>
-                                        <h4>正式导入最新联赛数据</h4>
-                                        <div class="maintenance-copy">按严格模式读取最新 HEIGO Excel 和球员属性 CSV/XLSX，自动备份当前数据库后再写入联赛规则、球队、球员和属性库；球员属性会按版本并存。</div>
-                                        <div class="maintenance-impact">
-                                            <strong>影响范围：</strong>联赛规则、球队名单、球员属性、缓存摘要和部分维护日志都会同步更新。
-                                        </div>
-                                        <button class="btn btn-danger" onclick="runFormalImport()">执行正式导入</button>
-                                        <div class="maintenance-note">执行后会刷新概览、名单页和审计摘要。</div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="admin-section">
-                                <h3>正式导入摘要</h3>
-                                <div id="formalImportSummaryCard" class="import-summary-card">
-                                    <div class="import-summary-placeholder">本次会话还没有执行正式导入。执行后，这里会显示新增、更新、未变和清理摘要。</div>
-                                </div>
-                            </div>
-                        </div>
-
                         <div class="admin-side-stack">
                             <div class="admin-section">
                                 <h3>Schema 状态</h3>
@@ -703,6 +886,9 @@
                         </div>
                     </div>
                 </div>
+                        </section>
+                    </main>
+                </div>
             </div>
         </div>
 
@@ -712,6 +898,11 @@
                 <a class="footer-link-card" href="/data-feedback">数据纠错</a>
             </div>
             <div class="footer-signature">Created by ❤大直塞❤ <span class="footer-version">v__STATIC_ASSET_VERSION__</span></div>
+            <div class="footer-visit-stats" id="footerVisitStats" aria-live="polite" hidden>
+                累计访问 <span id="footerTotalVisits">--</span>
+                <span class="footer-visit-divider" aria-hidden="true">·</span>
+                今日访问 <span id="footerTodayVisits">--</span>
+            </div>
         </footer>
     </div>
     
@@ -727,6 +918,10 @@
 
     <aside id="compareDock" class="compare-dock" aria-label="球员对比夹"></aside>
     <aside id="candidateDock" class="candidate-dock" aria-label="候选名单夹"></aside>
+    <button id="workspaceReturnButton" class="workspace-return-button" type="button" aria-label="返回联赛工作台" onclick="showTab('admin')" hidden>
+        <span class="workspace-return-icon" aria-hidden="true">↩</span>
+        <span class="workspace-return-label">工作台</span>
+    </button>
 
     <div class="comparison-overlay" id="comparisonOverlay" aria-hidden="true">
         <div class="comparison-shell" role="dialog" aria-modal="true" aria-labelledby="comparisonTitle">
@@ -743,15 +938,6 @@
     
     <script src="/static/js/app.core.js?v=__STATIC_ASSET_VERSION__"></script>
     <script src="/static/js/app.home.js?v=__STATIC_ASSET_VERSION__"></script>
-    <script src="/static/js/app.overview.js?v=__STATIC_ASSET_VERSION__"></script>
-    <script src="/static/js/app.players.js?v=__STATIC_ASSET_VERSION__"></script>
-    <script src="/static/js/app.competition.js?v=__STATIC_ASSET_VERSION__"></script>
-    <script src="/static/vendor/html-to-image.js?v=__STATIC_ASSET_VERSION__"></script>
-    <script src="/static/js/app.database.js?v=__STATIC_ASSET_VERSION__"></script>
-    <script src="/static/js/app.coaches.js?v=__STATIC_ASSET_VERSION__"></script>
-    <script src="/static/js/database.search.js?v=__STATIC_ASSET_VERSION__"></script>
-    <script src="/static/js/database.compare.js?v=__STATIC_ASSET_VERSION__"></script>
-    <script src="/static/js/app.admin.js?v=__STATIC_ASSET_VERSION__"></script>
     <script src="/static/app.js?v=__STATIC_ASSET_VERSION__"></script>
 </body>
 </html>

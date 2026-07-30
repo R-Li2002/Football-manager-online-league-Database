@@ -4,7 +4,7 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from models import Match, MatchPlayerEvent, PlayerCompetitionStat
-from schemas_read import PlayerRankingRowResponse, PlayerRankingsResponse
+from schemas_read import PlayerRankingCoverageResponse, PlayerRankingRowResponse, PlayerRankingsResponse
 
 LEAGUE_LEVELS = ["超级", "甲级", "乙级"]
 
@@ -36,6 +36,60 @@ def _rank_rows(rows: list[dict], *, metric: str) -> list[PlayerRankingRowRespons
         for index, row in enumerate(sorted_rows, start=1)
         if int(row.get("goals") or 0) > 0 or int(row.get("assists") or 0) > 0 or int(row.get("mvps") or 0) > 0
     ]
+
+
+def _build_coverage(db: Session) -> list[PlayerRankingCoverageResponse]:
+    coverage_by_level: dict[str, dict[str, int | str]] = {
+        level: {
+            "level": level,
+            "played_matches": 0,
+            "matches_with_events": 0,
+            "matches_missing_events": 0,
+            "event_rows": 0,
+            "goal_quantity": 0,
+            "assist_quantity": 0,
+            "mvp_quantity": 0,
+        }
+        for level in LEAGUE_LEVELS
+    }
+
+    played_rows = (
+        db.query(Match.level.label("level"), func.count(Match.id).label("played_matches"))
+        .filter(Match.level.in_(LEAGUE_LEVELS), Match.status == "played")
+        .group_by(Match.level)
+        .all()
+    )
+    for row in played_rows:
+        if row.level in coverage_by_level:
+            coverage_by_level[row.level]["played_matches"] = int(row.played_matches or 0)
+
+    event_match_rows = (
+        db.query(
+            Match.level.label("level"),
+            func.count(func.distinct(MatchPlayerEvent.match_id)).label("matches_with_events"),
+            func.count(MatchPlayerEvent.id).label("event_rows"),
+            func.sum(case((MatchPlayerEvent.event_type == "goal", MatchPlayerEvent.quantity), else_=0)).label("goal_quantity"),
+            func.sum(case((MatchPlayerEvent.event_type == "assist", MatchPlayerEvent.quantity), else_=0)).label("assist_quantity"),
+            func.sum(case((MatchPlayerEvent.event_type == "mvp", MatchPlayerEvent.quantity), else_=0)).label("mvp_quantity"),
+        )
+        .join(Match, Match.id == MatchPlayerEvent.match_id)
+        .filter(Match.level.in_(LEAGUE_LEVELS), Match.status == "played")
+        .group_by(Match.level)
+        .all()
+    )
+    for row in event_match_rows:
+        if row.level not in coverage_by_level:
+            continue
+        coverage_by_level[row.level]["matches_with_events"] = int(row.matches_with_events or 0)
+        coverage_by_level[row.level]["event_rows"] = int(row.event_rows or 0)
+        coverage_by_level[row.level]["goal_quantity"] = int(row.goal_quantity or 0)
+        coverage_by_level[row.level]["assist_quantity"] = int(row.assist_quantity or 0)
+        coverage_by_level[row.level]["mvp_quantity"] = int(row.mvp_quantity or 0)
+
+    for row in coverage_by_level.values():
+        row["matches_missing_events"] = max(0, int(row["played_matches"] or 0) - int(row["matches_with_events"] or 0))
+
+    return [PlayerRankingCoverageResponse(**coverage_by_level[level]) for level in LEAGUE_LEVELS]
 
 
 def get_player_rankings(db: Session) -> PlayerRankingsResponse:
@@ -100,4 +154,4 @@ def get_player_rankings(db: Session) -> PlayerRankingsResponse:
     for level in LEAGUE_LEVELS:
         level_rows = [row for row in stats if row["level"] == level]
         rows.extend(_rank_rows(level_rows, metric="goals"))
-    return PlayerRankingsResponse(levels=LEAGUE_LEVELS, rows=rows)
+    return PlayerRankingsResponse(levels=LEAGUE_LEVELS, rows=rows, coverage=_build_coverage(db))

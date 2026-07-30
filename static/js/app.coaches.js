@@ -1,11 +1,15 @@
 var coachesData = {levels: [], coaches: []};
 var coachesLoaded = false;
 var currentCoachDetail = null;
-var currentCoachAccount = {authenticated: false};
 var coachReactionSubmitting = false;
 var coachReactionCooldownTimer = null;
 var coachReactionAnimatingType = '';
 var pendingCoachOpenUid = '';
+var coachLoginSuccessContext = '';
+var coachForcedPasswordPromptOpen = false;
+var coachForcedPasswordCompleteHandler = null;
+var coachForcedQqPromptOpen = false;
+var coachForcedQqCompleteHandler = null;
 const COACH_HONOR_COMPETITIONS = ['超级杯', '冠军杯', '联盟杯', '无铭剑杯', '足总杯', '联赛杯', '联机联赛联盟杯', '世界杯', '新人赛', '超级联赛', '甲级联赛', '乙级联赛'];
 const COACH_HONOR_PLACEMENTS = ['冠军', '亚军', '季军'];
 const COACH_TITLE_COLORS = [
@@ -182,14 +186,15 @@ function canEditCurrentCoach(coach = currentCoachDetail) {
 }
 
 function coachAccountHasWorkPermissions(account = currentCoachAccount) {
-    return Boolean(account?.can_manage_schedule || account?.can_manage_suspensions || account?.can_manage_candidate_lists);
+    return Boolean(!account?.must_change_password && account?.qq_number && (account?.can_manage_schedule || account?.can_manage_suspensions || account?.can_manage_candidate_lists));
 }
 
 function syncWorkPermissionsFromCoachAccount() {
     if (currentAdminRole) return;
-    canManageSchedule = Boolean(currentCoachAccount.authenticated && currentCoachAccount.can_manage_schedule);
-    canManageSuspensions = Boolean(currentCoachAccount.authenticated && currentCoachAccount.can_manage_suspensions);
-    canManageCandidateLists = Boolean(currentCoachAccount.authenticated && currentCoachAccount.can_manage_candidate_lists);
+    const securityReady = Boolean(currentCoachAccount.authenticated && !currentCoachAccount.must_change_password && currentCoachAccount.qq_number);
+    canManageSchedule = Boolean(securityReady && currentCoachAccount.can_manage_schedule);
+    canManageSuspensions = Boolean(securityReady && currentCoachAccount.can_manage_suspensions);
+    canManageCandidateLists = Boolean(securityReady && currentCoachAccount.can_manage_candidate_lists);
 }
 
 async function syncCoachAuthStatus() {
@@ -200,17 +205,31 @@ async function syncCoachAuthStatus() {
         currentCoachAccount = {authenticated: false};
     }
     syncWorkPermissionsFromCoachAccount();
+    try {
+        const workspaceResponse = await fetch('/api/workspace/session', {credentials: 'same-origin'});
+        workspaceSessionState = workspaceResponse.ok ? await workspaceResponse.json() : {authenticated: false, identity: null};
+    } catch (error) {
+        workspaceSessionState = {authenticated: false, identity: null};
+    }
+    if (typeof syncLightweightAdminTabVisibility === 'function') syncLightweightAdminTabVisibility();
     renderCoachAuthBox();
+    if (currentCoachAccount.authenticated && (currentCoachAccount.must_change_password || !currentCoachAccount.qq_number)) {
+        setTimeout(() => beginCoachSecuritySetup(), 0);
+    }
     return currentCoachAccount;
 }
 
 function renderCoachAuthBox() {
+    if (typeof renderGlobalCoachAccount === 'function') renderGlobalCoachAccount();
     const host = document.getElementById('coachAuthBox');
     if (!host) return;
     if (currentCoachAccount.authenticated) {
         host.innerHTML = `
             <span class="coach-auth-pill">${escapeHtml(currentCoachAccount.nickname || currentCoachAccount.username || '教练')}</span>
+            ${currentCoachAccount.qq_number ? `<span class="coach-auth-pill is-qq">QQ ${escapeHtml(currentCoachAccount.qq_number)}</span>` : ''}
+            ${currentCoachAccount.must_change_password ? '<span class="coach-auth-pill is-security">待修改默认密码</span>' : ''}
             ${coachAccountHasWorkPermissions() ? '<span class="coach-auth-pill is-work">工作账号</span>' : ''}
+            ${coachAccountHasWorkPermissions() ? '<button class="btn btn-primary" type="button" onclick="openCoachWorkspace()">进入工作台</button>' : ''}
             <button class="btn btn-secondary" type="button" onclick="coachLogout()">退出</button>
         `;
         return;
@@ -218,14 +237,32 @@ function renderCoachAuthBox() {
     host.innerHTML = `<button class="btn btn-secondary" type="button" onclick="showCoachLoginPanel()">教练登录</button>`;
 }
 
-function showCoachLoginPanel() {
+function showCoachLoginPanel(options = {}) {
+    coachLoginSuccessContext = String(options.context || '');
     showModal('教练登录', `
-        <div class="coach-login-form">
-            <input id="coachLoginUsername" type="text" autocomplete="username" placeholder="账号">
+        <form class="coach-login-form" onsubmit="event.preventDefault(); coachLogin();">
+            <input id="coachLoginUsername" type="text" autocomplete="username" placeholder="QQ号 / 旧账号">
             <input id="coachLoginPassword" type="password" autocomplete="current-password" placeholder="密码">
-            <button class="btn btn-primary" type="button" onclick="coachLogin()">登录</button>
-        </div>
+            <span class="coach-login-hint">已绑定 QQ 的教练优先使用 QQ 号登录。</span>
+            <button class="btn btn-primary" type="submit">登录</button>
+        </form>
     `);
+}
+
+async function finalizeCoachLogin(data, successContext = '') {
+    const workspaceResponse = await fetch('/api/workspace/session', {credentials: 'same-origin'});
+    workspaceSessionState = workspaceResponse.ok ? await workspaceResponse.json() : {authenticated: false, identity: null};
+    if (typeof syncLightweightAdminTabVisibility === 'function') syncLightweightAdminTabVisibility();
+    renderCoachAuthBox();
+    if (typeof renderTeamsTable === 'function') renderTeamsTable();
+    if (typeof loadCompetitionData === 'function') loadCompetitionData({force: true});
+    if (typeof renderCandidateDock === 'function') renderCandidateDock();
+    if (typeof loadCandidateLists === 'function' && currentDatabaseSubtab === 'candidates') loadCandidateLists({force: true});
+    if (typeof closeModal === 'function') closeModal({force: true});
+    if (currentCoachDetail) renderCoachDetail();
+    if (successContext === 'team-center' && typeof openCoachLinkedTeam === 'function') {
+        await openCoachLinkedTeam(data);
+    }
 }
 
 async function coachLogin() {
@@ -244,19 +281,21 @@ async function coachLogin() {
     }
     currentCoachAccount = data;
     syncWorkPermissionsFromCoachAccount();
-    renderCoachAuthBox();
-    if (typeof renderTeamsTable === 'function') renderTeamsTable();
-    if (typeof loadCompetitionData === 'function') loadCompetitionData({force: true});
-    if (typeof renderCandidateDock === 'function') renderCandidateDock();
-    if (typeof loadCandidateLists === 'function' && currentDatabaseSubtab === 'candidates') loadCandidateLists({force: true});
-    if (typeof closeModal === 'function') closeModal();
-    if (currentCoachDetail) renderCoachDetail();
+    const successContext = coachLoginSuccessContext;
+    coachLoginSuccessContext = '';
+    beginCoachSecuritySetup(() => finalizeCoachLogin(currentCoachAccount, successContext));
+}
+
+async function openCoachWorkspace() {
+    await showTab('admin', null, {syncHistory: true});
 }
 
 async function coachLogout() {
     await fetch('/api/coach/logout', {method: 'POST', credentials: 'same-origin'});
     currentCoachAccount = {authenticated: false};
+    workspaceSessionState = {authenticated: false, identity: null};
     syncWorkPermissionsFromCoachAccount();
+    if (typeof syncLightweightAdminTabVisibility === 'function') syncLightweightAdminTabVisibility();
     renderCoachAuthBox();
     if (typeof renderTeamsTable === 'function') renderTeamsTable();
     if (typeof loadCompetitionData === 'function') loadCompetitionData({force: true});
@@ -459,7 +498,7 @@ function renderCoachActionPanel(coach) {
             <button class="btn btn-secondary" type="button" onclick="showCoachProfileModal()">修改资料/称号样式</button>
             <button class="btn btn-secondary" type="button" onclick="showCoachAvatarModal()">上传头像</button>
             <button class="btn btn-secondary" type="button" onclick="showCoachHonorModal()">添加荣誉</button>
-            ${!canManageCoachProfiles() && currentCoachAccount.authenticated ? `<button class="btn btn-secondary" type="button" onclick="showCoachPasswordModal()">修改密码</button>` : ''}
+            ${!canManageCoachProfiles() && currentCoachAccount.authenticated ? `<button class="btn btn-secondary" type="button" onclick="showCoachQqModal()">${currentCoachAccount.qq_number ? 'QQ与登录安全' : '绑定QQ与登录安全'}</button>` : ''}
             ${isAdmin ? `<button class="btn btn-secondary" type="button" onclick="showCoachAccountModal()">账号设置</button>` : ''}
         </section>
     `;
@@ -533,11 +572,112 @@ function showCoachPasswordModal() {
     `);
 }
 
+function showCoachForcedPasswordModal(onComplete = null, errorMessage = '') {
+    if (!currentCoachAccount.authenticated || !currentCoachAccount.must_change_password) return;
+    if (typeof onComplete === 'function') coachForcedPasswordCompleteHandler = onComplete;
+    if (coachForcedPasswordPromptOpen) return;
+    coachForcedPasswordPromptOpen = true;
+    showModal('首次登录 · 修改默认密码', `
+        <div class="coach-security-gate">
+            <div class="coach-security-gate-mark" aria-hidden="true">✓</div>
+            <div><strong>先设置你自己的密码</strong><p>管理员提供的密码仅用于首次进入。修改完成前，球队中心、个人资料和工作台操作都会保持锁定。</p></div>
+            ${errorMessage ? `<div class="coach-security-error">${escapeHtml(errorMessage)}</div>` : ''}
+            <input id="coachCurrentPassword" type="password" autocomplete="current-password" placeholder="当前默认密码">
+            <input id="coachNewPassword" type="password" autocomplete="new-password" placeholder="新密码，至少 6 位">
+            <input id="coachConfirmPassword" type="password" autocomplete="new-password" placeholder="再次输入新密码">
+            <button class="btn btn-primary" type="button" onclick="changeCoachPassword({forced: true})">保存新密码并继续</button>
+        </div>
+    `, {locked: true});
+}
+
+function beginCoachSecuritySetup(onComplete = null) {
+    if (!currentCoachAccount.authenticated) return false;
+    if (currentCoachAccount.must_change_password) {
+        showCoachForcedPasswordModal(() => beginCoachSecuritySetup(onComplete));
+        return false;
+    }
+    if (!currentCoachAccount.qq_number) {
+        showCoachForcedQqModal(onComplete);
+        return false;
+    }
+    if (typeof onComplete === 'function') Promise.resolve(onComplete());
+    return true;
+}
+
+function showCoachForcedQqModal(onComplete = null, errorMessage = '') {
+    if (!currentCoachAccount.authenticated || currentCoachAccount.must_change_password || currentCoachAccount.qq_number) return;
+    if (typeof onComplete === 'function') coachForcedQqCompleteHandler = onComplete;
+    if (coachForcedQqPromptOpen) return;
+    coachForcedQqPromptOpen = true;
+    showModal('登录安全 · 绑定 QQ', `
+        <div class="coach-security-gate coach-qq-gate">
+            <div class="coach-security-gate-mark" aria-hidden="true">Q</div>
+            <div><strong>绑定你自己的 QQ 号</strong><p>QQ 将成为主要登录凭证。绑定完成前，球队中心、个人资料和联赛工作台都会保持锁定。</p></div>
+            ${errorMessage ? `<div class="coach-security-error">${escapeHtml(errorMessage)}</div>` : ''}
+            <input id="coachBindQqNumber" type="text" inputmode="numeric" autocomplete="off" placeholder="输入 5-12 位 QQ 号">
+            <input id="coachBindQqPassword" type="password" autocomplete="current-password" placeholder="验证刚设置的密码">
+            <button class="btn btn-primary" type="button" onclick="bindCoachQq({forced: true})">绑定 QQ 并进入</button>
+        </div>
+    `, {locked: true});
+}
+
+function showCoachQqModal() {
+    if (!currentCoachAccount.authenticated) return;
+    showModal('QQ 与登录安全', `
+        <div class="coach-security-panel">
+            <div class="coach-security-identity">
+                <span>主要登录凭证</span>
+                <strong>${currentCoachAccount.qq_number ? `QQ ${escapeHtml(currentCoachAccount.qq_number)}` : '尚未绑定 QQ'}</strong>
+                <small>旧账号 ${escapeHtml(currentCoachAccount.username || '-')} 继续作为兼容入口。</small>
+            </div>
+            <label><span>${currentCoachAccount.qq_number ? '更换绑定 QQ' : '绑定你的 QQ'}</span><input id="coachBindQqNumber" type="text" inputmode="numeric" autocomplete="off" value="${escapeHtml(currentCoachAccount.qq_number || '')}" placeholder="5-12 位 QQ 号"></label>
+            <label><span>验证当前密码</span><input id="coachBindQqPassword" type="password" autocomplete="current-password" placeholder="当前密码"></label>
+            <button class="btn btn-primary" type="button" onclick="bindCoachQq()">${currentCoachAccount.qq_number ? '更新 QQ 绑定' : '绑定 QQ'}</button>
+            <button class="btn btn-secondary" type="button" onclick="showCoachPasswordModal()">修改登录密码</button>
+        </div>
+    `);
+}
+
+async function bindCoachQq(options = {}) {
+    const payload = {
+        qq_number: document.getElementById('coachBindQqNumber')?.value || '',
+        current_password: document.getElementById('coachBindQqPassword')?.value || '',
+    };
+    const result = await coachJsonRequest('/api/coach/me/qq', {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+    });
+    if (!result) return;
+    const {response, data} = result;
+    if (!response.ok || !data.success) {
+        if (options.forced) {
+            coachForcedQqPromptOpen = false;
+            showCoachForcedQqModal(coachForcedQqCompleteHandler, data.detail || data.message || 'QQ 绑定失败');
+        } else {
+            showModal('绑定失败', escapeHtml(data.detail || data.message || 'QQ 绑定失败'));
+        }
+        return;
+    }
+    await syncCoachAuthStatus();
+    if (options.forced) {
+        coachForcedQqPromptOpen = false;
+        closeModal({force: true});
+        const handler = coachForcedQqCompleteHandler;
+        coachForcedQqCompleteHandler = null;
+        if (typeof handler === 'function') await handler();
+        return;
+    }
+    showModal('绑定成功', `以后可以使用 QQ ${escapeHtml(currentCoachAccount.qq_number || payload.qq_number)} 和密码登录。`);
+    if (currentCoachDetail) renderCoachDetail();
+}
+
 async function showCoachAccountModal() {
     if (!isAdmin || !currentCoachDetail) return;
     showModal('教练账号', `
         <div class="coach-modal-form">
             <div id="coachAccountStatus" class="coach-account-status">加载账号状态...</div>
+            <div id="coachAccountQqStatus" class="coach-account-qq-status"></div>
             <input id="coachAccountUsername" type="text" placeholder="账号名">
             <input id="coachAccountPassword" type="password" placeholder="新账号必填；已有账号留空则不改密码">
             <label class="coach-account-toggle"><input id="coachAccountActive" type="checkbox" checked> 启用账号</label>
@@ -678,6 +818,10 @@ async function saveCoachProfile() {
     if (typeof closeModal === 'function') closeModal();
     coachesLoaded = false;
     await openCoachDetail(currentCoachDetail.uid);
+    if (currentCoachAccount.authenticated && currentCoachAccount.coach_uid === currentCoachDetail.uid) {
+        currentCoachAccount.avatar_path = currentCoachDetail.avatar_path;
+        renderGlobalCoachAccount();
+    }
 }
 
 async function uploadCoachAvatar() {
@@ -704,6 +848,10 @@ async function uploadCoachAvatar() {
     if (typeof closeModal === 'function') closeModal();
     coachesLoaded = false;
     await openCoachDetail(currentCoachDetail.uid);
+    if (currentCoachAccount.authenticated && currentCoachAccount.coach_uid === currentCoachDetail.uid) {
+        currentCoachAccount.avatar_path = currentCoachDetail.avatar_path;
+        renderGlobalCoachAccount();
+    }
 }
 
 async function saveCoachHonor() {
@@ -817,6 +965,7 @@ async function loadCoachAccountStatus() {
     if (!result) return;
     const {response, data} = result;
     const status = document.getElementById('coachAccountStatus');
+    const qqStatus = document.getElementById('coachAccountQqStatus');
     if (!response.ok) {
         if (status) status.textContent = '账号状态读取失败';
         return;
@@ -827,8 +976,13 @@ async function loadCoachAccountStatus() {
         if (data.can_manage_suspensions) permissions.push('伤停');
         if (data.can_manage_candidate_lists) permissions.push('候选名单');
         status.textContent = data.exists
-            ? `当前账号：${data.username}${data.is_active ? '（启用）' : '（停用）'} · 工作权限：${permissions.join('、') || '无'}`
+            ? `当前账号：${data.username}${data.is_active ? '（启用）' : '（停用）'} · ${data.must_change_password ? '首次登录待改密' : '密码已由教练设置'} · 工作权限：${permissions.join('、') || '无'}`
             : '尚未设置教练账号';
+    }
+    if (qqStatus) {
+        qqStatus.innerHTML = data.qq_number
+            ? `<span>已绑定 QQ <strong>${escapeHtml(data.qq_number)}</strong></span><button class="btn btn-secondary" type="button" onclick="unbindCoachQqAsAdmin()">解除绑定</button>`
+            : '<span>尚未绑定 QQ</span>';
     }
     const usernameInput = document.getElementById('coachAccountUsername');
     const activeInput = document.getElementById('coachAccountActive');
@@ -840,6 +994,18 @@ async function loadCoachAccountStatus() {
     if (scheduleInput) scheduleInput.checked = Boolean(data.can_manage_schedule);
     if (suspensionsInput) suspensionsInput.checked = Boolean(data.can_manage_suspensions);
     if (candidatesInput) candidatesInput.checked = Boolean(data.can_manage_candidate_lists);
+}
+
+async function unbindCoachQqAsAdmin() {
+    if (!isAdmin || !currentCoachDetail) return;
+    const result = await adminJsonRequest(`/api/admin/coaches/${encodeURIComponent(currentCoachDetail.uid)}/qq`, {method: 'DELETE'});
+    if (!result) return;
+    const {response, data} = result;
+    if (!response.ok || !data.success) {
+        showModal('解绑失败', escapeHtml(data.detail || data.message || 'QQ 解绑失败'));
+        return;
+    }
+    await showCoachAccountModal();
 }
 
 async function saveCoachAccount() {
@@ -868,11 +1034,18 @@ async function saveCoachAccount() {
     showModal('保存成功', '教练账号已更新。');
 }
 
-async function changeCoachPassword() {
+async function changeCoachPassword(options = {}) {
     if (!currentCoachAccount.authenticated) return;
+    const newPassword = document.getElementById('coachNewPassword')?.value || '';
+    const confirmedPassword = document.getElementById('coachConfirmPassword')?.value || '';
+    if (options.forced && newPassword !== confirmedPassword) {
+        coachForcedPasswordPromptOpen = false;
+        showCoachForcedPasswordModal(coachForcedPasswordCompleteHandler, '两次输入的新密码不一致，请重新填写。');
+        return;
+    }
     const payload = {
         current_password: document.getElementById('coachCurrentPassword')?.value || '',
-        new_password: document.getElementById('coachNewPassword')?.value || '',
+        new_password: newPassword,
     };
     const result = await coachJsonRequest('/api/coach/me/password', {
         method: 'PATCH',
@@ -882,10 +1055,23 @@ async function changeCoachPassword() {
     if (!result) return;
     const {response, data} = result;
     if (!response.ok || !data.success) {
-        showModal('修改失败', escapeHtml(data.detail || data.message || '修改密码失败'));
+        if (options.forced) {
+            coachForcedPasswordPromptOpen = false;
+            showCoachForcedPasswordModal(coachForcedPasswordCompleteHandler, data.detail || data.message || '修改密码失败');
+        } else {
+            showModal('修改失败', escapeHtml(data.detail || data.message || '修改密码失败'));
+        }
         return;
     }
-    document.getElementById('coachCurrentPassword').value = '';
-    document.getElementById('coachNewPassword').value = '';
+    currentCoachAccount.must_change_password = false;
+    if (options.forced) {
+        coachForcedPasswordPromptOpen = false;
+        closeModal({force: true});
+        const handler = coachForcedPasswordCompleteHandler;
+        coachForcedPasswordCompleteHandler = null;
+        if (typeof handler === 'function') await handler();
+        else await syncCoachAuthStatus();
+        return;
+    }
     showModal('修改成功', '密码已更新。');
 }

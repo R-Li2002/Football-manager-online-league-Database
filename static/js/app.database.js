@@ -1,15 +1,46 @@
-﻿var currentDbSort = {field: '', order: '', type: 'number'};
-
 const DB_SORT_FIELD_CONFIG = {
     name: {label: '姓名', type: 'text'},
     position: {label: '位置', type: 'text'},
     age: {label: '年龄', type: 'number'},
     ca: {label: 'CA', type: 'number'},
     pa: {label: 'PA', type: 'number'},
+    weighted_power: {label: '加权战力值', type: 'number'},
+    heigo_power: {label: 'HEIGO战力', type: 'number'},
     nationality: {label: '国籍', type: 'text'},
     heigo_club: {label: 'HEIGO俱乐部', type: 'text'},
     club: {label: '现实俱乐部', type: 'text'},
 };
+
+const WEIGHTED_POWER_COLLAPSED_STORAGE_KEY = 'heigo_weighted_power_collapsed';
+
+function readWeightedPowerCollapsedPreference() {
+    try {
+        return typeof localStorage !== 'undefined'
+            && localStorage.getItem(WEIGHTED_POWER_COLLAPSED_STORAGE_KEY) === '1';
+    } catch (error) {
+        return false;
+    }
+}
+
+let weightedPowerCollapsed = readWeightedPowerCollapsedPreference();
+
+function setWeightedPowerCollapsed(collapsed) {
+    weightedPowerCollapsed = Boolean(collapsed);
+    try {
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(WEIGHTED_POWER_COLLAPSED_STORAGE_KEY, weightedPowerCollapsed ? '1' : '0');
+        }
+    } catch (error) {
+        // Browsers with blocked storage still keep the preference for the current page session.
+    }
+    if (typeof currentDetailPlayer !== 'undefined' && currentDetailPlayer) {
+        renderPlayerDetail(currentDetailPlayer);
+    }
+}
+
+function toggleWeightedPowerCollapsed() {
+    setWeightedPowerCollapsed(!weightedPowerCollapsed);
+}
 
 function getDefaultDbSortOrder(type) {
     return type === 'text' ? 'asc' : 'desc';
@@ -113,6 +144,8 @@ function getDatabaseLeaderboardMetricLabel(metric) {
 function syncDatabaseSubtabUI() {
     const searchButton = document.getElementById('dbSubtabSearch');
     const candidatesButton = document.getElementById('dbSubtabCandidates');
+    const powerButton = document.getElementById('dbSubtabPower');
+    const tacticsButton = document.getElementById('dbSubtabTactics');
     const leaderboardButton = document.getElementById('dbSubtabLeaderboard');
     if (searchButton) {
         const active = currentDatabaseSubtab === 'search';
@@ -128,6 +161,16 @@ function syncDatabaseSubtabUI() {
         const active = currentDatabaseSubtab === 'leaderboard';
         leaderboardButton.classList.toggle('active', active);
         leaderboardButton.setAttribute('aria-selected', active ? 'true' : 'false');
+    }
+    if (powerButton) {
+        const active = currentDatabaseSubtab === 'power';
+        powerButton.classList.toggle('active', active);
+        powerButton.setAttribute('aria-selected', active ? 'true' : 'false');
+    }
+    if (tacticsButton) {
+        const active = currentDatabaseSubtab === 'tactics';
+        tacticsButton.classList.toggle('active', active);
+        tacticsButton.setAttribute('aria-selected', active ? 'true' : 'false');
     }
 }
 
@@ -147,15 +190,35 @@ function populateReactionLeaderboardTeamSelect() {
     }
 }
 
+function populatePowerRankingTeamSelect() {
+    const select = document.getElementById('dbPowerTeamSelect');
+    if (!select) return;
+    const previousValue = select.value;
+    select.innerHTML = '<option value="">-- 全部球队 --</option>';
+    teams.forEach(team => {
+        const option = document.createElement('option');
+        option.value = team.name;
+        option.textContent = `${team.name} (${team.level})`;
+        select.appendChild(option);
+    });
+    if (teams.some(team => team.name === previousValue)) select.value = previousValue;
+}
+
 function activateDatabaseView(viewName = 'list') {
     const isSearchView = viewName === 'list';
     const isCandidateView = viewName === 'candidates';
     const isLeaderboardView = viewName === 'leaderboard';
+    const isPowerView = viewName === 'power';
+    const isTacticsView = viewName === 'tactics';
     const isDetailView = viewName === 'detail';
     const dbListView = document.getElementById('dbListView');
     const dbCandidateListsView = document.getElementById('dbCandidateListsView');
     const dbReactionLeaderboardView = document.getElementById('dbReactionLeaderboardView');
+    const dbPowerRankingView = document.getElementById('dbPowerRankingView');
+    const dbTacticsView = document.getElementById('dbTacticsView');
     const dbDetailView = document.getElementById('dbDetailView');
+    document.documentElement?.classList?.toggle('player-detail-scroll-snap', isDetailView);
+    document.body?.classList?.toggle('player-detail-scroll-snap', isDetailView);
     if (dbListView) {
         dbListView.classList.toggle('active', isSearchView);
     }
@@ -165,6 +228,8 @@ function activateDatabaseView(viewName = 'list') {
     if (dbReactionLeaderboardView) {
         dbReactionLeaderboardView.classList.toggle('active', isLeaderboardView);
     }
+    if (dbPowerRankingView) dbPowerRankingView.classList.toggle('active', isPowerView);
+    if (dbTacticsView) dbTacticsView.classList.toggle('active', isTacticsView);
     if (dbDetailView) {
         dbDetailView.classList.toggle('active', isDetailView);
     }
@@ -184,10 +249,14 @@ async function showPlayerDetail(uid, options = {}) {
     await loadAttributeVersionCatalog();
     const requestedVersion = options.version || getCurrentAttributeVersion();
     setCurrentAttributeVersion(requestedVersion);
+    const calibrationPromise = loadHeigoPowerCalibration(requestedVersion);
     refreshAttributeVersionBanner();
     dbDetailReturnState = {tab: returnTab, subtab: returnSubtab};
     if (!preservePreviewStep) {
         currentGrowthPreviewStep = 0;
+    }
+    if (Number.isFinite(Number(options.previewStep))) {
+        currentGrowthPreviewStep = Math.max(0, Math.min(5, Number(options.previewStep)));
     }
     currentDetailMobileSection = 'overview';
     playerReactionSubmitting = false;
@@ -205,6 +274,7 @@ async function showPlayerDetail(uid, options = {}) {
         return;
     }
     setCurrentAttributeVersion(player.data_version);
+    await calibrationPromise;
     refreshAttributeVersionBanner();
     if (typeof selectRosterPlayer === 'function') {
         selectRosterPlayer(uid);
@@ -286,6 +356,51 @@ const HIDDEN_FIELDS = [
     ['professionalism', '职业素养'], ['important_matches', '大赛发挥'], ['injury_proneness', '受伤倾向'], ['versatility', '多样性'],
     ['sportsmanship', '体育精神'], ['temperament', '情绪控制'], ['loyalty', '忠诚'],
 ];
+const WEIGHTED_POWER_WEIGHTS = Object.freeze({
+    passing: 0.347,
+    crossing: 0.182,
+    marking: 0.147,
+    penalty: 0,
+    technique: -0.071,
+    corner: 0,
+    long_throws: 0,
+    dribbling: 1.376,
+    tackling: 0.159,
+    free_kick: 0,
+    finishing: 0.682,
+    first_touch: 0.194,
+    heading: 0.271,
+    long_shots: 0.394,
+    flair: -0.012,
+    positioning: 0.494,
+    work_rate: 3.471,
+    concentration: 1.388,
+    decisions: 0.035,
+    leadership: 0.012,
+    aggression: 0.494,
+    vision: 0.253,
+    teamwork: 0.024,
+    off_the_ball: 0.094,
+    determination: 0.688,
+    bravery: -0.024,
+    anticipation: 1.059,
+    composure: 0.635,
+    acceleration: 5.669,
+    jumping: 1.647,
+    agility: 1.135,
+    stamina: 1.229,
+    balance: 1.206,
+    strength: 0.671,
+    pace: 5.654,
+    natural_fitness: 0.647,
+    consistency: 0.306,
+    important_matches: 0.335,
+    pressure: 1.594,
+});
+const WEIGHTED_POWER_ACTIVE_FIELDS = Object.entries(WEIGHTED_POWER_WEIGHTS)
+    .filter(([, weight]) => weight !== 0);
+const heigoPowerCalibrationCache = new Map();
+let currentHeigoPowerCalibration = null;
 var playerDetailExportBusy = false;
 var detailExportToastTimer = null;
 var playerReactionSubmitting = false;
@@ -716,6 +831,154 @@ function buildPlayerMobileSummary(player, previewPlayer) {
     `;
 }
 
+function calculateWeightedPower(player) {
+    if (Number(player?.pos_gk) >= 15) {
+        return {score: null, rawScore: null, included: 0, total: WEIGHTED_POWER_ACTIVE_FIELDS.length, isGoalkeeper: true};
+    }
+
+    let rawScore = 0;
+    let theoreticalMin = 0;
+    let theoreticalMax = 0;
+    let included = 0;
+
+    WEIGHTED_POWER_ACTIVE_FIELDS.forEach(([key, weight]) => {
+        const numericValue = Number(player?.[key]);
+        if (!Number.isFinite(numericValue) || numericValue <= 0) return;
+        const value = Math.max(1, Math.min(20, numericValue));
+        rawScore += value * weight;
+        theoreticalMin += weight >= 0 ? weight : weight * 20;
+        theoreticalMax += weight >= 0 ? weight * 20 : weight;
+        included += 1;
+    });
+
+    const range = theoreticalMax - theoreticalMin;
+    if (!included || range <= 0) {
+        return {score: null, rawScore: null, included, total: WEIGHTED_POWER_ACTIVE_FIELDS.length, isGoalkeeper: false};
+    }
+
+    const normalizedScore = Math.max(0, Math.min(100, ((rawScore - theoreticalMin) / range) * 100));
+    return {
+        score: Math.round(normalizedScore * 100) / 100,
+        rawScore,
+        included,
+        total: WEIGHTED_POWER_ACTIVE_FIELDS.length,
+        isGoalkeeper: false,
+    };
+}
+
+async function loadHeigoPowerCalibration(version = '') {
+    const normalizedVersion = String(version || getCurrentAttributeVersion() || '').trim();
+    if (heigoPowerCalibrationCache.has(normalizedVersion)) {
+        currentHeigoPowerCalibration = heigoPowerCalibrationCache.get(normalizedVersion);
+        return currentHeigoPowerCalibration;
+    }
+    try {
+        const params = new URLSearchParams();
+        if (normalizedVersion) params.set('version', normalizedVersion);
+        const response = await fetch(`/api/attributes/power-calibration${params.size ? `?${params.toString()}` : ''}`);
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.detail || `HTTP ${response.status}`);
+        const calibration = {
+            ...payload,
+            sorted_scores: Array.isArray(payload?.sorted_scores)
+                ? payload.sorted_scores.map(Number).filter(Number.isFinite).sort((a, b) => a - b)
+                : [],
+        };
+        heigoPowerCalibrationCache.set(normalizedVersion, calibration);
+        currentHeigoPowerCalibration = calibration;
+        return calibration;
+    } catch (error) {
+        console.warn('Failed to load HEIGO power calibration:', error);
+        currentHeigoPowerCalibration = null;
+        return null;
+    }
+}
+
+function calculateHeigoPowerMetrics(weightedPowerScore, calibration = currentHeigoPowerCalibration) {
+    const score = Number(weightedPowerScore);
+    const scale = Number(calibration?.robust_scale);
+    const medianScore = Number(calibration?.median_score);
+    const scores = Array.isArray(calibration?.sorted_scores) ? calibration.sorted_scores : [];
+    if (!Number.isFinite(score) || !Number.isFinite(scale) || scale <= 0 || !Number.isFinite(medianScore)) return null;
+    const heigoPower = Math.max(0, Math.min(100, 50 + 10 * ((score - medianScore) / scale)));
+    let low = 0;
+    let high = scores.length;
+    while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        if (Number(scores[middle]) <= score) low = middle + 1;
+        else high = middle;
+    }
+    const strongerPlayers = scores.length - low;
+    const topPercent = scores.length ? ((strongerPlayers + 1) / scores.length) * 100 : 100;
+    return {
+        heigoPower: Math.round(heigoPower * 100) / 100,
+        topPercent: Math.round(Math.max(0.01, Math.min(100, topPercent)) * 100) / 100,
+        topPercentLabel: Math.max(1, Math.ceil(topPercent - 0.000001)),
+    };
+}
+
+function getHeigoPowerTone(score) {
+    if (!Number.isFinite(score) || score < 50) return 'is-level-white';
+    if (score < 60) return 'is-level-green';
+    if (score < 70) return 'is-level-blue';
+    if (score < 80) return 'is-level-purple';
+    if (score < 90) return 'is-level-orange';
+    return 'is-level-red';
+}
+
+function buildWeightedPowerCard(player, options = {}) {
+    const result = calculateWeightedPower(player);
+    const scoreLabel = result.score === null ? '—' : result.score.toFixed(2);
+    const heigoMetrics = calculateHeigoPowerMetrics(result.score);
+    const powerTone = getHeigoPowerTone(heigoMetrics?.heigoPower);
+    const explanation = result.isGoalkeeper
+        ? '当前权重模型适用于外场球员'
+        : result.score === null
+            ? '属性数据不足，暂时无法计算'
+            : `按给定属性权重归一化至 0–100 · 已计入 ${result.included}/${result.total} 项`;
+    const collapsible = options.collapsible === true;
+    const collapsed = collapsible && weightedPowerCollapsed;
+    if (collapsed) {
+        return `
+            <div class="weighted-power-card is-collapsed ${powerTone}">
+                <div class="weighted-power-copy">
+                    <span class="weighted-power-label">加权战力值</span>
+                    <span class="weighted-power-note">战力数值已隐藏</span>
+                </div>
+                <button
+                    class="weighted-power-toggle"
+                    type="button"
+                    aria-expanded="false"
+                    onclick="toggleWeightedPowerCollapsed()"
+                ><span aria-hidden="true">＋</span> 显示</button>
+            </div>
+        `;
+    }
+    return `
+        <div class="weighted-power-card ${powerTone}${collapsible ? ' is-collapsible' : ''}" title="${escapeHtml(explanation)}">
+            ${collapsible ? `<button class="weighted-power-toggle is-side-control" type="button" aria-expanded="true" aria-label="收起战力值" title="收起战力值" onclick="toggleWeightedPowerCollapsed()"><span aria-hidden="true">−</span></button>` : ''}
+            <div class="weighted-power-metrics">
+                <div class="power-metric-entry" aria-label="加权战力值 ${escapeHtml(scoreLabel)}">
+                    <span class="power-metric-label">加权战力值</span>
+                    <div class="power-metric-value">
+                        <strong>${escapeHtml(scoreLabel)}</strong>
+                        ${result.score === null ? '' : '<small>/ 100</small>'}
+                    </div>
+                </div>
+                ${heigoMetrics ? `
+                    <div class="power-metric-entry is-heigo" aria-label="HEIGO战力 ${heigoMetrics.heigoPower.toFixed(2)}，前 ${heigoMetrics.topPercentLabel}%">
+                        <div class="power-metric-label-row">
+                            <span class="power-metric-label">HEIGO战力</span>
+                            <span class="heigo-power-percent">前 ${heigoMetrics.topPercentLabel}%</span>
+                        </div>
+                        <div class="power-metric-value"><strong>${heigoMetrics.heigoPower.toFixed(2)}</strong></div>
+                    </div>
+                ` : '<div class="power-metric-entry is-heigo"><span class="power-metric-label">HEIGO战力</span><div class="power-metric-value"><strong>—</strong></div></div>'}
+            </div>
+        </div>
+    `;
+}
+
 function normalizeDetailMobileSection(section) {
     if (DETAIL_MOBILE_SECTIONS.some(item => item.key === section)) return section;
     return 'overview';
@@ -1004,6 +1267,7 @@ function buildPlayerShareCard(player) {
                             </div>
                             <div class="player-uid">UID: ${escapeHtml(player.uid)}${getPlayerDataVersion(player) ? ` · ${escapeHtml(getPlayerDataVersion(player))}` : ''}</div>
                         </div>
+                        ${buildWeightedPowerCard(previewPlayer)}
                         ${infoRows.map(([label, value, isHtml]) => `
                             <div class="info-row">
                                 <span class="info-label">${escapeHtml(label)}</span>
@@ -1060,26 +1324,52 @@ function buildPlayerShareCaptureSurface(player) {
     return {captureRoot, captureFrame};
 }
 
-async function copyBlobToClipboard(blob) {
-    if (!navigator.clipboard || typeof ClipboardItem === 'undefined') {
-        throw new Error('clipboard-unavailable');
-    }
-    await navigator.clipboard.write([
-        new ClipboardItem({
-            [blob.type]: blob,
-        }),
-    ]);
+function canWritePlayerImageToClipboard() {
+    return Boolean(
+        window.isSecureContext
+        && navigator.clipboard
+        && typeof navigator.clipboard.write === 'function'
+        && typeof ClipboardItem !== 'undefined'
+    );
 }
 
-function downloadBlob(blob, fileName) {
+async function renderPlayerDetailImageBlob(captureFrame) {
+    if (document.fonts?.ready) {
+        await document.fonts.ready;
+    }
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const blob = await window.htmlToImage.toBlob(captureFrame, {
+        cacheBust: true,
+        pixelRatio: Math.max(2, Math.min(3, window.devicePixelRatio || 1)),
+    });
+    if (!blob) {
+        throw new Error('capture-blob-empty');
+    }
+    return blob;
+}
+
+function showGeneratedPlayerImageFallback(blob, fileName) {
     const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = objectUrl;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1200);
+    showModal('保存球员图', `
+        <div class="player-image-fallback">
+            <div class="player-image-fallback-copy">
+                <span class="panel-kicker">Player Share</span>
+                <h2>球员图已生成</h2>
+                <p>当前访问方式无法直接写入剪贴板，请下载图片；手机端也可以长按预览图保存。</p>
+            </div>
+            <div class="player-image-fallback-preview">
+                <img src="${escapeHtml(objectUrl)}" alt="球员分享图预览">
+            </div>
+            <div class="player-image-fallback-actions">
+                <a class="btn btn-primary player-image-fallback-action" href="${escapeHtml(objectUrl)}" download="${escapeHtml(fileName)}">
+                    <span class="player-image-action-icon" aria-hidden="true">↓</span>
+                    <span>下载球员图</span>
+                </a>
+                <button class="btn btn-secondary player-image-fallback-action" type="button" onclick="closeModal()">返回球员详情</button>
+            </div>
+        </div>
+    `);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120000);
 }
 
 async function copyCurrentPlayerDetailImage() {
@@ -1098,31 +1388,35 @@ async function copyCurrentPlayerDetailImage() {
 
     let captureRoot = null;
     try {
-        if (document.fonts?.ready) {
-            await document.fonts.ready;
-        }
-
         const captureSurface = buildPlayerShareCaptureSurface(currentDetailPlayer);
         captureRoot = captureSurface.captureRoot;
+        const blobPromise = renderPlayerDetailImageBlob(captureSurface.captureFrame);
+        const canCopyImage = canWritePlayerImageToClipboard();
+        let clipboardWritePromise = null;
 
-        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        showDetailExportToast(canCopyImage ? '正在生成并复制球员图...' : '正在生成球员图...', 'warning');
 
-        const blob = await window.htmlToImage.toBlob(captureSurface.captureFrame, {
-            cacheBust: true,
-            pixelRatio: Math.max(2, Math.min(3, window.devicePixelRatio || 1)),
-        });
-
-        if (!blob) {
-            throw new Error('capture-blob-empty');
+        if (canCopyImage) {
+            try {
+                const clipboardItem = new ClipboardItem({'image/png': blobPromise});
+                clipboardWritePromise = navigator.clipboard.write([clipboardItem])
+                    .then(() => true, error => {
+                        console.warn('Clipboard image write rejected:', error);
+                        return false;
+                    });
+            } catch (clipboardError) {
+                console.warn('Clipboard image item unavailable:', clipboardError);
+            }
         }
 
+        const blob = await blobPromise;
         const fileName = buildPlayerCaptureFileName(currentDetailPlayer);
-        try {
-            await copyBlobToClipboard(blob);
+        const copied = clipboardWritePromise ? await clipboardWritePromise : false;
+        if (copied) {
             showDetailExportToast('已复制球员分享图到剪贴板');
-        } catch (clipboardError) {
-            downloadBlob(blob, fileName);
-            showDetailExportToast('浏览器未允许写入剪贴板，已自动下载分享图', 'warning');
+        } else {
+            showGeneratedPlayerImageFallback(blob, fileName);
+            showDetailExportToast('球员图已生成，请下载或长按保存', 'warning');
         }
     } catch (error) {
         console.error('Failed to export player detail image:', error);
@@ -1287,6 +1581,7 @@ function renderPlayerDetail(player) {
                             ${buildPlayerMobileSummary(player, previewPlayer)}
                             <div id="playerReactionControls" class="player-reaction-host"></div>
                         </div>
+                        ${buildWeightedPowerCard(previewPlayer, {collapsible: true})}
                         ${infoRows.map(([label, value, isHtml]) => `
                             <div class="info-row">
                                 <span class="info-label">${escapeHtml(label)}</span>
@@ -1354,14 +1649,18 @@ function backToList(options = {}) {
     playerReactionSubmitting = false;
     currentDatabaseSubtab = dbDetailReturnState.subtab || currentDatabaseSubtab || 'search';
     syncDatabaseSubtabUI();
-    activateDatabaseView(currentDatabaseSubtab === 'leaderboard' ? 'leaderboard' : currentDatabaseSubtab === 'candidates' ? 'candidates' : 'list');
+    activateDatabaseView(currentDatabaseSubtab === 'tactics' ? 'tactics' : currentDatabaseSubtab === 'power' ? 'power' : currentDatabaseSubtab === 'leaderboard' ? 'leaderboard' : currentDatabaseSubtab === 'candidates' ? 'candidates' : 'list');
     currentDetailPlayer = null;
     const returnTab = dbDetailReturnState.tab || 'database';
     if (returnTab !== 'database') {
         showTab(returnTab, null, {syncHistory: false});
     } else {
         showTab('database', null, {syncHistory: false});
-        if (currentDatabaseSubtab === 'leaderboard') {
+        if (currentDatabaseSubtab === 'tactics' && typeof loadDatabaseTacticsBoard === 'function') {
+            loadDatabaseTacticsBoard({pushHistory: false});
+        } else if (currentDatabaseSubtab === 'power' && typeof loadPowerRanking === 'function') {
+            loadPowerRanking({pushHistory: false});
+        } else if (currentDatabaseSubtab === 'leaderboard') {
             loadReactionLeaderboard({pushHistory: false});
         } else if (currentDatabaseSubtab === 'candidates' && typeof loadCandidateLists === 'function') {
             loadCandidateLists({pushHistory: false});

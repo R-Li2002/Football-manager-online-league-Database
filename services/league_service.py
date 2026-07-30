@@ -58,6 +58,21 @@ def get_team_extra_wage_cap(team: Team) -> float:
     return 0.0
 
 
+def get_team_effective_wage_cap(team: Team, wage_caps: dict[str, float] | None = None) -> float:
+    override = getattr(team, "wage_cap", None)
+    if override is not None:
+        try:
+            parsed_override = float(override)
+        except (TypeError, ValueError):
+            parsed_override = 0.0
+        if parsed_override > 0:
+            return parsed_override
+
+    level_wage_caps = wage_caps or {"超级": 9.4, "甲级": 8.9, "乙级": 8.6}
+    base_cap = level_wage_caps.get(team.level, 9.4)
+    return base_cap + get_team_extra_wage_cap(team)
+
+
 def calculate_player_wage_payload(
     initial_ca: int,
     current_ca: int,
@@ -138,11 +153,8 @@ def calculate_team_final_wage(team: Team, players: list[Player], wage_caps: dict
     level_wage_cap = wage_caps or {"超级": 9.4, "甲级": 8.9, "乙级": 8.6}
     level_min_wage = {"超级": 8.0, "甲级": 7.5, "乙级": 6.5}
 
-    base_cap = level_wage_cap.get(team.level, 9.4)
     min_wage = level_min_wage.get(team.level, 8.0)
-
-    extra_cap = get_team_extra_wage_cap(team)
-    effective_cap = base_cap + extra_cap
+    effective_cap = get_team_effective_wage_cap(team, level_wage_cap)
     player_total_wage = sum(player.wage for player in players)
     extra_wage = team.extra_wage if team.extra_wage else 0.0
     total_wage = player_total_wage + extra_wage

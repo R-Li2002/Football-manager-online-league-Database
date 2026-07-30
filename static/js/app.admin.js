@@ -2,6 +2,878 @@ let pendingUndoLogId = null;
 const ADMIN_UNAUTHORIZED_ERROR = 'ADMIN_UNAUTHORIZED';
 let lastAdminUnauthorizedNoticeAt = 0;
 let recentDataFeedbackReports = [];
+let workspaceSessionData = null;
+let workspaceDashboardData = null;
+let workspaceAccountsData = [];
+let workspacePromotionsData = [];
+let workspaceAdminOperationsLoaded = false;
+
+const WORKSPACE_CAPABILITY_LABELS = {
+    'schedule.write': '赛程维护',
+    'match_events.write': '比赛事件',
+    'suspensions.write': '伤停维护',
+    'candidate_lists.write': '候选名单',
+    'roster.write': '球员操作',
+    'coach_profile.write_self': '个人中心',
+    'coach_profiles.manage': '教练管理',
+    'accounts.manage': '人员与权限',
+    'imports.execute': '正式导入',
+    'system.maintain': '系统维护',
+    'audit.read': '操作记录',
+    'feedback.manage': '数据纠错',
+};
+
+function workspaceHasCapability(capability) {
+    return Boolean(workspaceSessionData?.identity?.capabilities?.includes(capability));
+}
+
+function workspaceHasWorkAccess(identity = workspaceSessionData?.identity) {
+    return Boolean(identity && (identity.is_full_admin || (identity.capabilities || []).some(item => item !== 'coach_profile.write_self')));
+}
+
+function showWorkspaceLoginMode(mode) {
+    const isCoachMode = mode === 'coach';
+    document.getElementById('workspaceAdminLoginTab')?.classList.toggle('active', !isCoachMode);
+    document.getElementById('workspaceCoachLoginTab')?.classList.toggle('active', isCoachMode);
+    document.getElementById('workspaceAdminLoginTab')?.setAttribute('aria-selected', isCoachMode ? 'false' : 'true');
+    document.getElementById('workspaceCoachLoginTab')?.setAttribute('aria-selected', isCoachMode ? 'true' : 'false');
+    document.getElementById('workspaceAdminLoginForm')?.classList.toggle('active', !isCoachMode);
+    document.getElementById('workspaceCoachLoginForm')?.classList.toggle('active', isCoachMode);
+}
+
+async function loadWorkspaceSession(options = {}) {
+    if (workspaceSessionData && options.force !== true) return workspaceSessionData;
+    const response = await fetch('/api/workspace/session', {credentials: 'same-origin'});
+    workspaceSessionData = response.ok ? await response.json() : {authenticated: false, identity: null};
+    workspaceSessionState = workspaceSessionData;
+    const identity = workspaceSessionData.identity;
+    if (identity) {
+        const capabilities = new Set(identity.capabilities || []);
+        canManageSchedule = capabilities.has('schedule.write');
+        canManageSuspensions = capabilities.has('suspensions.write');
+        canManageCandidateLists = capabilities.has('candidate_lists.write');
+        if (identity.source === 'coach_account') {
+            currentCoachAccount = {
+                ...currentCoachAccount,
+                authenticated: true,
+                username: identity.username,
+                qq_number: identity.qq_number,
+                nickname: identity.display_name,
+                coach_uid: identity.coach_uid,
+                team_name: identity.team_name,
+                can_manage_schedule: canManageSchedule,
+                can_manage_suspensions: canManageSuspensions,
+                can_manage_candidate_lists: canManageCandidateLists,
+            };
+            if (typeof renderGlobalCoachAccount === 'function') renderGlobalCoachAccount();
+        }
+    }
+    syncAdminTabVisibility();
+    return workspaceSessionData;
+}
+
+function renderWorkspaceIdentity() {
+    const container = document.getElementById('workspaceIdentityCard');
+    const identity = workspaceSessionData?.identity;
+    if (!container || !identity) return;
+    const accountLabel = identity.is_full_admin
+        ? '完整管理员'
+        : identity.source === 'coach_account' ? '教练工作账号' : '赛事工作账号';
+    const capabilityLabels = (identity.capability_labels || []).filter(label => label !== '个人中心');
+    container.innerHTML = `
+        <span class="workspace-identity-type">${escapeHtml(accountLabel)}</span>
+        <strong>${escapeHtml(identity.display_name || identity.username)}</strong>
+        ${identity.team_name ? `<span>${escapeHtml(identity.team_name)}</span>` : ''}
+        <div class="workspace-identity-permissions">
+            ${capabilityLabels.length ? capabilityLabels.map(label => `<em>${escapeHtml(label)}</em>`).join('') : '<em>未分配工作权限</em>'}
+        </div>
+        ${identity.coach_uid ? '<button class="workspace-personal-link" type="button" onclick="openWorkspacePersonalCenter()">进入个人中心</button>' : ''}
+    `;
+}
+
+function syncWorkspaceNavigation() {
+    const identity = workspaceSessionData?.identity;
+    const capabilities = new Set(identity?.capabilities || []);
+    document.querySelectorAll('[data-workspace-capability]').forEach(button => {
+        button.hidden = !capabilities.has(button.dataset.workspaceCapability);
+    });
+    document.querySelectorAll('[data-workspace-admin-only]').forEach(button => {
+        button.hidden = !identity?.is_full_admin;
+    });
+    document.querySelectorAll('[data-workspace-imports]').forEach(button => {
+        button.hidden = !(identity?.is_full_admin || capabilities.has('schedule.write'));
+    });
+}
+
+async function openWorkspace(options = {}) {
+    const session = await loadWorkspaceSession({force: options.force === true});
+    const login = document.getElementById('adminLogin');
+    const panel = document.getElementById('adminPanel');
+    if (!session.authenticated || !workspaceHasWorkAccess(session.identity)) {
+        if (login) login.style.display = 'block';
+        if (panel) panel.style.display = 'none';
+        showWorkspaceLoginMode(session.identity?.source === 'coach_account' ? 'coach' : 'admin');
+        window.setTimeout(() => {
+            const targetId = session.identity?.source === 'coach_account' ? 'workspaceCoachUsername' : 'adminUsername';
+            document.getElementById(targetId)?.focus();
+        }, 0);
+        return;
+    }
+    if (login) login.style.display = 'none';
+    if (panel) panel.style.display = 'block';
+    renderWorkspaceIdentity();
+    syncWorkspaceNavigation();
+    showWorkspaceView(options.view || 'home');
+    await loadWorkspaceDashboard({force: options.force === true});
+}
+
+function showWorkspaceView(viewName, scrollTarget = '') {
+    const normalized = ['home', 'accounts', 'imports', 'promotions', 'operations'].includes(viewName) ? viewName : 'home';
+    document.querySelectorAll('.workspace-view').forEach(view => view.classList.remove('active'));
+    document.getElementById(`workspace${normalized[0].toUpperCase()}${normalized.slice(1)}View`)?.classList.add('active');
+    document.querySelectorAll('[data-workspace-view]').forEach(button => {
+        button.classList.toggle('active', button.dataset.workspaceView === normalized);
+    });
+    if (normalized === 'accounts') loadWorkspaceAccounts();
+    if (normalized === 'promotions') loadWorkspacePromotions();
+    if (normalized === 'imports') loadWorkspaceAdminOperations();
+    if (normalized === 'operations') loadWorkspaceAdminOperations();
+    if (scrollTarget) {
+        window.setTimeout(() => document.getElementById(scrollTarget)?.scrollIntoView({behavior: 'smooth', block: 'start'}), 80);
+    }
+}
+
+async function openWorkspaceTask(tabName, subtab) {
+    await showTab(tabName, null, {syncHistory: false});
+    if (tabName === 'competition' && typeof showCompetitionSubtab === 'function') {
+        showCompetitionSubtab(subtab);
+    } else if (tabName === 'database' && typeof showDatabaseSubtab === 'function') {
+        showDatabaseSubtab(subtab);
+        if (subtab === 'candidates' && typeof loadCandidateLists === 'function') {
+            await loadCandidateLists();
+        }
+    }
+    syncAppHistory('push');
+}
+
+async function openWorkspacePersonalCenter() {
+    const coachUid = workspaceSessionData?.identity?.coach_uid;
+    await showTab('coaches', null, {syncHistory: false});
+    if (coachUid && typeof openCoachDetail === 'function') {
+        await openCoachDetail(coachUid);
+    }
+    syncAppHistory('push');
+}
+
+function renderWorkspaceMetrics() {
+    const container = document.getElementById('workspaceMetrics');
+    const metrics = workspaceDashboardData?.metrics || [];
+    if (!container) return;
+    if (!metrics.length) {
+        container.innerHTML = '<div class="workspace-empty">当前没有需要处理的联赛工作。</div>';
+        return;
+    }
+    container.innerHTML = metrics.map(metric => `
+        <button class="workspace-metric" type="button" onclick="openWorkspaceMetric('${escapeHtml(metric.target_tab || 'admin')}', '${escapeHtml(metric.target_subtab || '')}', '${escapeHtml(metric.key)}')">
+            <span>${escapeHtml(metric.label)}</span>
+            <strong>${Number(metric.value || 0).toLocaleString()}</strong>
+            <em>${escapeHtml(metric.detail || '')}</em>
+        </button>
+    `).join('');
+}
+
+function renderWorkspaceTasks() {
+    const container = document.getElementById('workspaceTaskList');
+    if (!container) return;
+    const tasks = workspaceDashboardData?.tasks || [];
+    const isAdmin = Boolean(workspaceSessionData?.identity?.is_full_admin);
+    const scope = document.getElementById('workspaceTaskScopeLabel');
+    if (scope) scope.textContent = isAdmin ? '待分配与待复核总览' : '按当前身份分配';
+    if (!tasks.length) {
+        container.innerHTML = '<div class="workspace-empty">当前没有分配给你的轮次任务。</div>';
+        return;
+    }
+    container.innerHTML = `<div class="workspace-task-list">${tasks.map(task => `
+        <button class="workspace-task-row" type="button" onclick="openWorkspaceCompetitionTask(${htmlJsString(task.level)}, ${Number(task.round_start)}, ${htmlJsString(task.target_subtab || 'schedule')})">
+            <span class="workspace-task-level">${escapeHtml(task.level)}</span>
+            <span class="workspace-task-copy"><strong>${escapeHtml(task.round_label)}</strong><em>${escapeHtml((task.responsibility_labels || []).join('、') || '职责待任命')} · ${escapeHtml(task.assignee_display_name || '尚未任命')}</em></span>
+            <span class="workspace-task-state is-${escapeHtml(task.status || 'unassigned')}">${escapeHtml(task.status_label || '待任命')}</span>
+            <span class="workspace-task-count">${Number(task.pending_count || 0)} 项待处理</span>
+        </button>
+    `).join('')}</div>`;
+}
+
+async function openWorkspaceCompetitionTask(level, roundStart, subtab = 'schedule') {
+    await showTab('competition', null, {syncHistory: false});
+    currentCompetitionLevel = level;
+    currentCompetitionSubtab = subtab;
+    currentCompetitionWorkFilter = 'all';
+    showCompetitionSubtab(subtab);
+    if (typeof loadCompetitionData === 'function') await loadCompetitionData();
+    if (subtab === 'schedule') renderScheduleBoard();
+    const select = document.getElementById('scheduleRoundSelect');
+    if (select) select.value = String(roundStart);
+    if (subtab === 'schedule') renderScheduleBoard();
+    if (typeof syncAppHistory === 'function') syncAppHistory('replace');
+}
+
+async function openWorkspaceMetric(tabName, subtab, key) {
+    if (tabName === 'admin') {
+        showWorkspaceView(key === 'accounts' ? 'accounts' : 'operations', key === 'feedback' ? 'dataFeedbackReportsCard' : '');
+        return;
+    }
+    await openWorkspaceTask(tabName, subtab);
+    if (tabName === 'competition' && subtab === 'schedule' && typeof openCompetitionWorkQueue === 'function') {
+        if (typeof loadCompetitionWorkSummary === 'function') {
+            await loadCompetitionWorkSummary();
+        }
+        const filters = {
+            schedule: 'missing_result',
+            match_events: 'missing_events',
+            data_issues: 'invalid',
+        };
+        openCompetitionWorkQueue(filters[key] || 'all');
+    }
+}
+
+function renderWorkspaceRecentActions() {
+    const container = document.getElementById('workspaceRecentActions');
+    const actions = workspaceDashboardData?.recent_actions || [];
+    if (!container) return;
+    if (!actions.length) {
+        container.innerHTML = '<div class="workspace-empty">当前身份还没有可显示的操作记录。</div>';
+        return;
+    }
+    container.innerHTML = actions.map(action => `
+        <div class="workspace-recent-row">
+            <span class="workspace-action-status is-${escapeHtml(action.status || 'unknown')}"></span>
+            <strong>${escapeHtml(action.summary || '-')}</strong>
+            <span>${action.created_at ? new Date(action.created_at).toLocaleString() : '-'}</span>
+        </div>
+    `).join('');
+}
+
+async function loadWorkspaceDashboard(options = {}) {
+    if (workspaceDashboardData && options.force !== true) {
+        renderWorkspaceMetrics();
+        renderWorkspaceTasks();
+        renderWorkspaceRecentActions();
+        return;
+    }
+    const response = await fetch('/api/workspace/dashboard', {credentials: 'same-origin'});
+    if (!response.ok) {
+        workspaceDashboardData = {metrics: [], tasks: [], recent_actions: []};
+        renderWorkspaceMetrics();
+        renderWorkspaceTasks();
+        renderWorkspaceRecentActions();
+        return;
+    }
+    workspaceDashboardData = await response.json();
+    renderWorkspaceMetrics();
+    renderWorkspaceTasks();
+    renderWorkspaceRecentActions();
+}
+
+function getWorkspaceAccountTypeLabel(item) {
+    const labels = {administrator: '完整管理员', worker: '赛事工作人员', coach_worker: '教练工作账号', coach: '普通教练'};
+    return labels[item.account_type] || '账号';
+}
+
+function renderWorkspaceAccounts() {
+    const container = document.getElementById('workspaceAccountsTable');
+    if (!container) return;
+    const query = String(document.getElementById('workspaceAccountSearch')?.value || '').trim().toLowerCase();
+    const type = document.getElementById('workspaceAccountTypeFilter')?.value || '';
+    const items = workspaceAccountsData.filter(item => {
+        if (type && item.account_type !== type) return false;
+        if (!query) return true;
+        return [item.display_name, item.qq_number, item.username, item.team_name, item.level].some(value => String(value || '').toLowerCase().includes(query));
+    });
+    if (!items.length) {
+        container.innerHTML = '<div class="workspace-empty">没有符合条件的账号。</div>';
+        return;
+    }
+    container.innerHTML = `<div class="workspace-account-list">${items.map(item => {
+        const permissions = (item.capabilities || [])
+            .filter(capability => capability !== 'coach_profile.write_self')
+            .map(capability => WORKSPACE_CAPABILITY_LABELS[capability] || capability);
+        return `
+            <article class="workspace-account-row">
+                <div class="workspace-account-person">
+                    <strong>${escapeHtml(item.display_name || '-')}</strong>
+                    <span>${escapeHtml(item.team_name || item.level || '未关联球队')}</span>
+                </div>
+                <span class="workspace-account-type">${escapeHtml(getWorkspaceAccountTypeLabel(item))}</span>
+                <div class="workspace-account-login">
+                    <strong>${item.qq_number ? `QQ ${escapeHtml(item.qq_number)}` : escapeHtml(item.username || '尚未创建')}</strong>
+                    <span>${item.qq_number ? `旧账号 ${escapeHtml(item.username || '-')}` : (item.last_login_at ? `最近登录 ${new Date(item.last_login_at).toLocaleString()}` : '暂无登录记录')}</span>
+                </div>
+                <div class="workspace-account-permissions">${permissions.length ? permissions.map(label => `<span>${escapeHtml(label)}</span>`).join('') : '<span class="is-muted">无联赛工作权限</span>'}</div>
+                <span class="workspace-account-state ${item.is_active ? 'is-active' : ''}">${item.is_active ? '启用' : '未启用'}</span>
+                ${item.source === 'coach_account' ? `<button class="btn btn-secondary" type="button" onclick="showWorkspaceAccountEditor(${htmlJsString(item.coach_uid || '')})">管理</button>` : '<span class="workspace-account-readonly">系统配置</span>'}
+            </article>
+        `;
+    }).join('')}</div>`;
+}
+
+async function loadWorkspaceAccounts(options = {}) {
+    if (workspaceAccountsData.length && options.force !== true) {
+        renderWorkspaceAccounts();
+        return;
+    }
+    const response = await fetch('/api/workspace/accounts', {credentials: 'same-origin'});
+    if (!response.ok) {
+        document.getElementById('workspaceAccountsTable').innerHTML = '<div class="workspace-empty">账号列表加载失败或当前身份没有权限。</div>';
+        return;
+    }
+    const payload = await response.json();
+    workspaceAccountsData = Array.isArray(payload.items) ? payload.items : [];
+    renderWorkspaceAccounts();
+}
+
+function showWorkspaceAccountEditor(coachUid) {
+    const item = workspaceAccountsData.find(account => account.coach_uid === coachUid);
+    if (!item) return;
+    const capabilities = new Set(item.capabilities || []);
+    const leagueOrder = {超级: 0, 甲级: 1, 乙级: 2};
+    const teamOptions = [...(Array.isArray(teams) ? teams : [])]
+        .filter(team => Object.hasOwn(leagueOrder, team.level))
+        .sort((a, b) => (leagueOrder[a.level] - leagueOrder[b.level]) || String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN'))
+        .map(team => `<option value="${Number(team.id)}" ${Number(item.team_id) === Number(team.id) ? 'selected' : ''}>${escapeHtml(`${team.level} · ${team.name}${team.manager && team.manager !== '-' ? `（${team.manager}）` : ''}`)}</option>`)
+        .join('');
+    const mergeOptions = workspaceAccountsData
+        .filter(account => account.source === 'coach_account' && account.coach_uid && account.coach_uid !== coachUid)
+        .map(account => `<option value="${escapeHtml(account.coach_uid)}">${escapeHtml(`${account.display_name}${account.team_name ? ` · ${account.team_name}` : ''}${account.username ? ` · ${account.username}` : ''}`)}</option>`)
+        .join('');
+    showModal('教练账号与工作权限', `
+        <div class="workspace-account-editor">
+            <div class="workspace-account-editor-head"><strong>${escapeHtml(item.display_name)}</strong><span>${escapeHtml(item.team_name || '未关联球队')}</span></div>
+            <section class="workspace-team-link-panel">
+                <div class="workspace-editor-section-title"><span>球队关联</span><small>教练 → 球队</small></div>
+                <div class="workspace-team-link-control">
+                    <span class="workspace-team-link-coach">${escapeHtml(item.display_name)}</span>
+                    <span class="workspace-team-link-arrow" aria-hidden="true">→</span>
+                    <select id="workspaceEditTeam"><option value="">未关联球队</option>${teamOptions}</select>
+                    <button class="btn btn-secondary" type="button" onclick="saveWorkspaceCoachTeam(${htmlJsString(coachUid)})">保存关联</button>
+                </div>
+                <p>保存后会同步球队的主教练字段；该球队原先关联的教练会自动解除关联。</p>
+            </section>
+            <form class="workspace-account-form" onsubmit="event.preventDefault(); saveWorkspaceAccount(${htmlJsString(coachUid)});">
+                <div class="workspace-editor-section-title"><span>登录与权限</span><small>${escapeHtml(item.coach_uid || '')}</small></div>
+                <div class="workspace-account-security-state">
+                    <div><span>QQ 登录</span><strong>${item.qq_number ? escapeHtml(item.qq_number) : '未绑定'}</strong></div>
+                    <div><span>密码状态</span><strong>${item.must_change_password ? '首次登录待修改' : '已由教练设置'}</strong></div>
+                    ${item.qq_number ? `<button class="btn btn-secondary" type="button" onclick="unbindWorkspaceCoachQq(${htmlJsString(coachUid)})">管理员解绑 QQ</button>` : ''}
+                </div>
+                <label class="form-group"><span>登录账号</span><input id="workspaceEditUsername" type="text" value="${escapeHtml(item.username || '')}" autocomplete="username" required></label>
+                <label class="form-group"><span>${item.username ? '重置密码（留空则不修改）' : '初始密码'}</span><input id="workspaceEditPassword" type="password" autocomplete="new-password" ${item.username ? '' : 'required'}></label>
+                <p class="workspace-account-security-hint">创建账号或由管理员重置密码后，教练下次登录必须先修改默认密码。</p>
+                <label class="workspace-permission-toggle"><input id="workspaceEditActive" type="checkbox" ${item.is_active ? 'checked' : ''}>启用账号</label>
+                <fieldset class="workspace-permission-grid">
+                    <legend>联赛工作权限</legend>
+                    <label><input id="workspaceEditSchedule" type="checkbox" ${capabilities.has('schedule.write') ? 'checked' : ''}>赛程与比赛事件</label>
+                    <label><input id="workspaceEditSuspensions" type="checkbox" ${capabilities.has('suspensions.write') ? 'checked' : ''}>纪律与伤停</label>
+                    <label><input id="workspaceEditCandidates" type="checkbox" ${capabilities.has('candidate_lists.write') ? 'checked' : ''}>候选名单</label>
+                </fieldset>
+                <button class="btn btn-primary" type="submit">保存账号与权限</button>
+            </form>
+            <section class="workspace-merge-panel">
+                <div class="workspace-editor-section-title"><span>重复教练处理</span><small>不可撤销</small></div>
+                <p>将当前教练的荣誉、助教、互动和可用资料迁移到目标教练，再删除当前重复记录。</p>
+                <div class="workspace-merge-control">
+                    <select id="workspaceMergeTarget"><option value="">选择合并目标</option>${mergeOptions}</select>
+                    <button class="btn workspace-merge-button" type="button" onclick="showWorkspaceMergeConfirmation(${htmlJsString(coachUid)})">合并当前教练</button>
+                </div>
+            </section>
+        </div>
+    `);
+}
+
+async function saveWorkspaceCoachTeam(coachUid) {
+    const rawTeamId = document.getElementById('workspaceEditTeam')?.value || '';
+    const response = await fetch(`/api/admin/coaches/${encodeURIComponent(coachUid)}/team`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({team_id: rawTeamId ? Number(rawTeamId) : null}),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        showModal('关联失败', escapeHtml(data.detail || data.message || '球队关联保存失败'));
+        return;
+    }
+    closeModal();
+    workspaceAccountsData = [];
+    await Promise.all([loadWorkspaceAccounts({force: true}), loadData()]);
+}
+
+function showWorkspaceMergeConfirmation(sourceCoachUid) {
+    const targetCoachUid = document.getElementById('workspaceMergeTarget')?.value || '';
+    const source = workspaceAccountsData.find(account => account.coach_uid === sourceCoachUid);
+    const target = workspaceAccountsData.find(account => account.coach_uid === targetCoachUid);
+    if (!source || !target) {
+        showModal('请选择合并目标', '先选择要保留的教练记录。');
+        return;
+    }
+    showModal('确认合并重复教练', `
+        <div class="workspace-merge-confirmation">
+            <div class="workspace-merge-route"><span>${escapeHtml(source.display_name)}</span><strong>合并到</strong><span>${escapeHtml(target.display_name)}</span></div>
+            <ul>
+                <li>保留目标教练的昵称和已有主页资料，空缺资料由当前教练补齐。</li>
+                <li>荣誉、助教和互动记录会迁移到目标教练。</li>
+                <li>当前教练资料及其登录账号会被删除，只保留目标教练账号。</li>
+                <li>两个账号现有登录会话都会退出。</li>
+            </ul>
+            <div class="workspace-merge-account-result"><span>合并后登录</span><strong>${target.qq_number ? `QQ ${escapeHtml(target.qq_number)}` : escapeHtml(target.username || '目标教练尚无登录账号')}</strong></div>
+            <div class="workspace-merge-confirm-actions">
+                <button class="btn btn-secondary" type="button" onclick="showWorkspaceAccountEditor(${htmlJsString(sourceCoachUid)})">返回</button>
+                <button class="btn workspace-merge-button" type="button" onclick="mergeWorkspaceCoach(${htmlJsString(sourceCoachUid)}, ${htmlJsString(targetCoachUid)})">确认合并并退出相关登录</button>
+            </div>
+        </div>
+    `);
+}
+
+async function mergeWorkspaceCoach(sourceCoachUid, targetCoachUid) {
+    const response = await fetch(`/api/admin/coaches/${encodeURIComponent(sourceCoachUid)}/merge`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({target_coach_uid: targetCoachUid}),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        showModal('合并失败', escapeHtml(data.detail || data.message || '教练合并失败'));
+        return;
+    }
+    closeModal();
+    workspaceAccountsData = [];
+    await Promise.all([loadWorkspaceAccounts({force: true}), loadData()]);
+}
+
+async function unbindWorkspaceCoachQq(coachUid) {
+    const response = await fetch(`/api/admin/coaches/${encodeURIComponent(coachUid)}/qq`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        showModal('解绑失败', escapeHtml(data.detail || data.message || 'QQ 解绑失败'));
+        return;
+    }
+    workspaceAccountsData = [];
+    await loadWorkspaceAccounts({force: true});
+    showModal('QQ 已解绑', escapeHtml(data.message));
+}
+
+async function saveWorkspaceAccount(coachUid) {
+    const payload = {
+        username: document.getElementById('workspaceEditUsername')?.value || '',
+        password: document.getElementById('workspaceEditPassword')?.value || null,
+        is_active: Boolean(document.getElementById('workspaceEditActive')?.checked),
+        can_manage_schedule: Boolean(document.getElementById('workspaceEditSchedule')?.checked),
+        can_manage_suspensions: Boolean(document.getElementById('workspaceEditSuspensions')?.checked),
+        can_manage_candidate_lists: Boolean(document.getElementById('workspaceEditCandidates')?.checked),
+    };
+    const response = await fetch(`/api/admin/coaches/${encodeURIComponent(coachUid)}/account`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        showModal('保存失败', escapeHtml(data.detail || data.message || '账号保存失败'));
+        return;
+    }
+    closeModal();
+    workspaceAccountsData = [];
+    await loadWorkspaceAccounts({force: true});
+}
+
+function getWorkspacePromotionTypeLabel(type) {
+    return {announcement: '联赛公告', honor: '荣誉发布', update: '版本更新', event: '活动宣传'}[type] || '联赛公告';
+}
+
+function getWorkspacePromotionThemeLabel(theme) {
+    return {violet: '紫罗兰', blue: '澄蓝', green: '薄荷绿', gold: '冠军金', rose: '玫瑰红', neutral: '银灰'}[theme] || '紫罗兰';
+}
+
+function getWorkspacePromotionState(item) {
+    if (!item.is_active) return {key: 'offline', label: '已下线'};
+    const now = Date.now();
+    if (item.starts_at && new Date(item.starts_at).getTime() > now) return {key: 'scheduled', label: '待发布'};
+    if (item.ends_at && new Date(item.ends_at).getTime() < now) return {key: 'expired', label: '已结束'};
+    return {key: 'live', label: '展示中'};
+}
+
+function formatWorkspacePromotionDate(value) {
+    if (!value) return '长期';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'});
+}
+
+function workspacePromotionRequestPayload(item, overrides = {}) {
+    const source = {...item, ...overrides};
+    return {
+        content_type: source.content_type || 'announcement',
+        theme: source.theme || 'violet',
+        icon: source.icon || 'megaphone',
+        eyebrow: source.eyebrow || 'HEIGO Broadcast',
+        title: source.title || '',
+        body: source.body || '',
+        image_url: source.image_url || null,
+        action_label: source.action_label || null,
+        action_kind: source.action_kind || 'none',
+        action_target: source.action_target || null,
+        is_active: Boolean(source.is_active),
+        is_pinned: Boolean(source.is_pinned),
+        is_dismissible: source.is_dismissible !== false,
+        sort_order: Number(source.sort_order || 0),
+        starts_at: source.starts_at || null,
+        ends_at: source.ends_at || null,
+    };
+}
+
+function renderWorkspacePromotions() {
+    const container = document.getElementById('workspacePromotionsList');
+    if (!container) return;
+    if (!workspacePromotionsData.length) {
+        container.innerHTML = '<div class="workspace-promotion-empty"><strong>还没有主页宣传</strong><p>新增一条联赛公告，或同步当前杯赛冠军。</p><button class="btn btn-primary" type="button" onclick="showWorkspacePromotionEditor()">新增第一条宣传</button></div>';
+        return;
+    }
+    container.innerHTML = `<div class="workspace-promotion-list">${workspacePromotionsData.map(item => {
+        const state = getWorkspacePromotionState(item);
+        const schedule = `${formatWorkspacePromotionDate(item.starts_at)} — ${item.ends_at ? formatWorkspacePromotionDate(item.ends_at) : '长期'}`;
+        return `
+            <article class="workspace-promotion-row is-${escapeHtml(item.theme)}">
+                <div class="workspace-promotion-rank"><span>${String(Number(item.sort_order || 0)).padStart(2, '0')}</span>${item.is_pinned ? '<strong>置顶</strong>' : ''}</div>
+                <div class="workspace-promotion-summary">
+                    <div class="workspace-promotion-meta"><span>${escapeHtml(getWorkspacePromotionTypeLabel(item.content_type))}</span><span>${escapeHtml(getWorkspacePromotionThemeLabel(item.theme))}</span><span>${escapeHtml(item.source_type === 'cup_champion' ? '杯赛冠军' : item.source_type === 'league_champion' ? '联赛冠军' : item.source_type === 'legacy' ? '历史迁移' : '自定义')}</span></div>
+                    <strong>${escapeHtml(item.title)}</strong>
+                    <p>${escapeHtml(item.body || '未填写宣传正文')}</p>
+                    <small>${escapeHtml(schedule)}</small>
+                </div>
+                <span class="workspace-promotion-state is-${state.key}">${state.label}</span>
+                <div class="workspace-promotion-row-actions">
+                    <button class="btn btn-secondary" type="button" onclick="previewWorkspacePromotion(${Number(item.id)})">预览</button>
+                    <button class="btn btn-secondary" type="button" onclick="showWorkspacePromotionEditor(${Number(item.id)})">编辑</button>
+                    <button class="btn btn-secondary" type="button" onclick="toggleWorkspacePromotion(${Number(item.id)})">${item.is_active ? '下线' : '发布'}</button>
+                    <button class="workspace-promotion-delete" type="button" onclick="confirmDeleteWorkspacePromotion(${Number(item.id)})">删除</button>
+                </div>
+            </article>`;
+    }).join('')}</div>`;
+}
+
+async function loadWorkspacePromotions(options = {}) {
+    if (workspacePromotionsData.length && options.force !== true) {
+        renderWorkspacePromotions();
+        return workspacePromotionsData;
+    }
+    const response = await fetch('/api/workspace/home-promotions', {credentials: 'same-origin'});
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        document.getElementById('workspacePromotionsList').innerHTML = `<div class="workspace-empty">${escapeHtml(data.detail || '主页宣传加载失败或当前身份没有权限。')}</div>`;
+        return [];
+    }
+    workspacePromotionsData = await response.json();
+    renderWorkspacePromotions();
+    return workspacePromotionsData;
+}
+
+function toWorkspaceDatetimeLocal(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const offset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function syncWorkspacePromotionActionFields() {
+    const kind = document.getElementById('workspacePromotionActionKind')?.value || 'none';
+    const fields = document.getElementById('workspacePromotionActionFields');
+    if (fields) fields.hidden = kind === 'none';
+    const target = document.getElementById('workspacePromotionActionTarget');
+    if (target) target.placeholder = kind === 'url' ? 'https://... 或 /updates' : '选择或输入站内目标';
+}
+
+function updateWorkspacePromotionImagePreview() {
+    const url = String(document.getElementById('workspacePromotionImage')?.value || '').trim();
+    const preview = document.getElementById('workspacePromotionImagePreview');
+    if (!preview) return;
+    preview.classList.toggle('has-image', Boolean(url));
+    preview.innerHTML = url ? `<img src="${escapeHtml(url)}" alt="宣传图片预览">` : '<span>IMAGE</span><small>可选宣传配图</small>';
+}
+
+function clearWorkspacePromotionImage() {
+    const urlInput = document.getElementById('workspacePromotionImage');
+    const fileInput = document.getElementById('workspacePromotionImageFile');
+    const status = document.getElementById('workspacePromotionImageStatus');
+    if (urlInput) urlInput.value = '';
+    if (fileInput) fileInput.value = '';
+    if (status) status.textContent = '';
+    updateWorkspacePromotionImagePreview();
+}
+
+async function uploadWorkspacePromotionImage(input) {
+    const file = input?.files?.[0];
+    if (!file) return;
+    const status = document.getElementById('workspacePromotionImageStatus');
+    const preview = document.getElementById('workspacePromotionImagePreview');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+        if (status) status.textContent = '仅支持 JPG、PNG、WEBP。';
+        input.value = '';
+        return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+        if (status) status.textContent = '图片不能超过 5MB。';
+        input.value = '';
+        return;
+    }
+    if (status) status.textContent = '正在上传并优化图片…';
+    preview?.classList.add('is-uploading');
+    const formData = new FormData();
+    formData.append('image', file);
+    try {
+        const response = await fetch('/api/workspace/home-promotions/image', {method: 'POST', credentials: 'same-origin', body: formData});
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.image_url) throw new Error(data.detail || '图片上传失败');
+        const urlInput = document.getElementById('workspacePromotionImage');
+        if (urlInput) urlInput.value = data.image_url;
+        updateWorkspacePromotionImagePreview();
+        if (status) status.textContent = `上传完成 · ${Number(data.width || 0)} × ${Number(data.height || 0)}`;
+    } catch (error) {
+        if (status) status.textContent = error.message || '图片上传失败';
+    } finally {
+        preview?.classList.remove('is-uploading');
+    }
+}
+
+function showWorkspacePromotionEditor(promotionId = 0) {
+    const item = workspacePromotionsData.find(entry => Number(entry.id) === Number(promotionId)) || {
+        content_type: 'announcement', theme: 'violet', icon: 'megaphone', eyebrow: 'HEIGO Broadcast', title: '', body: '',
+        action_kind: 'none', action_target: '', action_label: '', is_active: true, is_pinned: false, is_dismissible: true, sort_order: 100,
+    };
+    showModal(promotionId ? '编辑主页宣传' : '新增主页宣传', `
+        <form class="workspace-promotion-editor" onsubmit="event.preventDefault(); saveWorkspacePromotion(${Number(promotionId)});">
+            <div class="workspace-promotion-editor-intro"><span>PUBLIC BROADCAST</span><strong>让每条信息有明确层级、发布时间和去向。</strong></div>
+            <div class="workspace-promotion-editor-grid">
+                <label class="form-group"><span>内容类型</span><select id="workspacePromotionType">
+                    ${[['announcement','联赛公告'],['honor','荣誉发布'],['update','版本更新'],['event','活动宣传']].map(([value,label]) => `<option value="${value}" ${item.content_type === value ? 'selected' : ''}>${label}</option>`).join('')}
+                </select></label>
+                <label class="form-group"><span>视觉主题</span><select id="workspacePromotionTheme">
+                    ${[['violet','紫罗兰'],['blue','澄蓝'],['green','薄荷绿'],['gold','冠军金'],['rose','玫瑰红'],['neutral','银灰']].map(([value,label]) => `<option value="${value}" ${item.theme === value ? 'selected' : ''}>${label}</option>`).join('')}
+                </select></label>
+                <label class="form-group"><span>识别图标</span><select id="workspacePromotionIcon">
+                    ${[['megaphone','播报'],['trophy','奖杯'],['list','名单'],['star','焦点'],['whistle','赛事'],['info','信息']].map(([value,label]) => `<option value="${value}" ${item.icon === value ? 'selected' : ''}>${label}</option>`).join('')}
+                </select></label>
+                <label class="form-group"><span>排序值（小在前）</span><input id="workspacePromotionOrder" type="number" min="0" max="9999" value="${Number(item.sort_order || 0)}"></label>
+            </div>
+            <label class="form-group"><span>眉题</span><input id="workspacePromotionEyebrow" maxlength="60" value="${escapeHtml(item.eyebrow || '')}" placeholder="例如 HEIGO HONORS"></label>
+            <label class="form-group"><span>宣传标题</span><input id="workspacePromotionTitle" maxlength="120" value="${escapeHtml(item.title || '')}" required placeholder="一句话说清最重要的信息"></label>
+            <label class="form-group"><span>宣传正文</span><textarea id="workspacePromotionBody" maxlength="600" rows="4" placeholder="补充时间、范围或重要说明">${escapeHtml(item.body || '')}</textarea></label>
+            <div class="workspace-promotion-image-field">
+                <div class="workspace-promotion-image-preview ${item.image_url ? 'has-image' : ''}" id="workspacePromotionImagePreview">${item.image_url ? `<img src="${escapeHtml(item.image_url)}" alt="宣传图片预览">` : '<span>IMAGE</span><small>可选宣传配图</small>'}</div>
+                <div class="workspace-promotion-image-control">
+                    <strong>宣传图片</strong>
+                    <p>支持 JPG、PNG、WEBP，最大 5MB；上传后自动压缩为 WebP。</p><span class="workspace-promotion-image-status" id="workspacePromotionImageStatus"></span>
+                    <input id="workspacePromotionImageFile" class="workspace-promotion-file-input" type="file" accept="image/jpeg,image/png,image/webp" onchange="uploadWorkspacePromotionImage(this)">
+                    <div><button class="btn btn-secondary" type="button" onclick="document.getElementById('workspacePromotionImageFile')?.click()">从本地选择</button><button class="workspace-promotion-image-clear" type="button" onclick="clearWorkspacePromotionImage()">移除图片</button></div>
+                    <label class="form-group"><span>或填写图片地址</span><input id="workspacePromotionImage" type="text" maxlength="300" value="${escapeHtml(item.image_url || '')}" oninput="updateWorkspacePromotionImagePreview()" placeholder="/static/... 或 https://..."></label>
+                </div>
+            </div>
+            <div class="workspace-promotion-editor-grid">
+                <label class="form-group"><span>开始展示</span><input id="workspacePromotionStarts" type="datetime-local" value="${toWorkspaceDatetimeLocal(item.starts_at)}"></label>
+                <label class="form-group"><span>结束展示</span><input id="workspacePromotionEnds" type="datetime-local" value="${toWorkspaceDatetimeLocal(item.ends_at)}"></label>
+            </div>
+            <label class="form-group"><span>按钮行为</span><select id="workspacePromotionActionKind" onchange="syncWorkspacePromotionActionFields()">
+                <option value="none" ${item.action_kind === 'none' ? 'selected' : ''}>不显示按钮</option>
+                <option value="tab" ${item.action_kind === 'tab' ? 'selected' : ''}>打开站内页面</option>
+                <option value="url" ${item.action_kind === 'url' ? 'selected' : ''}>打开链接</option>
+            </select></label>
+            <div id="workspacePromotionActionFields" class="workspace-promotion-editor-grid" ${item.action_kind === 'none' ? 'hidden' : ''}>
+                <label class="form-group"><span>按钮文字</span><input id="workspacePromotionActionLabel" maxlength="40" value="${escapeHtml(item.action_label || '')}" placeholder="例如 查看名单"></label>
+                <label class="form-group"><span>按钮目标</span><input id="workspacePromotionActionTarget" list="workspacePromotionTargets" maxlength="300" value="${escapeHtml(item.action_target || '')}" placeholder="选择或输入站内目标"><datalist id="workspacePromotionTargets">
+                    <option value="database:candidates">候选名单</option><option value="competition:standings">积分榜</option><option value="competition:schedule">赛程</option><option value="competition:suspensions">伤停</option><option value="competition:standings:超级">超级联赛积分榜</option><option value="competition:standings:甲级">甲级联赛积分榜</option><option value="competition:standings:乙级">乙级联赛积分榜</option><option value="competition:standings:冠军杯">冠军杯</option><option value="competition:standings:联盟杯">联盟杯</option><option value="competition:standings:无铭剑杯">无铭剑杯</option><option value="coaches">教练主页</option><option value="overview">联赛概览</option>
+                </datalist></label>
+            </div>
+            <div class="workspace-promotion-switches">
+                <label><input id="workspacePromotionActive" type="checkbox" ${item.is_active ? 'checked' : ''}>立即启用</label>
+                <label><input id="workspacePromotionPinned" type="checkbox" ${item.is_pinned ? 'checked' : ''}>置顶展示</label>
+                <label><input id="workspacePromotionDismissible" type="checkbox" ${item.is_dismissible !== false ? 'checked' : ''}>允许访客关闭</label>
+            </div>
+            <div class="workspace-promotion-editor-actions"><button class="btn btn-secondary" type="button" onclick="closeModal()">取消</button><button class="btn btn-primary" type="submit">${promotionId ? '保存修改' : '发布宣传'}</button></div>
+        </form>
+    `);
+}
+
+function readWorkspacePromotionEditor() {
+    const value = id => document.getElementById(id)?.value || '';
+    return {
+        content_type: value('workspacePromotionType'), theme: value('workspacePromotionTheme'), icon: value('workspacePromotionIcon'),
+        eyebrow: value('workspacePromotionEyebrow'), title: value('workspacePromotionTitle'), body: value('workspacePromotionBody'),
+        image_url: value('workspacePromotionImage') || null, action_kind: value('workspacePromotionActionKind'),
+        action_label: value('workspacePromotionActionLabel') || null, action_target: value('workspacePromotionActionTarget') || null,
+        is_active: Boolean(document.getElementById('workspacePromotionActive')?.checked),
+        is_pinned: Boolean(document.getElementById('workspacePromotionPinned')?.checked),
+        is_dismissible: Boolean(document.getElementById('workspacePromotionDismissible')?.checked),
+        sort_order: Number(value('workspacePromotionOrder') || 0), starts_at: value('workspacePromotionStarts') || null, ends_at: value('workspacePromotionEnds') || null,
+    };
+}
+
+async function refreshHomePromotionsAfterAdminChange() {
+    workspacePromotionsData = [];
+    await loadWorkspacePromotions({force: true});
+    if (typeof loadHomePromotions === 'function') {
+        homePromotionsLoaded = false;
+        await loadHomePromotions({force: true});
+    }
+}
+
+async function saveWorkspacePromotion(promotionId = 0) {
+    const response = await fetch(promotionId ? `/api/workspace/home-promotions/${promotionId}` : '/api/workspace/home-promotions', {
+        method: promotionId ? 'PATCH' : 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(readWorkspacePromotionEditor()),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        showModal('保存失败', escapeHtml(data.detail || '主页宣传保存失败'));
+        return;
+    }
+    closeModal();
+    await refreshHomePromotionsAfterAdminChange();
+}
+
+async function toggleWorkspacePromotion(promotionId) {
+    const item = workspacePromotionsData.find(entry => Number(entry.id) === Number(promotionId));
+    if (!item) return;
+    const response = await fetch(`/api/workspace/home-promotions/${promotionId}`, {method: 'PATCH', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(workspacePromotionRequestPayload(item, {is_active: !item.is_active}))});
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        showModal('操作失败', escapeHtml(data.detail || '宣传状态更新失败'));
+        return;
+    }
+    await refreshHomePromotionsAfterAdminChange();
+}
+
+function previewWorkspacePromotion(promotionId) {
+    const item = workspacePromotionsData.find(entry => Number(entry.id) === Number(promotionId));
+    if (!item) return;
+    const symbol = {megaphone: '◖', trophy: '♛', list: '≡', star: '✦', whistle: '◉', info: 'i'}[item.icon] || '◖';
+    showModal('主页展示预览', `<article class="home-promotion-card is-${escapeHtml(item.theme)} is-featured is-admin-preview"><span class="home-promotion-media ${item.image_url ? '' : 'is-symbol'}">${item.image_url ? `<img src="${escapeHtml(item.image_url)}" alt="">` : escapeHtml(symbol)}</span><div class="home-promotion-copy"><span>${escapeHtml(item.eyebrow)}</span><h2>${escapeHtml(item.title)}</h2>${item.body ? `<p>${escapeHtml(item.body)}</p>` : ''}</div>${item.action_label ? `<div class="home-promotion-actions"><span class="btn home-promotion-action">${escapeHtml(item.action_label)}</span></div>` : ''}</article>`);
+}
+
+function confirmDeleteWorkspacePromotion(promotionId) {
+    const item = workspacePromotionsData.find(entry => Number(entry.id) === Number(promotionId));
+    if (!item) return;
+    showModal('删除主页宣传', `<div class="workspace-promotion-delete-confirm"><strong>${escapeHtml(item.title)}</strong><p>删除后无法恢复；如果只想暂时停止展示，请使用“下线”。</p><div><button class="btn btn-secondary" type="button" onclick="closeModal()">取消</button><button class="btn btn-danger" type="button" onclick="deleteWorkspacePromotion(${Number(item.id)})">确认删除</button></div></div>`);
+}
+
+async function deleteWorkspacePromotion(promotionId) {
+    const response = await fetch(`/api/workspace/home-promotions/${promotionId}`, {method: 'DELETE', credentials: 'same-origin'});
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        showModal('删除失败', escapeHtml(data.detail || '主页宣传删除失败'));
+        return;
+    }
+    closeModal();
+    await refreshHomePromotionsAfterAdminChange();
+}
+
+async function syncWorkspaceChampionPromotions() {
+    const response = await fetch('/api/workspace/home-promotions/sync-cup-champions', {method: 'POST', credentials: 'same-origin'});
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        showModal('同步失败', escapeHtml(data.detail || '当前杯赛冠军同步失败'));
+        return;
+    }
+    workspacePromotionsData = Array.isArray(data) ? data : [];
+    renderWorkspacePromotions();
+    if (typeof loadHomePromotions === 'function') {
+        homePromotionsLoaded = false;
+        await loadHomePromotions({force: true});
+    }
+}
+
+async function syncWorkspaceLeagueChampionPromotions() {
+    const response = await fetch('/api/workspace/home-promotions/sync-league-champions', {method: 'POST', credentials: 'same-origin'});
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        showModal('同步失败', escapeHtml(data.detail || '联赛冠军同步失败'));
+        return;
+    }
+    workspacePromotionsData = Array.isArray(data) ? data : [];
+    renderWorkspacePromotions();
+    const leagueChampions = workspacePromotionsData.filter(item => item.source_type === 'league_champion');
+    if (typeof loadHomePromotions === 'function') {
+        homePromotionsLoaded = false;
+        await loadHomePromotions({force: true});
+    }
+    if (!leagueChampions.length) {
+        showModal('暂未产生联赛冠军', '超级、甲级、乙级需要完成全部 34 轮，且所有球队积分榜已赛达到 34 场后才会同步。');
+    } else {
+        showModal('联赛冠军已同步', `当前共 ${leagueChampions.length} 条联赛冠军宣传，可关闭提示后继续编辑、自定义图片或调整发布时间。`);
+    }
+}
+
+async function workspaceCoachLogin() {
+    const username = document.getElementById('workspaceCoachUsername')?.value || '';
+    const password = document.getElementById('workspaceCoachPassword')?.value || '';
+    const response = await fetch('/api/coach/login', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username, password}),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.authenticated) {
+        showModal('登录失败', escapeHtml(data.detail || '账号或密码错误'));
+        return;
+    }
+    await ensureAppModule('coaches');
+    currentCoachAccount = data;
+    beginCoachSecuritySetup(() => finishWorkspaceCoachLogin(currentCoachAccount));
+}
+
+async function finishWorkspaceCoachLogin(data) {
+    if (!(data.can_manage_schedule || data.can_manage_suspensions || data.can_manage_candidate_lists)) {
+        showModal('没有工作权限', '该教练账号可以使用个人中心，但尚未获得联赛工作权限。');
+        return;
+    }
+    workspaceSessionData = null;
+    workspaceDashboardData = null;
+    await openWorkspace({force: true});
+}
+
+async function workspaceLogout() {
+    const source = workspaceSessionData?.identity?.source;
+    const endpoint = source === 'coach_account' ? '/api/coach/logout' : '/api/admin/logout';
+    await fetch(endpoint, {method: 'POST', credentials: 'same-origin'});
+    workspaceSessionData = null;
+    workspaceDashboardData = null;
+    workspaceAccountsData = [];
+    workspacePromotionsData = [];
+    workspaceSessionState = {authenticated: false, identity: null};
+    if (source === 'coach_account') currentCoachAccount = {authenticated: false};
+    await openWorkspace({force: true});
+}
+
+function loadWorkspaceAdminOperations() {
+    if (!workspaceSessionData?.identity?.is_full_admin || workspaceAdminOperationsLoaded) return;
+    workspaceAdminOperationsLoaded = true;
+    updateStats();
+    renderFormalImportSummaryCard();
+    renderSchemaBootstrapStatusCard();
+    renderOperationsAuditCard();
+    renderTeamStatSourceDebugView();
+    populateAdminSelects();
+    loadSchemaBootstrapStatus();
+    loadLatestFormalImportSummary();
+    loadOperationsAudit();
+    loadDataFeedbackReports();
+    loadSeaPlayers();
+    loadTransferLogs();
+    loadLogFile();
+}
 
 function isAdminUnauthorizedError(error) {
     return error?.code === ADMIN_UNAUTHORIZED_ERROR || error?.message === ADMIN_UNAUTHORIZED_ERROR;
@@ -49,9 +921,10 @@ function notifyAdminUnauthorized(message = '管理员登录已失效，请重新
 }
 
 function isCoachWorkAccountActive() {
+    const coachAccount = typeof currentCoachAccount !== 'undefined' ? currentCoachAccount : null;
     return Boolean(
         !currentAdminRole
-        && currentCoachAccount?.authenticated
+        && coachAccount?.authenticated
         && (canManageSchedule || canManageSuspensions || canManageCandidateLists)
     );
 }
@@ -153,7 +1026,10 @@ async function logoutCurrentWorkAccount() {
 function syncAdminTabVisibility() {
     const adminTab = document.getElementById('adminTab');
     if (!adminTab) return;
-    adminTab.classList.toggle('hidden-tab', !(isAdmin || adminEntryUnlocked));
+    const hasWorkspaceAccess = workspaceHasWorkAccess(
+        typeof workspaceSessionState !== 'undefined' ? workspaceSessionState?.identity : null,
+    );
+    adminTab.classList.toggle('hidden-tab', !(isAdmin || adminEntryUnlocked || hasWorkspaceAccess));
     if (typeof syncMobileNavState === 'function') {
         syncMobileNavState({closeMenu: false});
     }
@@ -164,7 +1040,8 @@ function syncAdminPanelVisibility(options = {}) {
     const adminPanel = document.getElementById('adminPanel');
     if (!loginSection || !adminPanel) return;
 
-    if (isAdmin) {
+    const fallbackIdentity = typeof workspaceSessionState !== 'undefined' ? workspaceSessionState?.identity : null;
+    if (isAdmin || workspaceHasWorkAccess(workspaceSessionData?.identity || fallbackIdentity)) {
         loginSection.style.display = 'none';
         adminPanel.style.display = 'block';
         return;
@@ -198,23 +1075,7 @@ function openAdminEntry() {
 function showAdminTab() {
     adminEntryUnlocked = true;
     syncAdminTabVisibility();
-    syncAdminPanelVisibility();
-    updateStats();
-    renderFormalImportSummaryCard();
-    renderSchemaBootstrapStatusCard();
-    renderOperationsAuditCard();
-    renderTeamStatSourceDebugView();
-    populateAdminSelects();
-    loadSchemaBootstrapStatus();
-    loadLatestFormalImportSummary();
-    loadOperationsAudit();
-    loadDataFeedbackReports();
-    if (typeof loadCompetitionData === 'function') {
-        loadCompetitionData({force: true});
-    }
-    loadSeaPlayers();
-    loadTransferLogs();
-    loadLogFile();
+    openWorkspace({force: true});
 }
 
 function getDataFeedbackIssueTypeLabel(issueType) {
@@ -509,31 +1370,11 @@ async function adminLogin() {
                 showModal('错误', '登录态未生效，请检查 HTTPS / Session Cookie 配置后重试。');
                 return;
             }
-            if (!isAdmin && (canManageSchedule || canManageSuspensions || canManageCandidateLists)) {
-                adminEntryUnlocked = false;
-                syncAdminTabVisibility();
-                if (typeof loadCompetitionData === 'function') {
-                    await loadCompetitionData({force: true});
-                }
-                showTab('competition', null, {syncHistory: false});
-                const permissions = [
-                    canManageSchedule ? '赛程' : '',
-                    canManageSuspensions ? '伤停' : '',
-                    canManageCandidateLists ? '候选名单' : '',
-                ].filter(Boolean).join('、');
-                showModal('成功', `欢迎，${data.username}！当前账号可维护${permissions || '指定模块'}。`);
-                return;
-            }
-            showAdminTab();
-            showTab('admin', null, {syncHistory: false});
-            renderTeamsTable();
-            renderTeamStatSourceDebugView();
-            renderPlayers(currentPlayers);
-            if (typeof loadCoaches === 'function' && document.body.dataset.activeTab === 'coaches') {
-                coachesLoaded = false;
-                await loadCoaches({force: true});
-            }
-            showModal('成功', `欢迎，${data.username}！`);
+            workspaceSessionData = null;
+            workspaceDashboardData = null;
+            await loadWorkspaceSession({force: true});
+            await showTab('admin', null, {syncHistory: false});
+            showModal('登录成功', `欢迎，${escapeHtml(data.username)}！已进入联赛工作台。`);
         }
     } catch (e) {
         if (isAdminUnauthorizedError(e)) return;
@@ -768,7 +1609,7 @@ async function batchConsume() {
 }
 
 async function runFormalImport() {
-    const confirmed = confirm('确定要执行正式导入吗？\n\n这会按严格模式读取最新的 HEIGO Excel 和球员属性 CSV/XLSX，先自动备份当前数据库，再正式写入联赛规则、球队、球员和属性库。球员属性会按版本并存。');
+    const confirmed = confirm('确定要导入服务器上的最新联赛名单吗？\n\n系统会先备份数据库，再按严格模式同步联赛规则、球队和球员名单。');
     if (!confirmed) return;
     try {
         const result = await adminJsonRequest('/api/admin/import/formal', {method: 'POST'});
@@ -796,6 +1637,119 @@ async function runFormalImport() {
     } catch (e) {
         showModal('错误', '正式导入请求失败');
     }
+}
+
+async function uploadAdminImportFile(kind) {
+    const config = kind === 'attributes'
+        ? {
+            inputId: 'attributesImportFile',
+            buttonId: 'attributesImportButton',
+            endpoint: '/api/admin/import/upload/attributes',
+            title: '球员数据库',
+            confirmText: '确定上传并正式更新球员数据库吗？\n\n系统会先备份数据库，校验失败时不会提交任何属性变更。',
+        }
+        : {
+            inputId: 'rosterImportFile',
+            buttonId: 'rosterImportButton',
+            endpoint: '/api/admin/import/upload/roster',
+            title: '联赛名单',
+            confirmText: '确定上传并正式更新联赛名单吗？\n\n这是全量同步操作，不在新文件中的旧名单球员会被移出当前名单。系统会先自动备份数据库。',
+        };
+    const input = document.getElementById(config.inputId);
+    const file = input?.files?.[0];
+    if (!file) {
+        showModal('请选择文件', `请先选择要上传的${config.title}文件。`);
+        return;
+    }
+    if (!confirm(config.confirmText)) return;
+
+    const button = document.getElementById(config.buttonId);
+    if (button) button.disabled = true;
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+    try {
+        const result = await adminJsonRequest(config.endpoint, {method: 'POST', body: formData});
+        if (!result) return;
+        const {response, data} = result;
+        lastFormalImportSummary = data;
+        renderFormalImportSummaryCard();
+        showModal(response.ok && data.success ? '更新完成' : '更新未提交', formatFormalImportResult(data));
+        await loadOperationsAudit();
+        if (response.ok && data.success) {
+            if (kind === 'attributes') {
+                if (typeof loadAttributeVersionCatalog === 'function') await loadAttributeVersionCatalog({force: true});
+                if (typeof refreshAttributeVersionBanner === 'function') refreshAttributeVersionBanner();
+            } else {
+                await refreshLeagueInfoDataset();
+                await refreshPlayerDataset();
+                await refreshTeamDataset();
+                loadSeaPlayers();
+            }
+            if (input) input.value = '';
+        }
+    } catch (error) {
+        showModal('上传失败', escapeHtml(error?.message || `${config.title}上传请求失败`));
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+function formatScheduleImportResult(data) {
+    const warningHtml = (data?.warnings || []).slice(0, 10).map(item => `<li>${escapeHtml(item)}</li>`).join('');
+    return `
+        <div class="maintenance-note">${escapeHtml(data?.message || '')}</div>
+        ${data?.source_file ? `<div class="maintenance-note" style="margin-top:8px;"><strong>来源：</strong><code>${escapeHtml(data.source_file)}</code></div>` : ''}
+        ${warningHtml ? `<div class="maintenance-note" style="margin-top:8px;"><strong>未匹配球队：</strong><ul style="margin:6px 0 0 18px;">${warningHtml}</ul></div>` : ''}
+    `;
+}
+
+async function refreshAfterScheduleImport() {
+    if (typeof competitionDataLoaded !== 'undefined') competitionDataLoaded = false;
+    if (typeof loadCompetitionData === 'function') await loadCompetitionData({force: true});
+    await loadWorkspaceDashboard({force: true});
+}
+
+async function uploadWorkspaceScheduleFile() {
+    const input = document.getElementById('scheduleImportFile');
+    const file = input?.files?.[0];
+    if (!file) {
+        showModal('请选择文件', '请先选择要上传的赛程 Excel。');
+        return;
+    }
+    if (!confirm(`确定上传并正式更新赛程吗？\n\n文件：${file.name}\n同一场比赛已录入的比分和状态会保留。`)) return;
+    const button = document.getElementById('scheduleImportButton');
+    if (button) button.disabled = true;
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+    try {
+        const result = await adminJsonRequest('/api/admin/matches/import/upload', {method: 'POST', body: formData});
+        if (!result) return;
+        const {response, data} = result;
+        if (!response.ok || !data.success) {
+            showModal('赛程更新失败', escapeHtml(data.detail || data.message || '上传或导入失败'));
+            return;
+        }
+        if (input) input.value = '';
+        await refreshAfterScheduleImport();
+        showModal('赛程更新完成', formatScheduleImportResult(data));
+    } catch (error) {
+        showModal('上传失败', escapeHtml(error?.message || '赛程上传请求失败'));
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+async function importWorkspaceLatestSchedule() {
+    if (!confirm('确认导入服务器 imports/schedules/ 下最新的赛程 Excel？\n\n同一场已录入比分会保留。')) return;
+    const result = await adminJsonRequest('/api/admin/matches/import', {method: 'POST'});
+    if (!result) return;
+    const {response, data} = result;
+    if (!response.ok || !data.success) {
+        showModal('赛程导入失败', escapeHtml(data.detail || data.message || '导入失败'));
+        return;
+    }
+    await refreshAfterScheduleImport();
+    showModal('赛程导入完成', formatScheduleImportResult(data));
 }
 
 async function rebuildTeamStatCaches() {
@@ -853,6 +1807,7 @@ async function editTeam(teamName) {
     const html = `
         <div class="form-group"><label>球队名</label><input type="text" id="editTeamName" value="${team.name}"></div>
         <div class="form-group"><label>主教练</label><input type="text" id="editTeamManager" value="${team.manager || ''}"></div>
+        <div class="form-group"><label>球队工资帽（M）</label><input type="number" id="editTeamWageCap" min="0.1" max="100" step="0.01" value="${team.wage_cap ?? ''}" placeholder="留空则使用级别默认工资帽"><small>填写后覆盖该级别统一工资帽；留空保存可恢复默认值。</small></div>
         <div class="form-group"><label>备注</label><textarea id="editTeamNotes" style="min-height:80px;">${team.notes || ''}</textarea></div>
         <div style="margin-top:15px;"><button class="btn btn-primary" onclick="saveTeamInfo('${teamName}')">保存修改</button><button class="btn btn-secondary" onclick="closeModal()" style="margin-left:10px;">取消</button></div>
     `;
@@ -862,13 +1817,16 @@ async function editTeam(teamName) {
 async function saveTeamInfo(originalName) {
     const newName = document.getElementById('editTeamName').value.trim();
     const manager = document.getElementById('editTeamManager').value.trim();
+    const wageCapRaw = document.getElementById('editTeamWageCap').value.trim();
+    const wageCap = wageCapRaw === '' ? null : Number.parseFloat(wageCapRaw);
     const notes = document.getElementById('editTeamNotes').value.trim();
     if (!newName) { showModal('错误', '球队名不能为空'); return; }
+    if (wageCap !== null && (!Number.isFinite(wageCap) || wageCap <= 0 || wageCap > 100)) { showModal('错误', '球队工资帽必须大于 0 且不超过 100M'); return; }
     try {
         const result = await adminJsonRequest('/api/admin/team/update', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({team_name: originalName, name: newName !== originalName ? newName : null, manager, notes}),
+            body: JSON.stringify({team_name: originalName, name: newName !== originalName ? newName : null, manager, wage_cap: wageCap, notes}),
         });
         if (!result) return;
         const {data} = result;
@@ -889,6 +1847,15 @@ async function updateTeamField(originalName, field, value) {
     if (field === 'name') requestBody.name = value;
     if (field === 'manager') requestBody.manager = value;
     if (field === 'level') requestBody.level = value;
+    if (field === 'wage_cap') {
+        const wageCap = Number.parseFloat(value);
+        if (!Number.isFinite(wageCap) || wageCap <= 0 || wageCap > 100) {
+            showModal('错误', '球队工资帽必须大于 0 且不超过 100M');
+            await refreshTeamDataset();
+            return;
+        }
+        requestBody.wage_cap = wageCap;
+    }
     try {
         const result = await adminJsonRequest('/api/admin/team/update', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(requestBody)});
         if (!result) return;
@@ -908,7 +1875,16 @@ async function updatePlayerField(uid, field, value) {
     if (field === 'name') requestBody.name = value;
     if (field === 'position') requestBody.position = value;
     if (field === 'nationality') requestBody.nationality = value;
-    if (field === 'age') requestBody.age = parseInt(value);
+    if (['age', 'ca', 'pa'].includes(field)) {
+        const parsedValue = Number.parseInt(value, 10);
+        const minimum = field === 'pa' ? -10 : 1;
+        if (!Number.isInteger(parsedValue) || parsedValue < minimum || parsedValue > 200) {
+            showModal('错误', `${field.toUpperCase()} 必须是 ${minimum} 到 200 之间的整数`);
+            await refreshPlayerDataset();
+            return;
+        }
+        requestBody[field] = parsedValue;
+    }
     try {
         const result = await adminJsonRequest('/api/admin/player/update', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(requestBody)});
         if (!result) return;
@@ -920,6 +1896,7 @@ async function updatePlayerField(uid, field, value) {
             showModal('错误', data.detail || '更新失败');
         }
     } catch (e) {
+        await refreshPlayerDataset();
         showModal('错误', '更新请求失败');
     }
 }

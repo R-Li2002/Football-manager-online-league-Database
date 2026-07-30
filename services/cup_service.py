@@ -254,12 +254,63 @@ def _propagate_winner(db: Session, match: CupMatch) -> None:
     next_match.updated_at = datetime.now()
 
 
-def initialize_cup_bracket(db: Session, admin: str | None, competition: str, write_to_log: LogWriter) -> dict[str, Any]:
+def initialize_cup_bracket(
+    db: Session,
+    admin: str | None,
+    competition: str,
+    write_to_log: LogWriter,
+    *,
+    reset: bool = False,
+) -> dict[str, Any]:
     operator = require_admin(admin)
     competition = normalize_competition(competition)
     created = ensure_bracket(db, competition)
-    write_to_log("杯赛初始化", f"{CUP_DEFINITIONS[competition]['title']} 初始化，新增 {created} 个槽位", operator)
-    return {"success": True, "message": f"{CUP_DEFINITIONS[competition]['title']} 淘汰赛已初始化"}
+    title = CUP_DEFINITIONS[competition]["title"]
+    if not reset:
+        write_to_log("杯赛初始化", f"{title} 初始化，新增 {created} 个槽位", operator)
+        message = f"{title} 淘汰赛已初始化" if created else f"{title} 淘汰赛已存在，无需重复初始化"
+        return {"success": True, "message": message}
+
+    matches = db.query(CupMatch).filter(CupMatch.competition == competition).all()
+    cleared = 0
+    updated_at = datetime.now()
+    for match in matches:
+        if any(
+            value is not None
+            for value in (
+                match.home_team_id,
+                match.home_team_name,
+                match.away_team_id,
+                match.away_team_name,
+                match.home_score,
+                match.away_score,
+                match.winner_team_id,
+                match.winner_team_name,
+                match.notes,
+            )
+        ) or match.status != "scheduled":
+            cleared += 1
+        match.home_team_id = None
+        match.home_team_name = None
+        match.away_team_id = None
+        match.away_team_name = None
+        match.home_score = None
+        match.away_score = None
+        match.winner_team_id = None
+        match.winner_team_name = None
+        match.status = "scheduled"
+        match.notes = None
+        match.updated_at = updated_at
+    db.commit()
+    write_to_log(
+        "杯赛初始化",
+        f"{title} 重新初始化，重置 {len(matches)} 个槽位，清除 {cleared} 个已有对阵",
+        operator,
+    )
+    return {
+        "success": True,
+        "message": f"{title} 已重新初始化，共重置 {len(matches)} 个对阵槽位",
+    }
 
 
 def update_cup_match_teams(

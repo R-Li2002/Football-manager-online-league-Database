@@ -44,7 +44,7 @@ FULL_ADMIN_ROLE = "admin"
 SCHEDULE_EDITOR_ROLE = "schedule_editor"
 ROLE_LABELS = {
     FULL_ADMIN_ROLE: "完整管理员",
-    SCHEDULE_EDITOR_ROLE: "赛程维护",
+    SCHEDULE_EDITOR_ROLE: "赛事工作账号",
 }
 
 

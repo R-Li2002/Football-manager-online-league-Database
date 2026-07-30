@@ -1,10 +1,11 @@
 ﻿from __future__ import annotations
 
+from dataclasses import replace
 from math import ceil
 import re
 
 from .config import BotSettings
-from .models import CommandSpec, ReplySpec
+from .models import CommandSpec, PlayerCommandResolution, ReplySpec
 from .news_service import FootballNewsService, NewsItem
 from .parser import parse_command
 
@@ -30,54 +31,63 @@ HELP_TEXT = (
 )
 
 TEAM_ALIASES = {
-    "Barcelona": ("barca", "fcb", "巴萨", "巴塞罗那"),
-    "Man UFC": ("manutd", "manu", "mu", "mufc", "曼联", "曼彻斯特联", "曼彻斯特联队"),
-    "Tottenham": ("spurs", "tot", "thfc", "热刺", "托特纳姆", "托特纳姆热刺"),
-    "Leicester": ("lei", "lcfc", "foxes", "莱斯特", "莱斯特城"),
-    "Bayer 04": ("b04", "bayer04", "leverkusen", "药厂", "勒沃库森"),
-    "Bournemouth": ("afcb", "bmouth", "樱桃", "伯恩茅斯", "般尼茅夫"),
-    "Sporting CP": ("scp", "sporting", "sportingcp", "葡体", "里斯本竞技", "葡萄牙体育"),
-    "FC Bayern": ("bayern", "fcbayern", "拜仁", "拜仁慕尼黑"),
+    "A. Bilbao": ("athletic", "athleticclub", "athleticbilbao", "毕巴", "毕尔巴鄂", "毕尔巴鄂竞技"),
+    "Associazione Sportiva Roma": ("asroma", "roma", "罗马", "罗马队"),
+    "Aston Villa": ("villa", "avfc", "维拉", "阿斯顿维拉"),
     "Borussia Dortmund": ("bvb", "dortmund", "多特", "多特蒙德"),
-    "A. Madrid": ("atm", "atleti", "马竞", "马德里竞技"),
-    "R. Madrid": ("rm", "realmadrid", "皇马", "皇家马德里"),
-    "A. Bilbao": ("athletic", "bilbao", "毕巴", "毕尔巴鄂"),
-    "AFC Ajax": ("ajax", "阿贾克斯"),
-    "AS Roma": ("roma", "罗马"),
-    "AC Milan": ("milan", "acm", "米兰", "ac米兰"),
+    "Chelsea": ("cfc", "车子", "切尔西"),
+    "FC Schalke 04": ("s04", "schalke", "沙尔克", "沙尔克04", "沙尔克零四"),
+    "FLA": ("flamengo", "fla", "弗拉门戈"),
     "Inter": ("inter", "intermilan", "国米", "国际米兰"),
     "Juventus": ("juve", "尤文", "尤文图斯"),
     "Liverpool": ("lfc", "利物浦"),
-    "Chelsea": ("cfc", "车子", "切尔西"),
-    "Arsenal": ("afc", "枪手", "阿森纳"),
-    "Paris SG": ("psg", "巴黎", "巴黎圣日耳曼"),
-    "OM": ("om", "marseille", "马赛"),
-    "Man City": ("mancity", "mc", "mcfc", "曼城", "曼彻斯特城"),
-    "Newcastle": ("nufc", "纽卡", "纽卡斯尔"),
-    "West Ham": ("whu", "whufc", "西汉姆", "西汉姆联"),
-    "Wolverhampton Wanderers": ("wolves", "狼队", "伍尔弗汉普顿"),
-    "Nottm Forest": ("forest", "nffc", "诺丁汉森林"),
-    "Brighton": ("bha", "海鸥", "布莱顿"),
-    "Everton": ("efc", "埃弗顿"),
-    "Napoli": ("naples", "那不勒斯"),
-    "Lazio": ("蓝鹰", "拉齐奥"),
-    "Benfica": ("slb", "本菲卡"),
-    "FC Porto": ("porto", "fcp", "波尔图"),
-    "Celtic": ("凯尔特人",),
-    "RB Leipzig": ("rbl", "莱比锡", "莱比锡红牛"),
-    "Schalke 04": ("s04", "沙尔克", "沙尔克04"),
-    "Eintracht Frankfurt": ("frankfurt", "法兰克福"),
-    "VfB Stuttgart": ("stuttgart", "斯图加特"),
-    "Inter Miami": ("迈阿密国际",),
+    "Manchester City": ("mancity", "mc", "mcfc", "曼城", "曼彻斯特城", "曼城队"),
+    "Manchester United": ("manutd", "manu", "mu", "mufc", "曼联", "曼彻斯特联", "曼彻斯特联队"),
+    "Nottingham Forest": ("forest", "nffc", "诺丁汉森林", "诺丁汉"),
+    "Olympique de Marseille": ("om", "marseille", "马赛", "马赛奥林匹克"),
+    "R. Madrid": ("rm", "realmadrid", "皇马", "皇家马德里"),
     "Southampton": ("saints", "南安普顿"),
-    "Crystal Palace": ("cpfc", "水晶宫"),
-    "Aston Villa": ("villa", "avfc", "维拉", "阿斯顿维拉"),
+    "Sunderland": ("safc", "黑猫", "桑德兰"),
+    "Tottenham Hotspur": ("spurs", "tot", "thfc", "热刺", "托特纳姆", "托特纳姆热刺"),
+    "A. Madrid": ("atm", "atleti", "马竞", "马德里竞技"),
+    "AC Milan": ("milan", "acm", "米兰", "ac米兰"),
+    "Barcelona": ("barca", "fcb", "巴萨", "巴塞罗那"),
+    "Bayer 04 Leverkusen": ("b04", "bayer04", "leverkusen", "药厂", "勒沃库森"),
+    "Brighton & Hove Albion": ("bha", "brighton", "海鸥", "布莱顿", "布莱顿霍夫"),
+    "Como 1907": ("como", "科莫", "科莫1907"),
+    "Everton": ("efc", "太妃糖", "埃弗顿"),
+    "FC Bayern München": ("bayern", "fcbayern", "拜仁", "拜仁慕尼黑"),
+    "FK Bodø/Glimt": ("bodo", "glimt", "博德闪耀", "博德格林特"),
+    "Leeds United": ("leeds", "利兹", "利兹联"),
+    "Leicester City": ("lei", "lcfc", "foxes", "狐狸城", "莱斯特", "莱斯特城"),
+    "Napoli": ("naples", "那不勒斯", "拿坡里"),
+    "Olympique Lyonnais": ("ol", "lyon", "里昂", "里昂奥林匹克"),
+    "Paris Saint-Germain": ("psg", "parissg", "巴黎", "大巴黎", "巴黎圣日耳曼"),
+    "RB Leipzig": ("rbl", "莱比锡", "莱比锡红牛"),
+    "Sport Lisboa e Benfica": ("slb", "benfica", "本菲卡"),
+    "Sporting Clube de Portugal": ("scp", "sporting", "sportingcp", "葡体", "里斯本竞技", "葡萄牙体育"),
+    "Wolverhampton Wanderers": ("wolves", "狼队", "伍尔弗汉普顿"),
+    "AFC Ajax": ("ajax", "阿贾克斯"),
+    "AFC Bournemouth": ("afcb", "bmouth", "bournemouth", "樱桃", "伯恩茅斯", "般尼茅夫"),
+    "Arsenal": ("afc", "枪手", "阿森纳"),
+    "Brentford": ("brentford", "蜜蜂", "布伦特福德"),
+    "Club Atlético Boca Juniors": ("boca", "bocajuniors", "博卡", "博卡青年"),
+    "Club Atlético Talleres de Córdoba": ("talleres", "塔勒雷斯", "科尔多瓦塔勒雷斯"),
     "Coventry City": ("coventry", "考文垂"),
-    "Sheff Utd": ("sheffieldutd", "谢菲联"),
-    "Hamburger Sport-Verein": ("hsv", "hamburg", "汉堡"),
-    "FK Bodø/Glimt": ("bodo", "glimt", "博德闪耀"),
-    "Zhejiang": ("zj", "浙江", "浙江队"),
+    "Crystal Palace": ("cpfc", "水晶宫"),
+    "Eintracht Frankfurt": ("frankfurt", "法兰克福", "法兰克福鹰"),
+    "FC Heidenheim 1846": ("heidenheim", "海登海姆", "海登海姆1846"),
+    "Feyenoord Rotterdam": ("feyenoord", "费耶诺德", "费耶诺德鹿特丹"),
+    "Newcastle United": ("nufc", "newcastle", "纽卡", "纽卡斯尔", "纽卡斯尔联"),
+    "Oriental Dragon": ("orientaldragon", "东方龙"),
+    "RC Strasbourg Alsace": ("rcsa", "strasbourg", "斯特拉斯堡", "斯特拉斯堡阿尔萨斯"),
+    "Sheffield United": ("sheffieldutd", "sheffutd", "谢菲联", "谢菲尔德联"),
+    "Sportklub Sturm Graz": ("sturmgraz", "格拉茨风暴", "格拉茨"),
+    "VfB Stuttgart": ("stuttgart", "斯图加特"),
+    "West Ham United": ("whu", "whufc", "西汉姆", "西汉姆联"),
 }
+
+ROSTER_IMAGE_PAGE_SIZE = 20
 
 
 class HeigoBotService:
@@ -164,6 +174,30 @@ class HeigoBotService:
             return None, ReplySpec(reply_type="text", text=f"球员 {selected.get('name')} 详情读取失败。")
         return detail, None
 
+    async def resolve_player_command(self, command: CommandSpec) -> PlayerCommandResolution:
+        """Resolve a player query while leaving conversation handling to the adapter."""
+        if command.uid:
+            return PlayerCommandResolution(command=command)
+
+        keyword = (command.keyword or "").strip()
+        if not keyword:
+            return PlayerCommandResolution(error=ReplySpec(reply_type="text", text=HELP_TEXT))
+
+        candidates = await self.api_client.search_player_attributes(keyword, version=command.version)
+        if not candidates:
+            return PlayerCommandResolution(
+                error=ReplySpec(reply_type="text", text=f"未找到“{keyword}”相关球员。")
+            )
+
+        exact_matches = [
+            item for item in candidates if str(item.get("name") or "").casefold() == keyword.casefold()
+        ]
+        if exact_matches:
+            return PlayerCommandResolution(command=replace(command, uid=int(exact_matches[0]["uid"])))
+        if len(candidates) == 1:
+            return PlayerCommandResolution(command=replace(command, uid=int(candidates[0]["uid"])))
+        return PlayerCommandResolution(candidates=tuple(candidates[:5]))
+
     async def _handle_player_image(self, command: CommandSpec) -> ReplySpec:
         detail, error = await self._resolve_player(command)
         if error:
@@ -231,7 +265,11 @@ class HeigoBotService:
         players = await self.api_client.get_players_by_team(team_name)
         if not players:
             return ReplySpec(reply_type="text", text=f"未找到球队“{team_name}”的名单。")
-        page, total_pages, _ = self._paginate_players(players, command.page)
+        page, total_pages, _ = self._paginate_players(
+            players,
+            command.page,
+            page_size=ROSTER_IMAGE_PAGE_SIZE,
+        )
         url = self.signer.build_roster_png_url(team_name, page=page, theme=self.settings.bot_default_theme)
         return ReplySpec(reply_type="image", text=f"{team_name} 名单图 第 {page}/{total_pages} 页", image_url=url)
 
@@ -259,8 +297,14 @@ class HeigoBotService:
             lines.append(f"发送“名单 {team_name} 第{page + 1}页”查看下一页。")
         return ReplySpec(reply_type="text", text="\n".join(lines))
 
-    def _paginate_players(self, players: list[dict], requested_page: int | None) -> tuple[int, int, list[dict]]:
-        page_size = max(1, int(self.settings.bot_roster_page_size or 20))
+    def _paginate_players(
+        self,
+        players: list[dict],
+        requested_page: int | None,
+        *,
+        page_size: int | None = None,
+    ) -> tuple[int, int, list[dict]]:
+        page_size = max(1, int(page_size or self.settings.bot_roster_page_size or 20))
         total_pages = max(1, int(ceil(len(players) / page_size))) if players else 1
         page = max(1, min(total_pages, int(requested_page or 1)))
         start = (page - 1) * page_size

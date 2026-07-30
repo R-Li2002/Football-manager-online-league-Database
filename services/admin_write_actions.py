@@ -306,6 +306,8 @@ def import_current_league_data(
     db: Session,
     admin: str | None,
     write_to_log,
+    *,
+    workbook_path=None,
 ) -> AdminImportResponse:
     bind = db.get_bind()
     return execute_admin_action(
@@ -314,8 +316,28 @@ def import_current_league_data(
         action="formal_import",
         operation_label=FORMAL_IMPORT_LABEL,
         operator=admin,
-        request_payload=None,
-        executor=lambda: import_service.import_current_league_data(db, admin, write_to_log),
+        request_payload={"workbook": str(workbook_path)} if workbook_path else None,
+        executor=lambda: import_service.import_current_league_data(db, admin, write_to_log, workbook_path=workbook_path),
+        response_model=AdminImportResponse,
+        bind_override=bind,
+    )
+
+
+def import_player_attributes_data(
+    db: Session,
+    admin: str | None,
+    attributes_path,
+    write_to_log,
+) -> AdminImportResponse:
+    bind = db.get_bind()
+    return execute_admin_action(
+        db,
+        category="import",
+        action="attribute_import",
+        operation_label="正式导入球员数据库",
+        operator=admin,
+        request_payload={"attributes": str(attributes_path)},
+        executor=lambda: import_service.import_player_attributes_data(db, admin, attributes_path, write_to_log),
         response_model=AdminImportResponse,
         bind_override=bind,
     )
@@ -325,6 +347,8 @@ def import_latest_schedule(
     db: Session,
     admin: str | None,
     write_to_log,
+    *,
+    schedule_path=None,
 ) -> ScheduleImportResponse:
     return execute_admin_action(
         db,
@@ -332,8 +356,10 @@ def import_latest_schedule(
         action="import_schedule",
         operation_label=SCHEDULE_IMPORT_LABEL,
         operator=admin,
-        request_payload=None,
-        executor=lambda: match_service.import_latest_schedule(db, admin, write_to_log),
+        request_payload={"schedule": str(schedule_path)} if schedule_path else None,
+        executor=lambda: match_service.import_schedule_file(db, admin, write_to_log, schedule_path)
+        if schedule_path
+        else match_service.import_latest_schedule(db, admin, write_to_log),
         response_model=ScheduleImportResponse,
     )
 
@@ -417,6 +443,8 @@ def initialize_cup_bracket(
     admin: str | None,
     competition: str,
     write_to_log,
+    *,
+    reset: bool = False,
 ) -> AdminActionResponse:
     return execute_admin_action(
         db,
@@ -424,8 +452,14 @@ def initialize_cup_bracket(
         action="initialize_cup_bracket",
         operation_label=CUP_INITIALIZE_LABEL,
         operator=admin,
-        request_payload={"competition": competition},
-        executor=lambda: cup_service.initialize_cup_bracket(db, admin, competition, write_to_log),
+        request_payload={"competition": competition, "reset": reset},
+        executor=lambda: cup_service.initialize_cup_bracket(
+            db,
+            admin,
+            competition,
+            write_to_log,
+            reset=reset,
+        ),
         response_model=AdminActionResponse,
     )
 

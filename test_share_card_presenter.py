@@ -25,7 +25,13 @@ class ShareCardPresenterTests(unittest.TestCase):
         self.assertEqual(preview["right_foot"], player.right_foot)
 
     def test_card_model_builds_outfield_groups_and_radar(self):
-        model = build_player_share_card_model(_sample_player_detail(), version="2026-03", step=2)
+        model = build_player_share_card_model(
+            _sample_player_detail(),
+            version="2026-03",
+            step=2,
+            heigo_power=74.36,
+            top_percent=8.4,
+        )
 
         self.assertFalse(model.is_goalkeeper)
         self.assertEqual(model.version_label, "2026-03")
@@ -36,6 +42,10 @@ class ShareCardPresenterTests(unittest.TestCase):
         self.assertEqual(len(model.radar_metrics), 8)
         self.assertTrue(any(chip.label == "AMC" for chip in model.position_chips))
         self.assertTrue(any(marker.label == "AMC" for marker in model.position_markers))
+        self.assertRegex(model.weighted_power_value, r"^\d+\.\d{2}$")
+        self.assertEqual(model.heigo_power_value, "74.36")
+        self.assertEqual(model.top_percent_label, "前 9%")
+        self.assertFalse(any(row.label == "加权战力值" for row in model.info_rows))
 
     def test_card_model_builds_goalkeeper_technical_group(self):
         player = _sample_player_detail()
@@ -50,6 +60,8 @@ class ShareCardPresenterTests(unittest.TestCase):
         technical_labels = [item.label for item in model.attribute_groups[0].items]
         self.assertIn("反应", technical_labels)
         self.assertIn("手控球", technical_labels)
+        self.assertEqual(model.weighted_power_value, "—")
+        self.assertEqual(model.heigo_power_value, "—")
 
     def test_roster_card_model_expands_canvas_for_twenty_players(self):
         players = _sample_team_players()

@@ -93,6 +93,9 @@ const tableTitle = registerElement(createElement('tableTitle'));
 const adminLogin = registerElement(createElement('adminLogin'));
 const adminPanel = registerElement(createElement('adminPanel'));
 const adminUsername = registerElement(createElement('adminUsername'));
+const modalTitle = registerElement(createElement('modalTitle'));
+const modalBody = registerElement(createElement('modalBody'));
+const resultModal = registerElement(createElement('resultModal'));
 
 adminLogin.style.display = 'none';
 adminPanel.style.display = 'block';
@@ -145,7 +148,7 @@ const localStorage = {
 };
 
 const context = {
-    console,
+    console: {...console},
     document,
     history,
     localStorage,
@@ -168,6 +171,15 @@ const context = {
         },
     },
     fetch: async url => {
+        if (url === '/api/workspace/session') {
+            return {ok: true, json: async () => ({authenticated: false, identity: null})};
+        }
+        if (url === '/api/home/summary') {
+            return {ok: true, json: async () => ({team_count: 0, player_count: 0, database_player_count: 0, default_attribute_version: ''})};
+        }
+        if (url === '/api/admin/check') {
+            return {ok: true, json: async () => ({authenticated: false})};
+        }
         if (url === '/api/admin/logout') {
             return {ok: true, json: async () => ({success: true})};
         }
@@ -243,9 +255,61 @@ async function assertAdminEntryFromHeroSearch() {
     assert.equal(tableTitle.textContent, '');
 }
 
+async function assertRosterPlayerDetailLoadsDatabaseModuleOnDemand() {
+    const calls = [];
+    context.selectRosterPlayer = uid => calls.push(['select', uid]);
+    context.ensureAppModule = async moduleName => calls.push(['module', moduleName]);
+    context.showPlayerDetail = async (uid, options) => calls.push(['detail', uid, {...options}]);
+
+    await context.openRosterPlayerAttributeDetail(83320135);
+
+    assert.deepEqual(calls, [
+        ['select', 83320135],
+        ['module', 'database'],
+        ['detail', 83320135, {returnTab: 'players', returnSubtab: 'search'}],
+    ]);
+}
+
+async function assertCompetitionPlayerDetailReturnsToPlayerRankings() {
+    const calls = [];
+    context.ensureAppModule = async moduleName => calls.push(['module', moduleName]);
+    context.showPlayerDetail = async (uid, options) => calls.push(['detail', uid, {...options}]);
+
+    await context.openCompetitionPlayerAttributeDetail(83320135);
+
+    assert.deepEqual(calls, [
+        ['module', 'database'],
+        ['detail', 83320135, {returnTab: 'competition', returnSubtab: 'playerRankings'}],
+    ]);
+}
+
+async function assertRosterPlayerDetailShowsModuleLoadFailure() {
+    context.ensureAppModule = async () => {
+        throw new Error('test module failure');
+    };
+    modalTitle.textContent = '';
+    modalBody.innerHTML = '';
+    resultModal.classList.remove('active');
+    const originalConsoleError = context.console.error;
+    context.console.error = () => {};
+
+    try {
+        await context.openRosterPlayerAttributeDetail(83320135);
+    } finally {
+        context.console.error = originalConsoleError;
+    }
+
+    assert.equal(modalTitle.textContent, '加载失败');
+    assert.match(modalBody.innerHTML, /球员属性页面暂时无法加载/);
+    assert.equal(resultModal.classList.contains('active'), true);
+}
+
 (async () => {
     await assertAdminEntryFromPlayerSearch();
     await assertAdminEntryFromHeroSearch();
+    await assertRosterPlayerDetailLoadsDatabaseModuleOnDemand();
+    await assertCompetitionPlayerDetailReturnsToPlayerRankings();
+    await assertRosterPlayerDetailShowsModuleLoadFailure();
 })().catch(error => {
     console.error(error);
     process.exitCode = 1;

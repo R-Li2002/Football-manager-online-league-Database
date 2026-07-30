@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from import_data import run_import
+from import_data import run_attribute_import, run_import
 from schemas_write import AdminImportResponse, ImportDatasetSummaryResponse
 from services.admin_common import LogWriter, require_admin
 
@@ -61,7 +61,13 @@ def backup_sqlite_database(engine: Engine, backup_root: Path) -> str | None:
     return str(backup_path)
 
 
-def import_current_league_data(db: Session, admin: str | None, write_to_log: LogWriter) -> AdminImportResponse:
+def import_current_league_data(
+    db: Session,
+    admin: str | None,
+    write_to_log: LogWriter,
+    *,
+    workbook_path: str | Path | None = None,
+) -> AdminImportResponse:
     admin = require_admin(admin)
     root_dir = resolve_import_root()
     bind = db.get_bind()
@@ -73,6 +79,7 @@ def import_current_league_data(db: Session, admin: str | None, write_to_log: Log
     try:
         backup_path = backup_sqlite_database(bind, backup_root)
         report = run_import(
+            workbook_path=workbook_path,
             dry_run=False,
             strict_mode=True,
             skip_attributes=True,
@@ -137,6 +144,73 @@ def import_current_league_data(db: Session, admin: str | None, write_to_log: Log
         strict_mode=report.strict_mode,
         skip_attributes=report.skip_attributes,
         workbook_path=report.workbook_path,
+        attributes_csv_path=report.attributes_csv_path,
+        backup_path=backup_path,
+        warnings=report.warnings,
+        datasets=datasets,
+    )
+
+
+def import_player_attributes_data(
+    db: Session,
+    admin: str | None,
+    attributes_path: str | Path,
+    write_to_log: LogWriter,
+) -> AdminImportResponse:
+    admin = require_admin(admin)
+    root_dir = resolve_import_root()
+    bind = db.get_bind()
+    backup_root = resolve_backup_root(bind, root_dir)
+    db.rollback()
+    db.close()
+    try:
+        backup_path = backup_sqlite_database(bind, backup_root)
+        report = run_attribute_import(
+            attributes_csv_path=attributes_path,
+            dry_run=False,
+            target_engine=bind,
+            root_dir=root_dir,
+        )
+    except Exception as exc:
+        write_to_log("球员数据库导入失败", f"unexpected_error={exc}", admin)
+        return AdminImportResponse(success=False, message=f"球员数据库导入异常中断: {exc}")
+
+    datasets = {
+        name: ImportDatasetSummaryResponse.model_validate(summary)
+        for name, summary in report.to_dict()["datasets"].items()
+    }
+    attribute_summary = datasets.get("player_attributes")
+    data_version = attribute_summary.details.get("data_version") if attribute_summary else None
+    if report.has_errors or not report.committed:
+        write_to_log(
+            "球员数据库导入失败",
+            f"source={Path(report.attributes_csv_path).name}; committed={report.committed}; backup={backup_path or 'none'}",
+            admin,
+        )
+        return AdminImportResponse(
+            success=False,
+            message="球员数据库导入未提交，请检查文件格式和导入报告。",
+            committed=report.committed,
+            attributes_csv_path=report.attributes_csv_path,
+            backup_path=backup_path,
+            warnings=report.warnings,
+            datasets=datasets,
+        )
+
+    message = f"已导入球员数据库 {Path(report.attributes_csv_path).name}"
+    if data_version:
+        message += f"，属性版本 {data_version}"
+    if backup_path:
+        message += "。导入前备份已创建"
+    write_to_log(
+        "正式导入球员数据库",
+        f"source={Path(report.attributes_csv_path).name}; version={data_version or 'unknown'}; backup={backup_path or 'none'}",
+        admin,
+    )
+    return AdminImportResponse(
+        success=True,
+        message=message,
+        committed=report.committed,
         attributes_csv_path=report.attributes_csv_path,
         backup_path=backup_path,
         warnings=report.warnings,

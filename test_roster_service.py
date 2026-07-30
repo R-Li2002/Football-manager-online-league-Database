@@ -93,6 +93,27 @@ class RosterServiceTests(unittest.TestCase):
         self.assertEqual(player.team_id, team.id)
         self.assertEqual(player.team_name, "Gamma FC")
 
+    def test_update_team_wage_cap_recalculates_wage_stats(self):
+        result = roster_service.update_team_info(
+            self.db,
+            "HEIGO01",
+            SimpleNamespace(
+                team_name="Alpha FC",
+                manager=None,
+                name=None,
+                notes=None,
+                level=None,
+                wage_cap=8.5,
+            ),
+            lambda *_args: None,
+        )
+
+        self.assertTrue(result["success"])
+        team = self.db.query(Team).filter(Team.name == "Alpha FC").one()
+        self.assertEqual(team.wage_cap, 8.5)
+        self.assertIn("wage cap None->8.5", result["message"])
+        self.assertEqual(team.stats_cache_refresh_mode, league_service.TEAM_CACHE_REFRESH_MODE_WRITE_INCREMENTAL)
+
     def test_update_player_uid_updates_transfer_log_references(self):
         result = roster_service.update_player_uid(
             self.db,
@@ -107,6 +128,30 @@ class RosterServiceTests(unittest.TestCase):
         logs = self.db.query(TransferLog).filter(TransferLog.player_uid == 2001).all()
         self.assertEqual(len(logs), 1)
         self.assertEqual(logs[0].player_name, "Alpha One")
+
+    def test_update_player_info_supports_direct_ca_pa_editing(self):
+        result = roster_service.update_player_info(
+            self.db,
+            "HEIGO01",
+            SimpleNamespace(
+                uid=1001,
+                name=None,
+                position=None,
+                nationality=None,
+                age=None,
+                ca=118,
+                pa=132,
+            ),
+            lambda *_args: None,
+        )
+
+        self.assertTrue(result["success"])
+        player = self.db.query(Player).filter(Player.uid == 1001).one()
+        team = self.db.query(Team).filter(Team.name == "Alpha FC").one()
+        self.assertEqual((player.ca, player.pa), (118, 132))
+        self.assertIn("CA 110->118", result["message"])
+        self.assertIn("PA 125->132", result["message"])
+        self.assertEqual(team.stats_cache_refresh_mode, league_service.TEAM_CACHE_REFRESH_MODE_WRITE_INCREMENTAL)
 
 
 if __name__ == "__main__":

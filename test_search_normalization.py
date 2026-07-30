@@ -62,12 +62,14 @@ class SearchRepositoryTests(unittest.TestCase):
                 Player(uid=1, name="İlkay Gündoğan", age=34, initial_ca=150, ca=150, pa=150, position="MC", nationality="DE", team_name="Test", wage=1.0, slot_type=""),
                 Player(uid=2, name="Martin Ødegaard", age=27, initial_ca=160, ca=160, pa=160, position="AMC", nationality="NO", team_name="Test", wage=1.0, slot_type=""),
                 Player(uid=3, name="Αλέξανδρος", age=25, initial_ca=130, ca=130, pa=130, position="ST", nationality="GR", team_name="Test", wage=1.0, slot_type=""),
+                Player(uid=11, name="Benjamin Šeško", age=22, initial_ca=150, ca=150, pa=170, position="ST", nationality="SI", team_name="85大海", wage=1.0, slot_type=""),
+                Player(uid=12, name="Viktor Gyökeres", age=27, initial_ca=160, ca=160, pa=165, position="ST", nationality="SE", team_name="Test", wage=1.0, slot_type=""),
             ]
         )
         self.db.add_all(
             [
-                PlayerAttributeVersion(uid=11, data_version="2620", name="Benjamin Šeško", position="ST", age=22, ca=150, pa=170, nationality="SI", club="Test", pos_st=20, finishing=16, passing=9),
-                PlayerAttributeVersion(uid=12, data_version="2620", name="Viktor Gyökeres", position="ST", age=27, ca=160, pa=165, nationality="SE", club="Test", pos_st=18, pos_mc=18, pos_amc=12, finishing=17, passing=11),
+                PlayerAttributeVersion(uid=11, data_version="2620", name="Benjamin Šeško", position="ST", age=22, ca=150, pa=170, nationality="SI", club="Test", pos_st=20, finishing=16, passing=9, height=195, left_foot=10, right_foot=18),
+                PlayerAttributeVersion(uid=12, data_version="2620", name="Viktor Gyökeres", position="ST", age=27, ca=160, pa=165, nationality="SE", club="Test", pos_st=18, pos_mc=18, pos_amc=12, finishing=17, passing=11, height=187, left_foot=16, right_foot=18),
                 PlayerAttributeVersion(uid=13, data_version="2620", name="Αλέξανδρος", position="MC", age=25, ca=130, pa=140, nationality="GR", club="Test", pos_mc=18, pos_dm=10, passing=17, decisions=15),
                 PlayerAttributeVersion(uid=14, data_version="2620", name="Keeper Prime", position="GK", age=28, ca=148, pa=155, nationality="BR", club="Test", pos_gk=18, reflexes=17, handling=16),
             ]
@@ -121,6 +123,43 @@ class SearchRepositoryTests(unittest.TestCase):
             data_version="2620",
         )
         self.assertEqual([player.uid for player in result.items], [13])
+
+    def test_advanced_attribute_search_supports_weighted_power_range(self):
+        result = search_player_attributes_advanced(
+            self.db,
+            range_filters=[AttributeRangeFilter(field="weighted_power", minimum=70, maximum=80)],
+            data_version="2620",
+        )
+        self.assertEqual([player.uid for player in result.items], [12])
+
+    def test_advanced_attribute_search_supports_height_feet_and_sea_status(self):
+        result = search_player_attributes_advanced(
+            self.db,
+            range_filters=[
+                AttributeRangeFilter(field="height", minimum=190),
+                AttributeRangeFilter(field="right_foot", minimum=18),
+            ],
+            sea_status="in_sea",
+            data_version="2620",
+        )
+        self.assertEqual([player.uid for player in result.items], [11])
+
+        rostered_result = search_player_attributes_advanced(
+            self.db,
+            range_filters=[AttributeRangeFilter(field="left_foot", minimum=15)],
+            sea_status="not_in_sea",
+            data_version="2620",
+        )
+        self.assertEqual([player.uid for player in rostered_result.items], [12])
+
+    def test_advanced_attribute_search_can_be_restricted_to_candidate_uids(self):
+        result = search_player_attributes_advanced(
+            self.db,
+            range_filters=[AttributeRangeFilter(field="ca", minimum=120)],
+            uid_filter=[11, 13],
+            data_version="2620",
+        )
+        self.assertEqual([player.uid for player in result.items], [11, 13])
 
     def test_advanced_attribute_search_requires_all_positions(self):
         result = search_player_attributes_advanced(

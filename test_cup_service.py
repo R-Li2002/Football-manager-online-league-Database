@@ -53,6 +53,48 @@ class CupServiceTest(unittest.TestCase):
             8,
         )
 
+    def test_reinitialize_clears_existing_bracket_data_for_every_cup(self):
+        expected_slots = {"champions_cup": 15, "league_cup": 15, "wumingjian_cup": 31}
+        for competition, slot_count in expected_slots.items():
+            cup_service.ensure_bracket(self.db, competition)
+            first = (
+                self.db.query(CupMatch)
+                .filter(CupMatch.competition == competition, CupMatch.stage == cup_service.get_first_stage(competition))
+                .order_by(CupMatch.slot_no)
+                .first()
+            )
+            first.home_team_id = self._team_id("Alpha")
+            first.home_team_name = "Alpha"
+            first.away_team_id = self._team_id("Beta")
+            first.away_team_name = "Beta"
+            first.home_score = 2
+            first.away_score = 1
+            first.winner_team_id = self._team_id("Alpha")
+            first.winner_team_name = "Alpha"
+            first.status = "played"
+            first.notes = "existing result"
+            self.db.commit()
+
+            result = cup_service.initialize_cup_bracket(
+                self.db,
+                "editor",
+                competition,
+                lambda *_args: None,
+                reset=True,
+            )
+
+            self.assertTrue(result["success"])
+            matches = self.db.query(CupMatch).filter(CupMatch.competition == competition).all()
+            self.assertEqual(len(matches), slot_count)
+            for match in matches:
+                self.assertIsNone(match.home_team_id)
+                self.assertIsNone(match.away_team_id)
+                self.assertIsNone(match.home_score)
+                self.assertIsNone(match.away_score)
+                self.assertIsNone(match.winner_team_id)
+                self.assertIsNone(match.notes)
+                self.assertEqual(match.status, "scheduled")
+
     def test_result_propagates_winner_to_next_round(self):
         cup_service.ensure_bracket(self.db, "champions_cup")
         first = (

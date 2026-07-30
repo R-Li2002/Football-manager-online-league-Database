@@ -83,6 +83,8 @@ class SharePngRenderer:
         version: str,
         step: int = 0,
         theme: str = "dark",
+        heigo_power: float | None = None,
+        top_percent: float | None = None,
     ) -> RenderedSharePng:
         cache_key = self._build_cache_key(
             "player",
@@ -90,12 +92,16 @@ class SharePngRenderer:
             self._slug(version or "default"),
             f"step{self._normalize_step(step)}",
             self._normalize_theme(theme),
+            f"hp{float(heigo_power):.2f}" if heigo_power is not None else "hp-none",
+            f"top{float(top_percent):.2f}" if top_percent is not None else "top-none",
         )
         svg = share_svg_renderer.build_player_share_svg(
             player,
             version=version,
             step=step,
             theme=theme,
+            heigo_power=heigo_power,
+            top_percent=top_percent,
         )
         return self._render_png(kind="player", cache_key=cache_key, svg=svg)
 

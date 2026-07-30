@@ -565,6 +565,16 @@ class Phase1Tests(unittest.TestCase):
 
         self.assertEqual(alpha.final_wage, 9.5)
 
+    def test_team_wage_cap_override_takes_priority_over_level_and_notes(self):
+        alpha = Team(name="Alpha Override", manager="A", level="超级", wage=0, wage_cap=10.2, notes="额外0.5M工资帽")
+        players = [Player(uid=2002, name="Alpha Override One", wage=10.1, position="MC")]
+
+        result = calculate_team_final_wage(alpha, players, wage_caps={"超级": 9.6, "甲级": 9.1, "乙级": 8.8})
+
+        self.assertEqual(result["effective_cap"], 10.2)
+        self.assertEqual(result["status"], "normal")
+        self.assertEqual(result["final_wage"], 10.1)
+
     def test_wage_overflow_equal_to_point_three_is_penalty_not_auction(self):
         alpha = Team(name="Alpha FC", manager="A", level="超级", wage=0)
         players = [Player(uid=2001, name="Alpha One", wage=9.9, position="MC")]

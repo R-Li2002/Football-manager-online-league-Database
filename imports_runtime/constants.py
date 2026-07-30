@@ -58,6 +58,7 @@ TEAM_COLUMN_ALIASES = {
     "manager": ["主教"],
     "level": ["级别"],
     "extra_wage": ["额外工资"],
+    "wage_cap": ["工资帽"],
     "after_tax": ["税后"],
     "notes": ["备注"],
 }

@@ -91,6 +91,14 @@ docker compose up -d --build
 docker compose -f docker-compose.yml -f docker-compose.bot.yml up -d --build
 ```
 
+NapCat 通过 `NAPCAT_ACCOUNT` 选择持久化 QQ 登录态；当前 Compose 默认账号为 `2707190648`。如部署其他机器人账号，应在 `.env` 中显式配置：
+
+```dotenv
+NAPCAT_ACCOUNT=2707190648
+```
+
+未配置快速登录账号时，NapCat 容器重启后可能停在二维码登录界面。此时 NoneBot 健康检查仍可能通过，但机器人不会收到 QQ 消息。
+
 查看状态：
 
 ```bash
@@ -270,4 +278,3 @@ cd /srv/heigo
 printf '0.2.3\n' > VERSION
 docker compose restart heigo
 ```
-

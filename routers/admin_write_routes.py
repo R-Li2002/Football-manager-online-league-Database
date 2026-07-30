@@ -1,9 +1,10 @@
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Cookie, Depends, File, Request, Response, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, HTTPException, Request, Response, UploadFile
 from sqlalchemy.orm import Session
 
+from models import Match
 from schemas_read import CoachAccountAdminResponse, CoachAccountPublicResponse
 from schemas_read import (
     CandidateListDetailResponse,
@@ -13,6 +14,7 @@ from schemas_read import (
     CandidateListPublishPreviewResponse,
     CandidateListRemovePreviewResponse,
     CandidateListSummaryResponse,
+    TeamLineupResponse,
 )
 from schemas_write import (
     AdminActionResponse,
@@ -23,9 +25,12 @@ from schemas_write import (
     BatchTransferRequest,
     ConsumeRequest,
     CoachAccountUpsertRequest,
+    CoachMergeRequest,
+    CoachTeamAssignmentRequest,
     CoachAssistantUpdateRequest,
     CoachLoginRequest,
     CoachPasswordChangeRequest,
+    CoachQqBindingRequest,
     CoachHonorUpdateRequest,
     CoachUpdateRequest,
     CandidateListBatchRemoveRequest,
@@ -46,12 +51,14 @@ from schemas_write import (
     SiteNoteUpdateRequest,
     SuspensionRecordUpdateRequest,
     TeamUpdateRequest,
+    TeamLineupUpdateRequest,
     TransferRequest,
     UpdateUidRequest,
 )
-from services import admin_write_service, auth_service, candidate_list_service, coach_service, team_logo_service
+from services import admin_write_service, auth_service, candidate_list_service, coach_service, competition_work_service, import_upload_service, suspension_service, team_lineup_service, team_logo_service
 
 COACH_SESSION_COOKIE_NAME = "coach_session_token"
+ADMIN_SESSION_COOKIE_NAME = "session_token"
 COACH_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"}
 
 
@@ -67,6 +74,16 @@ def build_admin_write_router(
     write_to_log,
 ):
     router = APIRouter()
+
+    def require_level_responsibility(db: Session, operator: str, level: str, responsibility_type: str) -> None:
+        if level in competition_work_service.LEAGUE_LEVELS and not competition_work_service.operator_can_manage_level(
+            db,
+            operator,
+            level,
+            responsibility_type,
+        ):
+            label = "赛程与比赛事件" if responsibility_type == "schedule" else "伤停"
+            raise HTTPException(status_code=403, detail=f"当前账号不是 {level} 的{label}负责人")
 
     @router.post("/api/admin/login", response_model=LoginResponse)
     def admin_login(request: LoginRequest, http_request: Request, response: Response, db: Session = Depends(get_db)):
@@ -173,6 +190,32 @@ def build_admin_write_router(
     ):
         return coach_service.upsert_coach_account(db, admin, coach_uid, request, write_to_log)
 
+    @router.patch("/api/admin/coaches/{coach_uid}/team", response_model=AdminActionResponse)
+    def assign_coach_team(
+        coach_uid: str,
+        request: CoachTeamAssignmentRequest,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_admin),
+    ):
+        return coach_service.assign_coach_team(db, admin, coach_uid, request, write_to_log)
+
+    @router.post("/api/admin/coaches/{coach_uid}/merge", response_model=AdminActionResponse)
+    def merge_coach(
+        coach_uid: str,
+        request: CoachMergeRequest,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_admin),
+    ):
+        return coach_service.merge_coach(db, admin, coach_uid, request, write_to_log)
+
+    @router.delete("/api/admin/coaches/{coach_uid}/qq", response_model=AdminActionResponse)
+    def unbind_coach_qq(
+        coach_uid: str,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_admin),
+    ):
+        return coach_service.unbind_coach_qq(db, admin, coach_uid, write_to_log)
+
     @router.patch("/api/admin/coaches/{coach_uid}", response_model=AdminActionResponse)
     def update_coach_profile(
         coach_uid: str,
@@ -199,6 +242,23 @@ def build_admin_write_router(
         admin: str = Depends(verify_schedule_editor),
     ):
         return team_logo_service.save_team_logo(db, admin, team_id, logo, write_to_log)
+
+    @router.patch("/api/teams/{team_id}/lineup", response_model=TeamLineupResponse)
+    def save_team_lineup(
+        team_id: int,
+        request: TeamLineupUpdateRequest,
+        admin_session_token: Optional[str] = Cookie(None, alias=ADMIN_SESSION_COOKIE_NAME),
+        coach_session_token: Optional[str] = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        return team_lineup_service.save_team_lineup(
+            db,
+            team_id,
+            request,
+            admin_session_token=admin_session_token,
+            coach_session_token=coach_session_token,
+            write_to_log=write_to_log,
+        )
 
     @router.get("/api/admin/candidate-lists", response_model=list[CandidateListSummaryResponse])
     def admin_list_candidate_lists(
@@ -424,6 +484,14 @@ def build_admin_write_router(
     ):
         return coach_service.change_own_coach_password(db, coach_session_token, request, write_to_log)
 
+    @router.patch("/api/coach/me/qq", response_model=AdminActionResponse)
+    def bind_own_coach_qq(
+        request: CoachQqBindingRequest,
+        coach_session_token: Optional[str] = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        return coach_service.bind_own_coach_qq(db, coach_session_token, request, write_to_log)
+
     @router.post("/api/coach/me/avatar")
     def upload_own_coach_avatar(
         avatar: UploadFile = File(...),
@@ -494,9 +562,40 @@ def build_admin_write_router(
     def import_current_league_data(db: Session = Depends(get_db), admin: str = Depends(verify_admin)):
         return admin_write_service.import_current_league_data(db, admin, write_to_log)
 
+    @router.post("/api/admin/import/upload/roster", response_model=AdminImportResponse)
+    async def upload_and_import_roster(
+        file: UploadFile = File(...),
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_admin),
+    ):
+        if not admin:
+            raise HTTPException(status_code=401, detail="未授权")
+        path = await import_upload_service.save_import_upload(file, "roster")
+        return admin_write_service.import_current_league_data(db, admin, write_to_log, workbook_path=path)
+
+    @router.post("/api/admin/import/upload/attributes", response_model=AdminImportResponse)
+    async def upload_and_import_attributes(
+        file: UploadFile = File(...),
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_admin),
+    ):
+        if not admin:
+            raise HTTPException(status_code=401, detail="未授权")
+        path = await import_upload_service.save_import_upload(file, "attributes")
+        return admin_write_service.import_player_attributes_data(db, admin, path, write_to_log)
+
     @router.post("/api/admin/matches/import", response_model=ScheduleImportResponse)
     def import_latest_schedule(db: Session = Depends(get_db), admin: str = Depends(verify_schedule_manager)):
         return admin_write_service.import_latest_schedule(db, admin, write_to_log)
+
+    @router.post("/api/admin/matches/import/upload", response_model=ScheduleImportResponse)
+    async def upload_and_import_schedule(
+        file: UploadFile = File(...),
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_schedule_manager),
+    ):
+        path = await import_upload_service.save_import_upload(file, "schedule")
+        return admin_write_service.import_latest_schedule(db, admin, write_to_log, schedule_path=path)
 
     @router.patch("/api/admin/matches/batch", response_model=AdminActionResponse)
     def batch_update_match_results(
@@ -504,6 +603,14 @@ def build_admin_write_router(
         db: Session = Depends(get_db),
         admin: str = Depends(verify_schedule_manager),
     ):
+        match_ids = [item.match_id for item in request.matches]
+        levels = {
+            item.level
+            for item in db.query(Match).filter(Match.id.in_(match_ids)).all()
+            if item.level
+        }
+        for level in levels:
+            require_level_responsibility(db, admin, level, "schedule")
         return admin_write_service.batch_update_match_results(db, admin, request, write_to_log)
 
     @router.patch("/api/admin/matches/{match_id}", response_model=AdminActionResponse)
@@ -513,6 +620,9 @@ def build_admin_write_router(
         db: Session = Depends(get_db),
         admin: str = Depends(verify_schedule_manager),
     ):
+        match = db.query(Match).filter(Match.id == match_id).first()
+        if match:
+            require_level_responsibility(db, admin, match.level, "schedule")
         return admin_write_service.update_match_result(db, admin, match_id, request, write_to_log)
 
     @router.patch("/api/admin/suspensions", response_model=AdminActionResponse)
@@ -521,6 +631,8 @@ def build_admin_write_router(
         db: Session = Depends(get_db),
         admin: str = Depends(verify_suspension_manager),
     ):
+        level = suspension_service.get_suspension_request_level(db, request)
+        require_level_responsibility(db, admin, level, "suspensions")
         return admin_write_service.update_suspension_record(db, admin, request, write_to_log)
 
     @router.patch("/api/admin/site-notes/{note_key:path}", response_model=AdminActionResponse)
@@ -530,15 +642,24 @@ def build_admin_write_router(
         db: Session = Depends(get_db),
         admin: str = Depends(verify_suspension_manager),
     ):
+        level = site_note_service.get_suspension_note_level(db, note_key)
+        require_level_responsibility(db, admin, level, "suspensions")
         return admin_write_service.update_site_note(db, admin, note_key, request, write_to_log)
 
     @router.post("/api/admin/cups/{competition}/initialize", response_model=AdminActionResponse)
     def initialize_cup_bracket(
         competition: str,
+        reset: bool = False,
         db: Session = Depends(get_db),
         admin: str = Depends(verify_schedule_manager),
     ):
-        return admin_write_service.initialize_cup_bracket(db, admin, competition, write_to_log)
+        return admin_write_service.initialize_cup_bracket(
+            db,
+            admin,
+            competition,
+            write_to_log,
+            reset=reset,
+        )
 
     @router.patch("/api/admin/cups/matches/{match_id}/teams", response_model=AdminActionResponse)
     def update_cup_match_teams(

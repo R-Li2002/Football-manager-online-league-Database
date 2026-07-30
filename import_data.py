@@ -18,7 +18,7 @@ from imports_runtime.constants import (
     WORKBOOK_SHEET_OVERVIEW,
     WORKBOOK_SHEET_PLAYER_TEAM_MAP,
 )
-from imports_runtime.persistence import run_import
+from imports_runtime.persistence import run_attribute_import, run_import
 from imports_runtime.reporting import DatasetSummary, ImportReport, print_report
 from imports_runtime.source_resolver import choose_latest_file, resolve_input_files
 from imports_runtime.validators import clean_string, normalize_team_identifier, resolve_column

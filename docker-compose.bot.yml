@@ -15,6 +15,8 @@
     container_name: heigo-napcat
     restart: unless-stopped
     init: true
+    environment:
+      ACCOUNT: "${NAPCAT_ACCOUNT:-2707190648}"
     volumes:
       - ./data/napcat/qq:/app/.config/QQ
       - ./data/napcat/config:/app/napcat/config

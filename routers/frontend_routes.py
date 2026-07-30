@@ -72,6 +72,27 @@ def _build_png_file_response(rendered: share_png_service.RenderedSharePng) -> Fi
     )
 
 
+def _build_player_power_context(
+    db: Session,
+    player,
+    *,
+    version: str,
+    step: int,
+) -> tuple[float | None, float | None]:
+    if db is None:
+        return None, None
+    from services.player_power_ranking_service import calculate_heigo_metrics, get_power_calibration
+    from services.share_card_model_service import build_preview_attributes
+    from weighted_power import calculate_weighted_power
+
+    preview = build_preview_attributes(player, step)
+    weighted_power = calculate_weighted_power(preview).score
+    if weighted_power is None:
+        return None, None
+    calibration = get_power_calibration(db, data_version=version)
+    return calculate_heigo_metrics(weighted_power, calibration)
+
+
 def build_frontend_router(
     get_db,
     *,
@@ -79,7 +100,7 @@ def build_frontend_router(
     internal_share_header_name: str = "X-Internal-Share-Token",
     internal_render_signing_key: str = "",
     share_cache_root: str | Path = Path("data/share-cache"),
-    share_template_version: int = 3,
+    share_template_version: int = 6,
 ):
     router = APIRouter()
     png_renderer = share_png_service.SharePngRenderer(
@@ -134,11 +155,21 @@ def build_frontend_router(
                 status_code=404,
             )
 
+        resolved_version = version or player.data_version
+        heigo_power, top_percent = _build_player_power_context(
+            db,
+            player,
+            version=resolved_version,
+            step=step,
+        )
+
         html = share_page_service.build_player_share_page_html(
             player,
-            version=version or player.data_version,
+            version=resolved_version,
             step=step,
             theme=theme,
+            heigo_power=heigo_power,
+            top_percent=top_percent,
         )
         return HTMLResponse(content=html)
 
@@ -161,11 +192,21 @@ def build_frontend_router(
         if not player:
             raise HTTPException(status_code=404, detail="player_not_found")
 
+        resolved_version = version or player.data_version
+        heigo_power, top_percent = _build_player_power_context(
+            db,
+            player,
+            version=resolved_version,
+            step=step,
+        )
+
         svg = share_page_service.build_player_share_svg(
             player,
-            version=version or player.data_version,
+            version=resolved_version,
             step=step,
             theme=theme,
+            heigo_power=heigo_power,
+            top_percent=top_percent,
         )
         return Response(content=svg, media_type="image/svg+xml")
 
@@ -195,12 +236,22 @@ def build_frontend_router(
         if not player:
             raise HTTPException(status_code=404, detail="player_not_found")
 
+        resolved_version = version or player.data_version
+        heigo_power, top_percent = _build_player_power_context(
+            db,
+            player,
+            version=resolved_version,
+            step=step,
+        )
+
         try:
             rendered = png_renderer.render_player_png(
                 player,
-                version=version or player.data_version,
+                version=resolved_version,
                 step=step,
                 theme=theme,
+                heigo_power=heigo_power,
+                top_percent=top_percent,
             )
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"player_render_failed:{type(exc).__name__}") from exc

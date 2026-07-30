@@ -115,6 +115,9 @@ const document = {
     getElementById(id) {
         return elements.get(id) || null;
     },
+    querySelector() {
+        return null;
+    },
     createElement(tagName) {
         return createElement(tagName);
     },
@@ -222,6 +225,85 @@ async function assertAdvancedSearchSupportsBlankKeyword() {
     assert.ok(elements.get('dbQueryChips').innerHTML.includes('CA ≥ 120'));
 }
 
+async function assertBaseProfileAndSeaFiltersReachAdvancedSearch() {
+    advancedSearchBodies = [];
+    context.applyAdvancedDatabaseFiltersState({
+        height: {min: '185', max: '195'},
+        left_foot: {min: '12'},
+        right_foot: {min: '15'},
+        sea_status: 'not_in_sea',
+    });
+    await context.searchDatabase('', {pushHistory: false});
+    await flushMicrotasks();
+
+    assert.equal(advancedSearchBodies.length, 1);
+    assert.equal(advancedSearchBodies[0].attributes.height.min, 185);
+    assert.equal(advancedSearchBodies[0].attributes.height.max, 195);
+    assert.equal(advancedSearchBodies[0].attributes.left_foot.min, 12);
+    assert.equal(advancedSearchBodies[0].attributes.right_foot.min, 15);
+    assert.equal(advancedSearchBodies[0].sea_status, 'not_in_sea');
+    assert.ok(context.buildAppliedAdvancedFilterSummary().includes('排除大海球员'));
+}
+
+async function assertWeightedPowerRangeReachesAdvancedSearch() {
+    advancedSearchBodies = [];
+    context.applyAdvancedDatabaseFiltersState({weighted_power: {min: '60', max: '75'}});
+    context.renderDatabaseAdvancedSearchPanel();
+    assert.ok(elements.get('dbAdvancedSearchPanel').innerHTML.includes('加权战力值'));
+
+    await context.searchDatabase('', {pushHistory: false});
+    await flushMicrotasks();
+
+    assert.equal(advancedSearchBodies.length, 1);
+    assert.equal(advancedSearchBodies[0].weighted_power.min, 60);
+    assert.equal(advancedSearchBodies[0].weighted_power.max, 75);
+    assert.ok(context.buildAppliedAdvancedFilterSummary().includes('加权战力值 60-75'));
+}
+
+async function assertCandidateScopeUsesServerSideAdvancedSearch() {
+    advancedSearchBodies = [];
+    context.setDatabaseSearchScope({
+        type: 'candidate_list',
+        id: 7,
+        name: '测试名单',
+        dataVersion: '2620',
+        uids: [1, 2],
+        players: [
+            {uid: 1, name: 'Filter One', data_version: '2620', ca: 150},
+            {uid: 2, name: 'Filter Two', data_version: '2620', ca: 145},
+        ],
+    });
+    context.applyAdvancedDatabaseFiltersState({height: {min: '185'}});
+    await context.searchDatabase('', {pushHistory: false});
+    await flushMicrotasks();
+
+    assert.equal(advancedSearchBodies.length, 1);
+    assert.equal(advancedSearchBodies[0].attributes.height.min, 185);
+    assert.equal(advancedSearchBodies[0].uids.join(','), '1,2');
+    context.resetDatabaseSearchScope();
+}
+
+async function assertLatestAdvancedSearchRequestWins() {
+    const originalFetcher = context.fetchDatabaseAdvancedSearchResults;
+    const pending = [];
+    context.fetchDatabaseAdvancedSearchResults = payload => new Promise(resolve => pending.push({payload, resolve}));
+    context.applyAdvancedDatabaseFiltersState({ca: {min: '120'}});
+    const firstSearch = context.searchDatabase('', {pushHistory: false});
+    await flushMicrotasks();
+    context.applyAdvancedDatabaseFiltersState({ca: {min: '160'}});
+    const secondSearch = context.searchDatabase('', {pushHistory: false});
+    await flushMicrotasks();
+
+    pending[1].resolve({...advancedSearchResponse, items: [{uid: 2, name: 'New Result'}], applied_filters_summary: ['CA ≥ 160']});
+    await secondSearch;
+    pending[0].resolve({...advancedSearchResponse, items: [{uid: 1, name: 'Old Result'}], applied_filters_summary: ['CA ≥ 120']});
+    await firstSearch;
+
+    assert.equal(context.currentDbPlayers[0].uid, 2);
+    assert.ok(elements.get('dbQueryChips').innerHTML.includes('CA ≥ 160'));
+    context.fetchDatabaseAdvancedSearchResults = originalFetcher;
+}
+
 async function assertVersionSwitchRerunsAdvancedSearch() {
     advancedSearchBodies = [];
     advancedSearchResponse = {
@@ -248,13 +330,42 @@ async function assertClearAdvancedFiltersResetsState() {
     assert.ok(elements.get('dbPlayersTable').innerHTML.includes('高级搜索配置筛选条件'));
 }
 
+function assertMobileSearchCardPrioritizesPowerMetrics() {
+    const markup = context.renderMobileDbPlayerCard({
+        uid: 1,
+        name: 'Power Player',
+        data_version: '2630',
+        position: 'MC',
+        age: 23,
+        ca: 155,
+        pa: 175,
+        nationality: 'ES',
+        club: 'Club',
+        heigo_club: 'HEIGO Club',
+        weighted_power: 72.34,
+        heigo_power: 81.23,
+        top_percent: 4.2,
+    });
+    assert.match(markup, /加权战力值/);
+    assert.match(markup, /72\.34/);
+    assert.match(markup, /HEIGO战力/);
+    assert.match(markup, /81\.23/);
+    assert.match(markup, /前 5%/);
+    assert.doesNotMatch(markup, /mobile-db-metric-strip/);
+}
+
 (async () => {
     await assertAdvancedTriggerReflectsActiveCount();
     await assertPositionCycleFollowsConfiguredSteps();
     await assertPositionMapHidesInlineScoreBadge();
     await assertAdvancedSearchSupportsBlankKeyword();
+    await assertBaseProfileAndSeaFiltersReachAdvancedSearch();
+    await assertWeightedPowerRangeReachesAdvancedSearch();
+    await assertCandidateScopeUsesServerSideAdvancedSearch();
+    await assertLatestAdvancedSearchRequestWins();
     await assertVersionSwitchRerunsAdvancedSearch();
     await assertClearAdvancedFiltersResetsState();
+    assertMobileSearchCardPrioritizesPowerMetrics();
 })().catch(error => {
     console.error(error);
     process.exit(1);

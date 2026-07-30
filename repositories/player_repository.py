@@ -21,6 +21,13 @@ def list_players_excluding_team(db: Session, excluded_team_name: str | None = No
     return query.order_by(Player.team_name, Player.name).all()
 
 
+def count_players_excluding_team(db: Session, excluded_team_name: str | None = None) -> int:
+    query = db.query(Player)
+    if excluded_team_name:
+        query = query.filter(Player.team_name != excluded_team_name)
+    return query.count()
+
+
 def search_players_by_name(db: Session, player_name: str) -> list[Player]:
     strict_keys, loose_keys = build_search_normalized_keys(player_name)
     query = db.query(Player)

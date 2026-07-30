@@ -5,13 +5,17 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from attribute_versions import DEFAULT_ATTRIBUTE_DATA_VERSION, normalize_attribute_data_version, pick_default_attribute_version, sort_attribute_versions
-from models import PlayerAttribute, PlayerAttributeVersion
+from models import Player, PlayerAttribute, PlayerAttributeVersion
 from search_normalization import build_search_normalized_keys
+from weighted_power import build_weighted_power_sql_expression
 
 ATTRIBUTE_RANGE_FIELD_ALLOWLIST = {
     "age": "age",
     "ca": "ca",
     "pa": "pa",
+    "height": "height",
+    "left_foot": "left_foot",
+    "right_foot": "right_foot",
     "corner": "corner",
     "crossing": "crossing",
     "dribbling": "dribbling",
@@ -154,6 +158,27 @@ def get_attribute_model_for_versions(available_versions: list[str]):
     return PlayerAttributeVersion if available_versions else PlayerAttribute
 
 
+def iter_player_attributes(
+    db: Session,
+    *,
+    data_version: str,
+    player_uids: Iterable[int] | None = None,
+    batch_size: int = 1000,
+):
+    available_versions = _list_versioned_attribute_versions(db)
+    if available_versions:
+        query = _query_versioned_attributes(db, data_version)
+    else:
+        query = _query_legacy_attributes(db)
+    attribute_model = query.column_descriptions[0]["entity"]
+    if player_uids is not None:
+        normalized_uids = {int(uid) for uid in player_uids}
+        if not normalized_uids:
+            return iter(())
+        query = query.filter(attribute_model.uid.in_(normalized_uids))
+    return query.order_by(attribute_model.uid).yield_per(max(100, batch_size))
+
+
 def _query_versioned_attributes(db: Session, data_version: str):
     return db.query(PlayerAttributeVersion).filter(PlayerAttributeVersion.data_version == data_version)
 
@@ -220,6 +245,13 @@ def _apply_name_or_uid_filters(query, attribute_model, query_text: str):
 
 def _apply_range_filters(query, attribute_model, filters: Iterable[AttributeRangeFilter]):
     for item in filters:
+        if item.field == "weighted_power":
+            expression = build_weighted_power_sql_expression(attribute_model)
+            if item.minimum is not None:
+                query = query.filter(expression >= item.minimum)
+            if item.maximum is not None:
+                query = query.filter(expression <= item.maximum)
+            continue
         column_name = ATTRIBUTE_RANGE_FIELD_ALLOWLIST.get(item.field)
         if not column_name:
             continue
@@ -246,6 +278,9 @@ def search_player_attributes_advanced(
     query_text: str = "",
     range_filters: Iterable[AttributeRangeFilter] = (),
     position_filters: Iterable[PositionScoreFilter] = (),
+    sea_status: str | None = None,
+    sea_team_name: str = "85大海",
+    uid_filter: Iterable[int] | None = None,
     limit: int = 200,
     data_version: str | None = None,
 ) -> AdvancedAttributeSearchResult:
@@ -255,8 +290,20 @@ def search_player_attributes_advanced(
     attribute_model = PlayerAttributeVersion if available_versions else PlayerAttribute
     query = _query_versioned_attributes(db, resolved_version) if available_versions else _query_legacy_attributes(db)
     query = _apply_name_or_uid_filters(query, attribute_model, query_text)
+    if uid_filter is not None:
+        normalized_uids = list(dict.fromkeys(int(uid) for uid in uid_filter))
+        query = query.filter(attribute_model.uid.in_(normalized_uids))
     query = _apply_range_filters(query, attribute_model, range_filters)
     query = _apply_position_filters(query, attribute_model, position_filters)
+    if sea_status in {"in_sea", "not_in_sea"}:
+        non_sea_player_uids = db.query(Player.uid).filter(
+            Player.team_name.is_not(None),
+            Player.team_name.notin_([sea_team_name, "大海"]),
+        )
+        if sea_status == "in_sea":
+            query = query.filter(~attribute_model.uid.in_(non_sea_player_uids))
+        else:
+            query = query.filter(attribute_model.uid.in_(non_sea_player_uids))
     rows = (
         query.order_by(attribute_model.ca.desc(), attribute_model.pa.desc(), attribute_model.uid.asc())
         .limit(normalized_limit + 1)

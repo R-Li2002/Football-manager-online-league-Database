@@ -24,10 +24,31 @@ class InternalRenderSvgTests(unittest.TestCase):
         self.assertEqual(response.headers["content-type"], "image/svg+xml")
         self.assertIn("<svg", response.text)
         self.assertIn("Dani Olmo", response.text)
+        self.assertIn("player-name-latin", response.text)
         self.assertIn("Noto Sans CJK SC", response.text)
         self.assertIn("HEIGO 球员详情图", response.text)
         self.assertIn("位置熟练度图", response.text)
+        self.assertIn("加权战力值", response.text)
+        self.assertIn("HEIGO战力", response.text)
+        self.assertNotIn("按给定属性权重", response.text)
         self.assertNotIn("#ff9fbe", response.text)
+
+    def test_internal_render_svg_keeps_croatian_latin_extended_name(self):
+        app = FastAPI()
+        app.include_router(build_frontend_router(_dummy_db, internal_share_token="share-secret"))
+        client = TestClient(app)
+        player = _sample_player_detail().model_copy(update={"name": "Moris Valinčić"})
+
+        with patch("routers.frontend_routes.read_service.get_player_attribute_detail", return_value=player):
+            response = client.get(
+                "/internal/render/player/24048100.svg?version=2630",
+                headers={"X-Internal-Share-Token": "share-secret"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Moris Valinčić", response.text)
+        self.assertIn('class="player-name-latin"', response.text)
+        self.assertIn('.player-name-latin { font-family: "DejaVu Sans", sans-serif; }', response.text)
 
     def test_internal_render_svg_requires_token(self):
         app = FastAPI()

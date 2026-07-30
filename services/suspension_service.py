@@ -57,19 +57,51 @@ def get_suspensions(db: Session) -> SuspensionsResponse:
     grouped: dict[int, dict[str, list[SuspensionPlayerResponse] | list[str]]] = {
         team.id: {"one_yellow": [], "two_yellows": [], "suspended": [], "notes": []} for team in teams
     }
+    players_by_uid = {
+        player.uid: player
+        for player in db.query(Player).filter(Player.uid.in_([record.player_uid for record in records])).all()
+    }
+    orphaned_by_level: dict[str, dict[str, list[SuspensionPlayerResponse] | list[str]]] = {
+        level: {"one_yellow": [], "two_yellows": [], "suspended": [], "notes": []} for level in LEAGUE_LEVELS
+    }
     for record in records:
         team_id = record.team_id if record.team_id in team_ids else team_name_to_id.get(record.team_name)
-        if team_id not in grouped:
-            continue
+        player = players_by_uid.get(record.player_uid)
+        current_team_id = player.team_id if player else None
+        current_team_name = str(player.team_name or "") if player else ""
+        record_matches_current_team = bool(
+            player
+            and (
+                (team_id and current_team_id == team_id)
+                or (record.team_name and current_team_name == record.team_name)
+            )
+        )
+        target = grouped.get(team_id) if record_matches_current_team else orphaned_by_level[record.level]
         response = _record_response(record)
         if _is_suspended(record):
-            grouped[team_id]["suspended"].append(response)
+            target["suspended"].append(response)
         elif int(record.yellow_cards or 0) == 2:
-            grouped[team_id]["two_yellows"].append(response)
+            target["two_yellows"].append(response)
         elif int(record.yellow_cards or 0) == 1:
-            grouped[team_id]["one_yellow"].append(response)
+            target["one_yellow"].append(response)
         if record.notes:
-            grouped[team_id]["notes"].append(f"{record.player_name}: {record.notes}")
+            target["notes"].append(f"{record.player_name}: {record.notes}")
+
+    orphaned_teams = [
+        SuspensionTeamResponse(
+            team_id=-(index + 1),
+            team_name="离队 / 球队不一致记录",
+            manager=None,
+            level=level,
+            is_orphaned=True,
+            one_yellow=orphaned_by_level[level]["one_yellow"],
+            two_yellows=orphaned_by_level[level]["two_yellows"],
+            suspended=orphaned_by_level[level]["suspended"],
+            notes=orphaned_by_level[level]["notes"],
+        )
+        for index, level in enumerate(LEAGUE_LEVELS)
+        if any(orphaned_by_level[level][key] for key in ("one_yellow", "two_yellows", "suspended"))
+    ]
 
     return SuspensionsResponse(
         levels=LEAGUE_LEVELS,
@@ -85,7 +117,7 @@ def get_suspensions(db: Session) -> SuspensionsResponse:
                 notes=grouped[team.id]["notes"],
             )
             for team in teams
-        ],
+        ] + orphaned_teams,
     )
 
 
@@ -111,6 +143,19 @@ def _should_delete(request: SuspensionRecordUpdateRequest) -> bool:
     )
 
 
+def get_suspension_request_level(db: Session, request: SuspensionRecordUpdateRequest) -> str:
+    record = db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_uid == request.player_uid).first()
+    if _should_delete(request) and record and record.level in LEAGUE_LEVELS:
+        return record.level
+    try:
+        _, team = _load_player_with_team(db, request.player_uid)
+        return team.level
+    except HTTPException:
+        if record and record.level in LEAGUE_LEVELS:
+            return record.level
+        raise
+
+
 def update_suspension_record(
     db: Session,
     admin: str | None,
@@ -121,16 +166,23 @@ def update_suspension_record(
     if request.yellow_cards < 0 or request.yellow_cards > 3:
         raise HTTPException(status_code=400, detail="黄牌数只能填写 0 到 3")
 
-    player, team = _load_player_with_team(db, request.player_uid)
-    record = db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_uid == player.uid).first()
+    record = db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_uid == request.player_uid).first()
 
     if _should_delete(request):
         if record:
+            record_level = record.level
+            record_team_name = record.team_name
+            record_player_name = record.player_name
             db.delete(record)
+            from services import competition_work_service
+            competition_work_service.invalidate_current_round_suspension_confirmation(db, record_level)
             db.commit()
-        write_to_log("伤停记录清除", f"{team.name} / {player.name}", operator)
+            write_to_log("伤停记录清除", f"{record_team_name} / {record_player_name}", operator)
+        else:
+            write_to_log("伤停记录清除", f"UID {request.player_uid} / 记录不存在", operator)
         return {"success": True, "message": "伤停记录已清除"}
 
+    player, team = _load_player_with_team(db, request.player_uid)
     if not record:
         record = PlayerSuspensionRecord(player_uid=player.uid)
         db.add(record)
@@ -144,6 +196,8 @@ def update_suspension_record(
     record.red_injury_suspended = 1 if request.red_injury_suspended else 0
     record.notes = str(request.notes or "").strip() or None
     record.updated_at = now
+    from services import competition_work_service
+    competition_work_service.invalidate_current_round_suspension_confirmation(db, team.level)
     db.commit()
     write_to_log("伤停记录更新", f"{team.name} / {player.name}", operator)
     return {"success": True, "message": "伤停记录已保存"}

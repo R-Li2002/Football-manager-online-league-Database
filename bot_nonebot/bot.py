@@ -4,6 +4,7 @@ from nonebot.adapters.onebot.v11 import Adapter as OneBotV11Adapter
 nonebot.init()
 driver = nonebot.get_driver()
 driver.register_adapter(OneBotV11Adapter)
+nonebot.load_plugin("nonebot_plugin_alconna")
 nonebot.load_plugin("src.plugins.heigo_bot.plugin")
 app = nonebot.get_asgi()
 

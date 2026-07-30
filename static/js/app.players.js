@@ -17,6 +17,11 @@ var rosterStandingsLoading = false;
 var rosterStandingsLoaded = false;
 var rosterMobileViewMode = 'cards';
 var rosterDesktopViewMode = 'table';
+var rosterRendered = false;
+var rosterPage = 1;
+var rosterRenderFrameId = null;
+const ROSTER_DESKTOP_PAGE_SIZE = 50;
+const ROSTER_MOBILE_PAGE_SIZE = 20;
 
 const ROSTER_FORMATIONS = {
     '4-3-3': [
@@ -88,8 +93,13 @@ const ROSTER_FORMATIONS = {
 
 var rosterFormationState = {
     teamName: '',
+    teamId: null,
     formation: '4-3-3',
     picks: {},
+    players: [],
+    canEdit: null,
+    saveBusy: false,
+    saveMessage: '',
     exportBusy: false,
     selectedMove: null,
 };
@@ -189,6 +199,7 @@ function toggleRosterSort(field) {
             order: getDefaultRosterSortOrder(config.type),
         };
     }
+    rosterPage = 1;
     renderPlayers(currentPlayers);
     if (typeof syncAppHistory === 'function') {
         syncAppHistory('replace');
@@ -226,12 +237,14 @@ function setRosterViewMode(mode) {
     } else {
         rosterDesktopViewMode = nextMode;
     }
+    rosterPage = 1;
     renderPlayers(currentPlayers);
 }
 
 function handleRosterViewportChange() {
     if (!document.getElementById('players')?.classList.contains('active')) return;
     if (!Array.isArray(currentPlayers)) return;
+    rosterPage = 1;
     renderPlayers(currentPlayers);
 }
 
@@ -408,11 +421,15 @@ function renderRosterTeamBadge(teamName) {
 }
 
 function canEditRosterFormation(team) {
+    if (typeof rosterFormationState.canEdit === 'boolean') return rosterFormationState.canEdit;
     return Boolean(team);
 }
 
 function getRosterTeamPlayers(teamName) {
-    return (allPlayers || [])
+    const source = rosterFormationState.teamName === teamName && rosterFormationState.players.length
+        ? rosterFormationState.players
+        : (allPlayers || []);
+    return source
         .filter(player => player.team_name === teamName)
         .sort((left, right) => {
             const caDiff = Number(right.ca || 0) - Number(left.ca || 0);
@@ -478,9 +495,15 @@ function rosterPlayerMatchesSlot(player, slot) {
 function autoPickRosterFormation(teamName, formation = rosterFormationState.formation) {
     rosterFormationState.formation = formation;
     const players = getRosterTeamPlayers(teamName);
+    rosterFormationState.picks = buildAutoRosterFormationPicks(players, formation);
+}
+
+function buildAutoRosterFormationPicks(players, formation = '4-3-3') {
+    const keys = ROSTER_FORMATION_SLOT_KEYS[formation] || ROSTER_FORMATION_SLOT_KEYS['4-3-3'];
+    const slots = keys.map(key => ROSTER_TACTICAL_SLOTS.find(slot => slot.key === key)).filter(Boolean);
     const used = new Set();
     const picks = {};
-    for (const slot of getRosterFormationSlots()) {
+    for (const slot of slots) {
         let candidate = players.find(player => !used.has(Number(player.uid)) && rosterPlayerMatchesSlot(player, slot));
         if (!candidate) {
             candidate = players.find(player => !used.has(Number(player.uid)));
@@ -490,7 +513,7 @@ function autoPickRosterFormation(teamName, formation = rosterFormationState.form
             used.add(Number(candidate.uid));
         }
     }
-    rosterFormationState.picks = picks;
+    return picks;
 }
 
 function getFormationPickedPlayer(slotKey) {
@@ -551,13 +574,43 @@ function buildRosterFormationCard(player, options = {}) {
         && String(selectedMove.value) === String(sourceValue);
     const cardClass = `formation-player-card tone-${getRosterPlayerCardTone(player, slot)}${isSelected ? ' is-selected' : ''}`;
     const role = getRosterPlayerCardRole(player, slot);
+    const interactive = options.interactive !== false;
+    const hasHeigoPower = player.heigo_power !== null && player.heigo_power !== undefined && player.heigo_power !== '';
+    const heigoPower = hasHeigoPower ? Number(player.heigo_power) : Number.NaN;
+    const interactionAttrs = interactive
+        ? `draggable="true" data-source="${escapeHtml(source)}" data-source-value="${escapeHtml(sourceValue)}" onclick="handleRosterFormationCardTap(event, ${htmlJsString(source)}, ${htmlJsString(sourceValue)})" ondragstart="handleRosterFormationDragStart(event, ${htmlJsString(source)}, ${htmlJsString(sourceValue)})" ondragend="handleRosterFormationDragEnd(event)" title="拖拽或点击更换球员"`
+        : 'draggable="false"';
     return `
-        <div class="${cardClass}" draggable="true" data-source="${escapeHtml(source)}" data-source-value="${escapeHtml(sourceValue)}" onclick="handleRosterFormationCardTap(event, ${htmlJsString(source)}, ${htmlJsString(sourceValue)})" ondragstart="handleRosterFormationDragStart(event, ${htmlJsString(source)}, ${htmlJsString(sourceValue)})" ondragend="handleRosterFormationDragEnd(event)" title="拖拽或点击更换球员">
+        <div class="${cardClass}${interactive ? '' : ' is-static'}" ${interactionAttrs}>
             <span class="formation-shirt-icon" aria-hidden="true"></span>
             <span class="formation-card-role">${escapeHtml(role)}</span>
             <strong data-short-name="${escapeHtml(getRosterPlayerShortName(player.name))}">${escapeHtml(player.name || '-')}</strong>
+            <span class="formation-card-meta">${escapeHtml(player.position || '-')}</span>
+            <span class="formation-card-power">HEIGO ${Number.isFinite(heigoPower) ? heigoPower.toFixed(2) : '--'}</span>
         </div>
     `;
+}
+
+function renderRosterFormationPreview(options = {}) {
+    const teamName = String(options.teamName || '').trim();
+    const players = Array.isArray(options.players) ? options.players : [];
+    const formation = ROSTER_FORMATION_SLOT_KEYS[options.formation] ? options.formation : '4-3-3';
+    const rawPicks = options.picks && typeof options.picks === 'object' ? options.picks : {};
+    const picks = Object.keys(rawPicks).length ? rawPicks : buildAutoRosterFormationPicks(players, formation);
+    const playersByUid = new Map(players.map(player => [Number(player.uid), player]));
+    const slotKeys = [...new Set([...(ROSTER_FORMATION_SLOT_KEYS[formation] || []), ...Object.keys(picks)])];
+    const slots = slotKeys.map(key => ROSTER_TACTICAL_SLOTS.find(slot => slot.key === key)).filter(Boolean);
+    const pitchSlots = slots.map(slot => {
+        const player = playersByUid.get(Number(picks[slot.key] || 0));
+        return `<div class="formation-slot ${player ? 'has-player' : ''}" style="left:${slot.x}%;top:${slot.y}%;">${player ? buildRosterFormationCard(player, {source: 'slot', slot, interactive: false}) : '<span class="formation-slot-plus">+</span>'}</div>`;
+    }).join('');
+    return `<section class="formation-capture team-center-lineup-capture surface-card">
+        <div class="formation-capture-head"><div><span class="panel-kicker">Starting XI</span><h3>${escapeHtml(teamName)}</h3></div><strong>${escapeHtml(formation)}</strong></div>
+        <div class="formation-pitch" aria-label="${escapeHtml(teamName)}首发阵容">
+            <div class="formation-pitch-line formation-pitch-center"></div><div class="formation-pitch-box formation-pitch-box-top"></div><div class="formation-pitch-box formation-pitch-box-bottom"></div><div class="formation-goal-box formation-goal-box-top"></div><div class="formation-goal-box formation-goal-box-bottom"></div>
+            <span class="formation-corner corner-tl"></span><span class="formation-corner corner-tr"></span><span class="formation-corner corner-bl"></span><span class="formation-corner corner-br"></span>${pitchSlots}
+        </div>
+    </section>`;
 }
 
 function swapRosterFormationSlots(sourceSlotKey, targetSlotKey) {
@@ -764,9 +817,11 @@ function renderRosterFormationModal() {
                     <span>阵型</span>
                     <select onchange="changeRosterFormation(this.value)" ${canEdit ? '' : 'disabled'}>${formationOptions}</select>
                 </label>
-                <button class="btn btn-secondary" type="button" onclick="autoFillRosterFormation()">自动填入</button><button class="btn btn-secondary" type="button" onclick="clearRosterFormation()">清空</button>
-                <button class="btn btn-primary" type="button" onclick="saveRosterFormationImage()">保存图片</button>
+                ${canEdit ? '<button class="btn btn-secondary" type="button" onclick="autoFillRosterFormation()">自动填入</button><button class="btn btn-secondary" type="button" onclick="clearRosterFormation()">清空</button>' : ''}
+                ${canEdit && rosterFormationState.teamId ? `<button class="btn btn-primary" type="button" onclick="saveRosterFormation()" ${rosterFormationState.saveBusy ? 'disabled' : ''}>${rosterFormationState.saveBusy ? '保存中…' : '保存阵容'}</button>` : ''}
+                ${rosterFormationState.saveMessage ? `<span class="formation-save-message">${escapeHtml(rosterFormationState.saveMessage)}</span>` : ''}
             </div>
+            ${canEdit ? '' : '<div class="formation-readonly-note capture-exclude">当前为公开预览；只有本队主教练或完整管理员可以调整并保存阵容。</div>'}
             <section id="rosterFormationCapture" class="formation-capture surface-card" data-team-name="${escapeHtml(teamName)}" onclick="clearRosterFormationSelection()">
                 <div class="formation-capture-head">
                     <div>
@@ -796,7 +851,7 @@ function renderRosterFormationModal() {
     `;
 }
 
-function openRosterFormationModal(teamName) {
+function openRosterFormationModal(teamName, options = {}) {
     const normalizedTeamName = String(teamName || '').trim();
     const team = teams.find(item => item.name === normalizedTeamName);
     if (!team) {
@@ -804,8 +859,17 @@ function openRosterFormationModal(teamName) {
         return;
     }
     rosterFormationState.teamName = normalizedTeamName;
-    rosterFormationState.formation = rosterFormationState.formation || '4-3-3';
-    autoPickRosterFormation(normalizedTeamName, rosterFormationState.formation);
+    rosterFormationState.teamId = Number(options.teamId || team.id || 0) || null;
+    rosterFormationState.players = Array.isArray(options.players)
+        ? options.players.map(player => ({...player, team_name: player.team_name || normalizedTeamName}))
+        : [];
+    rosterFormationState.canEdit = typeof options.canEdit === 'boolean' ? options.canEdit : null;
+    rosterFormationState.saveMessage = '';
+    rosterFormationState.formation = ROSTER_FORMATION_SLOT_KEYS[options.formation] ? options.formation : (rosterFormationState.formation || '4-3-3');
+    const savedPicks = options.picks && typeof options.picks === 'object' ? options.picks : {};
+    rosterFormationState.picks = Object.keys(savedPicks).length
+        ? Object.fromEntries(Object.entries(savedPicks).map(([key, uid]) => [key, Number(uid)]))
+        : buildAutoRosterFormationPicks(getRosterTeamPlayers(normalizedTeamName), rosterFormationState.formation);
     showModal(`${normalizedTeamName} 阵容预览`, renderRosterFormationModal());
 }
 
@@ -838,6 +902,38 @@ function autoFillRosterFormation() {
 function clearRosterFormation() {
     rosterFormationState.picks = {};
     refreshRosterFormationModal();
+}
+
+async function saveRosterFormation() {
+    if (rosterFormationState.saveBusy || !rosterFormationState.teamId || !canEditRosterFormation(teams.find(item => item.name === rosterFormationState.teamName))) return;
+    const pickedUids = Object.values(rosterFormationState.picks || {}).map(uid => Number(uid)).filter(Boolean);
+    if (pickedUids.length !== 11 || new Set(pickedUids).size !== 11) {
+        rosterFormationState.saveMessage = '请先在场上安排恰好 11 名不同球员';
+        refreshRosterFormationModal();
+        return;
+    }
+    rosterFormationState.saveBusy = true;
+    rosterFormationState.saveMessage = '';
+    refreshRosterFormationModal();
+    try {
+        const response = await fetch(`/api/teams/${rosterFormationState.teamId}/lineup`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({formation: rosterFormationState.formation, picks: rosterFormationState.picks}),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+        rosterFormationState.formation = payload.formation || rosterFormationState.formation;
+        rosterFormationState.picks = payload.picks || rosterFormationState.picks;
+        rosterFormationState.saveMessage = '阵容已保存并同步到球队中心';
+        if (typeof teamDetailHandleLineupSaved === 'function') teamDetailHandleLineupSaved(payload);
+    } catch (error) {
+        console.error('Failed to save roster formation:', error);
+        rosterFormationState.saveMessage = `保存失败：${error.message || '请稍后重试'}`;
+    } finally {
+        rosterFormationState.saveBusy = false;
+        refreshRosterFormationModal();
+    }
 }
 
 function buildRosterFormationImageFileName() {
@@ -874,11 +970,7 @@ async function saveRosterFormationImage() {
             filter: node => !(node?.classList && node.classList.contains('capture-exclude')),
         });
         if (!blob) throw new Error('capture-blob-empty');
-        if (typeof downloadBlob === 'function') {
-            downloadBlob(blob, buildRosterFormationImageFileName());
-        } else {
-            downloadCompetitionBlob(blob, buildRosterFormationImageFileName());
-        }
+        downloadRosterFormationBlob(blob, buildRosterFormationImageFileName());
     } catch (error) {
         console.error('Failed to export roster formation image:', error);
         showModal('生成图片失败', '阵容预览图片生成失败，请刷新页面后重试。');
@@ -886,6 +978,17 @@ async function saveRosterFormationImage() {
         target.classList.remove('is-exporting');
         rosterFormationState.exportBusy = false;
     }
+}
+
+function downloadRosterFormationBlob(blob, fileName) {
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1200);
 }
 
 function getSlotBadge(slot) {
@@ -1003,6 +1106,7 @@ async function copyRosterPlayerInfo(event, uid) {
 }
 
 function renderPlayers(players) {
+    rosterRendered = true;
     renderPlayerQueryState();
     renderRosterViewToggle();
     if (players.length === 0) {
@@ -1011,11 +1115,83 @@ function renderPlayers(players) {
     }
 
     const sortedPlayers = getSortedRosterPlayers(players);
+    const pageSize = isRosterMobileViewport() ? ROSTER_MOBILE_PAGE_SIZE : ROSTER_DESKTOP_PAGE_SIZE;
+    const totalPages = Math.max(1, Math.ceil(sortedPlayers.length / pageSize));
+    rosterPage = Math.max(1, Math.min(rosterPage, totalPages));
+    const pageStart = (rosterPage - 1) * pageSize;
+    const visiblePlayers = sortedPlayers.slice(pageStart, pageStart + pageSize);
+    const paginationHtml = renderRosterPagination(sortedPlayers.length, pageSize, rosterPage, totalPages);
     if (isRosterCardMode()) {
-        document.getElementById('playersTable').innerHTML = renderRosterMobileCards(sortedPlayers);
+        document.getElementById('playersTable').innerHTML = `${renderRosterMobileCards(visiblePlayers)}${paginationHtml}`;
         return;
     }
-    renderRosterTable(sortedPlayers);
+    renderRosterTable(visiblePlayers, paginationHtml);
+}
+
+function markRosterRenderStale() {
+    if (rosterRenderFrameId !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(rosterRenderFrameId);
+    }
+    rosterRenderFrameId = null;
+    rosterRendered = false;
+    rosterPage = 1;
+    const container = document.getElementById('playersTable');
+    if (container && !document.getElementById('players')?.classList.contains('active')) {
+        container.innerHTML = '<div class="loading">进入联赛名单后加载...</div>';
+    }
+}
+
+function ensureRosterRendered() {
+    if (!rosterRendered) {
+        const container = document.getElementById('playersTable');
+        if (container) {
+            container.innerHTML = '<div class="loading">正在加载联赛名单...</div>';
+        }
+        if (rosterRenderFrameId !== null) return;
+        const render = () => {
+            rosterRenderFrameId = null;
+            if (!document.getElementById('players')?.classList.contains('active')) return;
+            renderPlayers(currentPlayers || []);
+        };
+        if (typeof requestAnimationFrame === 'function') {
+            rosterRenderFrameId = requestAnimationFrame(() => {
+                rosterRenderFrameId = requestAnimationFrame(render);
+            });
+        } else {
+            rosterRenderFrameId = -1;
+            window.setTimeout(render, 0);
+        }
+        return;
+    }
+    renderPlayerQueryState();
+    renderRosterViewToggle();
+}
+
+function renderRosterPagination(totalCount, pageSize, currentPage, totalPages) {
+    if (totalCount <= pageSize) return '';
+    const start = (currentPage - 1) * pageSize + 1;
+    const end = Math.min(totalCount, currentPage * pageSize);
+    return `
+        <nav class="roster-pagination" aria-label="联赛名单分页">
+            <span class="roster-pagination-summary">显示 ${start}-${end}，共 ${totalCount} 人</span>
+            <div class="roster-pagination-controls">
+                <button type="button" class="roster-page-button" onclick="setRosterPage(${currentPage - 1})" ${currentPage <= 1 ? 'disabled' : ''} aria-label="上一页">‹</button>
+                <select class="roster-page-select" aria-label="选择名单页码" onchange="setRosterPage(this.value)">
+                    ${Array.from({length: totalPages}, (_item, index) => {
+                        const page = index + 1;
+                        return `<option value="${page}" ${page === currentPage ? 'selected' : ''}>第 ${page} / ${totalPages} 页</option>`;
+                    }).join('')}
+                </select>
+                <button type="button" class="roster-page-button" onclick="setRosterPage(${currentPage + 1})" ${currentPage >= totalPages ? 'disabled' : ''} aria-label="下一页">›</button>
+            </div>
+        </nav>
+    `;
+}
+
+function setRosterPage(page) {
+    rosterPage = Math.max(1, Number(page) || 1);
+    renderPlayers(currentPlayers || []);
+    document.querySelector('.player-results-panel')?.scrollIntoView({behavior: 'smooth', block: 'start'});
 }
 
 function getRosterPlayerGrowth(player) {
@@ -1051,7 +1227,7 @@ function renderRosterMobileCards(players) {
             <article class="mobile-roster-card${selectedClass}" id="player-card-${uid}" data-player-uid="${uid}" tabindex="0" onclick="openRosterPlayerCard(event, ${uid})" onkeydown="handleRosterCardKeydown(event, ${uid})">
                 <div class="mobile-roster-card-main">
                     <div class="mobile-roster-player">
-                        <button type="button" class="mobile-roster-name" onclick="event.stopPropagation(); viewPlayerInDatabase(${uid})">${playerName}</button>
+                        <button type="button" class="mobile-roster-name" onclick="event.stopPropagation(); openRosterPlayerAttributeDetail(${uid})">${playerName}</button>
                         <span class="mobile-roster-subline">UID ${uid} · ${nationality}</span>
                     </div>
                     <span class="mobile-roster-position ${getRosterPositionClass(player.position)}">${position}</span>
@@ -1076,7 +1252,7 @@ function renderRosterMobileCards(players) {
     }).join('')}</div>`;
 }
 
-function renderRosterTable(sortedPlayers) {
+function renderRosterTable(sortedPlayers, paginationHtml = '') {
     const html = `<table class="players-list-table" aria-label="联赛名单数据表">
         <colgroup>
             <col class="uid-column">
@@ -1100,11 +1276,19 @@ function renderRosterTable(sortedPlayers) {
 
             const nameCell = isAdmin
                 ? `<td class="name-cell"><input type="text" class="editable-input" value="${player.name.replace(/"/g, '&quot;')}" onchange="updatePlayerField(${player.uid}, 'name', this.value)" style="background:rgba(0,0,0,0.2);border:1px solid rgba(0,217,255,0.3);padding:4px 8px;border-radius:4px;color:#fff;width:118px;"></td>`
-                : `<td class="name-cell" title="${player.name.replace(/"/g, '&quot;')}"><span class="player-link roster-player-link" onclick="viewPlayerInDatabase(${player.uid})">${player.name}</span></td>`;
+                : `<td class="name-cell" title="${player.name.replace(/"/g, '&quot;')}"><span class="player-link roster-player-link" onclick="openRosterPlayerAttributeDetail(${player.uid})">${player.name}</span></td>`;
 
             const ageCell = isAdmin
                 ? `<td class="numeric-cell"><input type="number" class="editable-input" value="${player.age}" onchange="updatePlayerField(${player.uid}, 'age', this.value)" style="background:rgba(0,0,0,0.2);border:1px solid rgba(0,217,255,0.3);padding:4px 8px;border-radius:4px;color:#fff;width:50px;"></td>`
                 : `<td class="numeric-cell">${player.age}</td>`;
+
+            const caCell = isAdmin
+                ? `<td class="numeric-cell"><input type="number" class="editable-input player-rating-input" min="1" max="200" value="${player.ca}" onchange="updatePlayerField(${player.uid}, 'ca', this.value)" aria-label="编辑 ${player.name.replace(/"/g, '&quot;')} 当前 CA" title="修改后自动重算工资与球队统计"></td>`
+                : `<td class="numeric-cell"><strong>${player.ca}</strong></td>`;
+
+            const paCell = isAdmin
+                ? `<td class="numeric-cell"><input type="number" class="editable-input player-rating-input" min="-10" max="200" value="${player.pa}" onchange="updatePlayerField(${player.uid}, 'pa', this.value)" aria-label="编辑 ${player.name.replace(/"/g, '&quot;')} PA" title="支持 -10 至 200，修改后自动重算工资与球队统计"></td>`
+                : `<td class="numeric-cell">${player.pa}</td>`;
 
             const positionCell = isAdmin
                 ? `<td class="position-cell"><input type="text" class="editable-input" value="${player.position.replace(/"/g, '&quot;')}" onchange="updatePlayerField(${player.uid}, 'position', this.value)" style="background:rgba(0,0,0,0.2);border:1px solid rgba(0,217,255,0.3);padding:4px 8px;border-radius:4px;color:#fff;width:80px;"></td>`
@@ -1120,7 +1304,7 @@ function renderRosterTable(sortedPlayers) {
             const copyCell = `<td class="copy-cell"><button type="button" class="roster-copy-button" onclick="copyRosterPlayerInfo(event, ${player.uid})" title="复制 UID 姓名 年龄 初始CA 当前CA PA 位置 身价">复制</button></td>`;
 
             const isSelected = Number(currentSelectedRosterUid) === Number(player.uid);
-            const mainRow = `<tr id="player-row-${player.uid}" class="${isSelected ? 'row-selected' : ''}" data-player-uid="${player.uid}" tabindex="0" onclick="selectRosterPlayer(${player.uid})" onkeydown="handleRosterRowKeydown(event, ${player.uid})">${uidCell}${nameCell}${ageCell}<td class="numeric-cell">${player.initial_ca}</td><td class="numeric-cell"><strong>${player.ca}</strong></td><td class="numeric-cell">${player.pa}</td>${positionCell}${nationalityCell}<td class="team-name-cell"><span class="player-link roster-player-link" onclick="viewTeamPlayers('${player.team_name.replace(/'/g, "\\'")}')">${player.team_name}</span></td><td class="numeric-cell">${player.wage.toFixed(3)}M</td><td class="slot-cell">${getSlotBadge(player.slot_type)}</td>${detailCell}${copyCell}</tr>`;
+            const mainRow = `<tr id="player-row-${player.uid}" class="${isSelected ? 'row-selected' : ''}" data-player-uid="${player.uid}" tabindex="0" onclick="selectRosterPlayer(${player.uid})" onkeydown="handleRosterRowKeydown(event, ${player.uid})">${uidCell}${nameCell}${ageCell}<td class="numeric-cell">${player.initial_ca}</td>${caCell}${paCell}${positionCell}${nationalityCell}<td class="team-name-cell"><span class="player-link roster-player-link" onclick="viewTeamPlayers('${player.team_name.replace(/'/g, "\\'")}')">${player.team_name}</span></td><td class="numeric-cell">${player.wage.toFixed(3)}M</td><td class="slot-cell">${getSlotBadge(player.slot_type)}</td>${detailCell}${copyCell}</tr>`;
 
             const detailRow = isAdmin
                 ? `<tr id="player-detail-${player.uid}" class="player-detail-row" style="display:none;background:var(--bg-tertiary);"><td colspan="13"><div style="padding:15px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
@@ -1136,7 +1320,7 @@ function renderRosterTable(sortedPlayers) {
                 : '';
 
             return mainRow + detailRow;
-        }).join('')}</tbody></table>`;
+        }).join('')}</tbody></table>${paginationHtml}`;
     document.getElementById('playersTable').innerHTML = html;
     bindRosterKeyboardNavigation();
 }
@@ -1159,7 +1343,7 @@ function handleRosterRowKeydown(event, uid) {
     if (event.target?.closest?.('button,input,select,textarea,a')) return;
     if (event.key === 'Enter') {
         event.preventDefault();
-        viewPlayerInDatabase(uid);
+        openRosterPlayerAttributeDetail(uid);
     }
 }
 
@@ -1167,14 +1351,14 @@ function handleRosterCardKeydown(event, uid) {
     if (event.target?.closest?.('button,input,select,textarea,a')) return;
     if (event.key === 'Enter') {
         event.preventDefault();
-        viewPlayerInDatabase(uid);
+        openRosterPlayerAttributeDetail(uid);
     }
 }
 
 function openRosterPlayerCard(event, uid) {
     if (event.target?.closest?.('button,input,select,textarea,a')) return;
     selectRosterPlayer(uid);
-    viewPlayerInDatabase(uid);
+    openRosterPlayerAttributeDetail(uid);
 }
 
 function bindRosterKeyboardNavigation() {
@@ -1239,12 +1423,12 @@ async function searchPlayers(options = {}) {
 
     if (isAdminEntryQuery(playerName)) {
         if (typeof openAdminEntry === 'function') {
-            openAdminEntry();
+            await openAdminEntry();
         } else {
             if (typeof showAdminLoginPanel === 'function') {
                 showAdminLoginPanel({reveal: true, focusLogin: false});
             }
-            showTab('admin', null, {syncHistory: false});
+            await showTab('admin', null, {syncHistory: false});
         }
         document.getElementById('playerSearch').value = '';
         if (shouldSyncHistory && typeof syncAppHistory === 'function') {
@@ -1254,6 +1438,7 @@ async function searchPlayers(options = {}) {
     }
 
     const basePlayers = getRosterSearchBasePlayers();
+    rosterPage = 1;
     if (playerName || teamName) {
         document.getElementById('tableTitle').textContent = teamName
             ? `${teamName} 筛选结果`
@@ -1278,6 +1463,7 @@ function resetPlayers(options = {}) {
     document.getElementById('tableTitle').textContent = '全部联赛名单';
     currentRosterSort = {field: '', order: 'desc', type: 'number'};
     currentSelectedRosterUid = null;
+    rosterPage = 1;
     currentPlayers = [...allPlayers];
     renderPlayers(currentPlayers);
     if (shouldSyncHistory && typeof syncAppHistory === 'function') {

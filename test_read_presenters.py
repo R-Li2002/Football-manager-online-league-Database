@@ -135,6 +135,31 @@ def test_attribute_search_presenter_coerces_null_ca_pa_to_zero():
     assert payload.pa == 0
 
 
+def test_attribute_search_presenter_includes_power_metrics():
+    payload = build_attribute_search_response(
+        SimpleNamespace(
+            uid=10,
+            name="Power Player",
+            data_version="2630",
+            position="MC",
+            age=23,
+            ca=155,
+            pa=175,
+            nationality="ES",
+            club="Club",
+        ),
+        data_version="2630",
+        heigo_club="HEIGO Club",
+        weighted_power=72.34,
+        heigo_power=81.23,
+        top_percent=4.2,
+    )
+
+    assert payload.weighted_power == 72.34
+    assert payload.heigo_power == 81.23
+    assert payload.top_percent == 4.2
+
+
 def test_attribute_detail_presenter_coerces_null_ca_pa_to_zero():
     payload = build_player_attribute_detail_response(
         _detail_attr(),

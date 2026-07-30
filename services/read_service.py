@@ -42,6 +42,7 @@ from schemas_read import (
 )
 from schemas_write import AdvancedAttributeRangeRequest, AdvancedAttributeSearchRequest, AttributeBatchLookupRequest
 from services import match_service
+from services.player_power_ranking_service import calculate_heigo_metrics, get_power_calibration
 from services.league_service import calculate_player_wage_payload
 from services.read_presenters import (
     build_attribute_search_response,
@@ -53,6 +54,7 @@ from services.read_presenters import (
 )
 from services.reaction_service import build_player_reaction_summary
 from services.team_stat_source_service import build_team_stat_sources, load_team_stat_overlays
+from weighted_power import calculate_weighted_power
 
 LEVEL_ORDER = {"超级": 1, "甲级": 2, "乙级": 3}
 VISIBLE_LEVEL = "隐藏"
@@ -62,6 +64,10 @@ ADVANCED_SEARCH_FIELD_LABELS = {
     "age": "年龄",
     "ca": "CA",
     "pa": "PA",
+    "weighted_power": "加权战力值",
+    "height": "身高",
+    "left_foot": "左脚",
+    "right_foot": "右脚",
     "corner": "角球",
     "crossing": "传中",
     "dribbling": "盘带",
@@ -125,6 +131,28 @@ ADVANCED_SEARCH_FIELD_LABELS = {
 }
 
 
+def _build_powered_attribute_search_response(
+    player,
+    *,
+    data_version: str,
+    heigo_club: str,
+    calibration,
+) -> AttributeSearchResponse:
+    weighted_power = calculate_weighted_power(player, precision=2).score
+    heigo_power = None
+    top_percent = None
+    if weighted_power is not None:
+        heigo_power, top_percent = calculate_heigo_metrics(weighted_power, calibration)
+    return build_attribute_search_response(
+        player,
+        data_version=data_version,
+        heigo_club=heigo_club,
+        weighted_power=weighted_power,
+        heigo_power=heigo_power,
+        top_percent=top_percent,
+    )
+
+
 def get_league_info(db: Session):
     return list_league_info(db)
 
@@ -183,11 +211,13 @@ def search_player_attributes(
     resolved_version = resolve_attribute_version(db, data_version)
     players = search_player_attributes_by_name(db, player_name, limit=50, data_version=resolved_version)
     heigo_players = map_player_uid_to_team_name(db)
+    calibration = get_power_calibration(db, data_version=resolved_version)
     return [
-        build_attribute_search_response(
+        _build_powered_attribute_search_response(
             player,
             data_version=resolved_version,
             heigo_club=heigo_players.get(player.uid, ATTRIBUTE_FALLBACK_TEAM),
+            calibration=calibration,
         )
         for player in players
     ]
@@ -225,9 +255,19 @@ def search_player_attributes_advanced_service(
     range_filters: list[AttributeRangeFilter] = []
     applied_filters_summary: list[str] = []
 
-    for field_name, range_value in (("age", request.age), ("ca", request.ca), ("pa", request.pa)):
+    for field_name, range_value in (
+        ("age", request.age),
+        ("ca", request.ca),
+        ("pa", request.pa),
+        ("weighted_power", request.weighted_power),
+    ):
         normalized = _normalize_range_request(field_name, range_value)
         if normalized is not None:
+            if field_name == "weighted_power":
+                if normalized.minimum is not None and not 0 <= normalized.minimum <= 100:
+                    raise HTTPException(status_code=400, detail="加权战力值下限必须在 0-100 之间")
+                if normalized.maximum is not None and not 0 <= normalized.maximum <= 100:
+                    raise HTTPException(status_code=400, detail="加权战力值上限必须在 0-100 之间")
             range_filters.append(normalized)
             applied_filters_summary.append(_build_range_summary(field_name, normalized))
 
@@ -256,7 +296,10 @@ def search_player_attributes_advanced_service(
     if invalid_positions:
         raise HTTPException(status_code=400, detail=f"不支持的位置筛选字段: {', '.join(sorted(set(invalid_positions)))}")
 
-    if not query_text and not range_filters and not position_filters:
+    if request.sea_status:
+        applied_filters_summary.append("仅大海球员" if request.sea_status == "in_sea" else "排除大海球员")
+
+    if not query_text and not range_filters and not position_filters and not request.sea_status:
         raise HTTPException(status_code=400, detail="请至少输入关键词或配置一个高级筛选条件")
 
     result = search_player_attributes_advanced(
@@ -264,16 +307,21 @@ def search_player_attributes_advanced_service(
         query_text=query_text,
         range_filters=range_filters,
         position_filters=position_filters,
+        sea_status=request.sea_status,
+        sea_team_name=SEA_TEAM_NAME,
+        uid_filter=list(dict.fromkeys(int(uid) for uid in request.uids or []))[:1000] if request.uids else None,
         limit=request.limit,
         data_version=resolved_version,
     )
     heigo_players = map_player_uid_to_team_name(db)
+    calibration = get_power_calibration(db, data_version=resolved_version)
     return AdvancedAttributeSearchResponse(
         items=[
-            build_attribute_search_response(
+            _build_powered_attribute_search_response(
                 player,
                 data_version=resolved_version,
                 heigo_club=heigo_players.get(player.uid, ATTRIBUTE_FALLBACK_TEAM),
+                calibration=calibration,
             )
             for player in result.items
         ],
@@ -284,8 +332,13 @@ def search_player_attributes_advanced_service(
     )
 
 
-def _attribute_search_payload(player, *, data_version: str, heigo_club: str) -> dict:
-    response = build_attribute_search_response(player, data_version=data_version, heigo_club=heigo_club)
+def _attribute_search_payload(player, *, data_version: str, heigo_club: str, calibration) -> dict:
+    response = _build_powered_attribute_search_response(
+        player,
+        data_version=data_version,
+        heigo_club=heigo_club,
+        calibration=calibration,
+    )
     payload = response.model_dump() if hasattr(response, "model_dump") else response.dict()
     for field_name in set(ATTRIBUTE_RANGE_FIELD_ALLOWLIST.values()) | set(POSITION_SCORE_FIELD_ALLOWLIST.values()):
         payload[field_name] = getattr(player, field_name, None)
@@ -353,6 +406,7 @@ def batch_lookup_player_attributes_service(
     rows = list(rows_by_uid.values())
 
     heigo_players = map_player_uid_to_team_name(db)
+    calibration = get_power_calibration(db, data_version=resolved_version)
     matched_by_uid: dict[int, object] = {}
     unmatched: list[str] = []
     for token in tokens:
@@ -380,6 +434,7 @@ def batch_lookup_player_attributes_service(
                 player,
                 data_version=resolved_version,
                 heigo_club=heigo_players.get(player.uid, ATTRIBUTE_FALLBACK_TEAM),
+                calibration=calibration,
             )
             for player in matched_players
         ],

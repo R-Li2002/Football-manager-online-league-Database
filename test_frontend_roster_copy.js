@@ -98,6 +98,9 @@ const document = {
         if (selector === '#playersTable tr[data-player-uid]') return [];
         return [];
     },
+    querySelector() {
+        return null;
+    },
 };
 
 const clipboardWrites = [];
@@ -105,9 +108,18 @@ const toastMessages = [];
 let execCommandCalls = 0;
 
 const context = {
-    console,
+    console: {...console, warn() {}},
     document,
-    window: {document},
+    window: {
+        document,
+        innerWidth: 1280,
+        addEventListener() {},
+        clearTimeout() {},
+        setTimeout(callback) {
+            callback();
+            return 1;
+        },
+    },
     navigator: {
         clipboard: {
             writeText: async text => {
@@ -123,6 +135,9 @@ const context = {
     currentSelectedRosterUid: null,
     showDetailExportToast(message, tone = 'success') {
         toastMessages.push({message, tone});
+    },
+    fetch: async () => {
+        throw new Error('wage detail unavailable in copy regression test');
     },
     document: {
         ...document,
@@ -226,6 +241,8 @@ async function assertRenderPlayersAddsCopyColumnWithoutAdminDetailColumn() {
     assert.match(html, /copy-column/);
     assert.match(html, /roster-copy-button/);
     assert.match(html, /copyRosterPlayerInfo\(event, 1001\)/);
+    assert.match(html, /openRosterPlayerAttributeDetail\(1001\)/);
+    assert.doesNotMatch(html, /viewPlayerInDatabase/);
     assert.doesNotMatch(html, /colspan="13"/);
 }
 
@@ -238,6 +255,28 @@ async function assertRenderPlayersUsesWiderDetailColspanForAdminRows() {
     assert.match(html, /roster-copy-button/);
 }
 
+async function assertLargeRosterUsesPagination() {
+    context.isAdmin = false;
+    const players = Array.from({length: 205}, (_item, index) => ({
+        ...samplePlayer,
+        uid: 2000 + index,
+        name: `Player ${index + 1}`,
+    }));
+    context.currentPlayers = players;
+    context.allPlayers = players;
+    context.rosterPage = 1;
+
+    context.renderPlayers(players);
+    let html = elements.get('playersTable').innerHTML;
+    assert.equal((html.match(/data-player-uid=/g) || []).length, 50);
+    assert.match(html, /显示 1-50，共 205 人/);
+
+    context.setRosterPage(2);
+    html = elements.get('playersTable').innerHTML;
+    assert.equal((html.match(/data-player-uid=/g) || []).length, 50);
+    assert.match(html, /显示 51-100，共 205 人/);
+}
+
 (async () => {
     await assertCopyTextUsesExpectedRosterFields();
     await assertClipboardCopyStopsRowInteraction();
@@ -245,6 +284,7 @@ async function assertRenderPlayersUsesWiderDetailColspanForAdminRows() {
     await assertWarningIsShownWhenAllCopyMethodsFail();
     await assertRenderPlayersAddsCopyColumnWithoutAdminDetailColumn();
     await assertRenderPlayersUsesWiderDetailColspanForAdminRows();
+    await assertLargeRosterUsesPagination();
 })().catch(error => {
     console.error(error);
     process.exit(1);

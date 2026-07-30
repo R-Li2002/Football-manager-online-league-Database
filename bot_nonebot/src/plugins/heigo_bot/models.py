@@ -36,3 +36,10 @@ class ReplySpec:
     reply_type: ReplyType
     text: str = ""
     image_url: str = ""
+
+
+@dataclass(frozen=True)
+class PlayerCommandResolution:
+    command: CommandSpec | None = None
+    candidates: tuple[dict, ...] = ()
+    error: ReplySpec | None = None

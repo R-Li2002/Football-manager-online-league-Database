@@ -1,5 +1,3 @@
-var currentOverviewSort = {field: '', order: '', type: 'number'};
-var overviewMetaExpanded = false;
 var currentTeamOverviewView = 'table';
 
 const TEAM_SORT_CONFIG = {
@@ -197,7 +195,7 @@ function renderOverview() {
     const wage = leagueInfo.filter(item => item.category === '工资系数');
     const rosterSummary = [
         {key: '球队数量', value: teams.length},
-        {key: '球员总数', value: allPlayers.length},
+        {key: '球员总数', value: allPlayers.length || Number(homeSummary?.player_count || 0)},
     ];
     const basicCards = [...basic, ...rosterSummary];
 
@@ -216,6 +214,7 @@ function renderOverview() {
 
     renderOverviewStatusCards();
     syncOverviewMetaPanelState();
+    renderTeamsTable();
 }
 
 function renderOverviewStatusCards() {
@@ -344,7 +343,9 @@ function buildTeamOverviewMetrics(team) {
     const baseWageCap = levelWageCap[team.level] || 0;
     const minWage = levelMinWage[team.level] || 0;
     const extraCap = getTeamExtraWageCap(team.notes);
-    const effectiveCap = baseWageCap + extraCap;
+    const wageCapOverride = Number.parseFloat(team.wage_cap);
+    const hasWageCapOverride = Number.isFinite(wageCapOverride) && wageCapOverride > 0;
+    const effectiveCap = hasWageCapOverride ? wageCapOverride : baseWageCap + extraCap;
 
     const playerTotalWage = team.wage || 0;
     const extraWage = team.extra_wage || 0;
@@ -378,6 +379,8 @@ function buildTeamOverviewMetrics(team) {
     return {
         baseWageCap,
         extraCap,
+        effectiveCap,
+        hasWageCapOverride,
         playerTotalWage,
         extraWage,
         totalWage,
@@ -387,7 +390,9 @@ function buildTeamOverviewMetrics(team) {
         gkClass: gkCompliant ? 'compliant' : 'non-compliant',
         notesDisplay,
         notesClass: extraCap > 0 ? 'notes-cell has-extra' : 'notes-cell',
-        capDisplay: extraCap > 0 ? `${baseWageCap.toFixed(1)}M (+${extraCap.toFixed(1)}M)` : `${baseWageCap.toFixed(1)}M`,
+        capDisplay: hasWageCapOverride
+            ? `${effectiveCap.toFixed(2)}M (球队)`
+            : (extraCap > 0 ? `${baseWageCap.toFixed(1)}M (+${extraCap.toFixed(1)}M)` : `${baseWageCap.toFixed(1)}M`),
         playerWageDisplay: `${playerTotalWage.toFixed(3)}M`,
         extraWageDisplay: extraWage > 0 ? `${extraWage.toFixed(3)}M` : '-',
     };
@@ -422,13 +427,13 @@ function getOverviewTeamLogoHtml(team, crestTone, crestText) {
     const teamNameForClick = team.name.replace(/'/g, "\\'");
     if (team.logo_path) {
         return `
-            <button class="overview-team-crest has-logo" type="button" onclick="viewTeamPlayers('${teamNameForClick}')" aria-label="查看${escapeHtml(team.name)}球员">
+            <button class="overview-team-crest has-logo" type="button" onclick="viewTeamPlayers('${teamNameForClick}')" aria-label="进入${escapeHtml(team.name)}球队中心">
                 <img src="${escapeHtml(team.logo_path)}" alt="${escapeHtml(team.name)}队徽">
             </button>
         `;
     }
     return `
-        <button class="overview-team-crest ${crestTone}" type="button" onclick="viewTeamPlayers('${teamNameForClick}')" aria-label="查看${escapeHtml(team.name)}球员">
+        <button class="overview-team-crest ${crestTone}" type="button" onclick="viewTeamPlayers('${teamNameForClick}')" aria-label="进入${escapeHtml(team.name)}球队中心">
             <span>${escapeHtml(crestText)}</span>
         </button>
     `;
@@ -541,7 +546,8 @@ function renderTeamsTableWithData(data) {
             const levelCell = `<td><select class="editable-input" onchange="updateTeamField('${team.name.replace(/'/g, "\\'")}', 'level', this.value)" style="background:rgba(0,0,0,0.2);border:1px solid rgba(0,217,255,0.3);padding:4px 8px;border-radius:4px;color:#fff;"><option value="超级" ${team.level === '超级' ? 'selected' : ''}>超级</option><option value="甲级" ${team.level === '甲级' ? 'selected' : ''}>甲级</option><option value="乙级" ${team.level === '乙级' ? 'selected' : ''}>乙级</option></select></td>`;
             const teamNameCell = `<td><input type="text" class="editable-input" value="${team.name.replace(/"/g, '&quot;')}" onchange="updateTeamField('${team.name.replace(/'/g, "\\'")}', 'name', this.value)" style="background:rgba(0,0,0,0.2);border:1px solid rgba(0,217,255,0.3);padding:4px 8px;border-radius:4px;color:#fff;width:150px;"></td>`;
             const managerCell = `<td><input type="text" class="editable-input" value="${(team.manager || '').replace(/"/g, '&quot;')}" onchange="updateTeamField('${team.name.replace(/'/g, "\\'")}', 'manager', this.value)" style="background:rgba(0,0,0,0.2);border:1px solid rgba(0,217,255,0.3);padding:4px 8px;border-radius:4px;color:#fff;width:100px;"></td>`;
-            return `<tr>${levelCell}${teamNameCell}${managerCell}<td class="${metrics.sizeClass}">${team.team_size}</td><td class="${metrics.gkClass}">${team.gk_count}</td><td>${metrics.playerWageDisplay}</td><td>${metrics.extraWageDisplay}</td><td class="${metrics.wageClass}">${metrics.finalWageDisplay}</td><td>${metrics.capDisplay}</td><td>${team.count_8m}</td><td>${team.count_7m}</td><td>${team.count_fake}</td><td>${team.total_value.toFixed(1)}M</td><td>${team.avg_ca.toFixed(1)}</td><td>${team.avg_pa.toFixed(1)}</td><td>${team.total_growth}</td><td class="${metrics.notesClass}" title="${metrics.notesDisplay.replace(/"/g, '&quot;')}">${metrics.notesDisplay}</td></tr>`;
+            const wageCapCell = `<td><input type="number" class="editable-input team-wage-cap-input" min="0.1" max="100" step="0.01" value="${metrics.effectiveCap.toFixed(2)}" onchange="updateTeamField('${team.name.replace(/'/g, "\\'")}', 'wage_cap', this.value)" aria-label="编辑 ${team.name.replace(/"/g, '&quot;')} 工资帽" title="设置球队独立工资帽；可在球队编辑弹窗中恢复级别默认值"><span class="team-wage-cap-unit">M</span></td>`;
+            return `<tr>${levelCell}${teamNameCell}${managerCell}<td class="${metrics.sizeClass}">${team.team_size}</td><td class="${metrics.gkClass}">${team.gk_count}</td><td>${metrics.playerWageDisplay}</td><td>${metrics.extraWageDisplay}</td><td class="${metrics.wageClass}">${metrics.finalWageDisplay}</td>${wageCapCell}<td>${team.count_8m}</td><td>${team.count_7m}</td><td>${team.count_fake}</td><td>${team.total_value.toFixed(1)}M</td><td>${team.avg_ca.toFixed(1)}</td><td>${team.avg_pa.toFixed(1)}</td><td>${team.total_growth}</td><td class="${metrics.notesClass}" title="${metrics.notesDisplay.replace(/"/g, '&quot;')}">${metrics.notesDisplay}</td></tr>`;
         }
 
         return `<tr><td>${getLevelBadge(team.level)}</td><td><span class="team-name" onclick="viewTeamPlayers('${team.name.replace(/'/g, "\\'")}')">${team.name}</span></td><td>${renderCoachProfileLink(team.manager, 'coach-profile-link overview-coach-link')}</td><td class="${metrics.sizeClass}">${team.team_size}</td><td class="${metrics.gkClass}">${team.gk_count}</td><td>${metrics.playerWageDisplay}</td><td>${metrics.extraWageDisplay}</td><td class="${metrics.wageClass}">${metrics.finalWageDisplay}</td><td>${metrics.capDisplay}</td><td>${team.count_8m}</td><td>${team.count_7m}</td><td>${team.count_fake}</td><td>${team.total_value.toFixed(1)}M</td><td>${team.avg_ca.toFixed(1)}</td><td>${team.avg_pa.toFixed(1)}</td><td>${team.total_growth}</td><td class="${metrics.notesClass}" title="${metrics.notesDisplay.replace(/"/g, '&quot;')}">${metrics.notesDisplay}</td></tr>`;
@@ -550,31 +556,5 @@ function renderTeamsTableWithData(data) {
 }
 
 function getLevelBadge(level) {
-    const classes = {'超级': 'level-super', '甲级': 'level-a', '乙级': 'level-b'};
-    return `<span class="level-badge ${classes[level] || ''}">${level || '未知'}</span>`;
-}
-
-function viewTeamPlayers(teamName, options = {}) {
-    showTab('players', null, {syncHistory: false});
-    document.getElementById('teamSelect').value = teamName;
-    document.getElementById('playerSearch').value = '';
-    searchPlayers(options);
-}
-
-function populateTeamSelect() {
-    ['teamSelect'].forEach(id => {
-        const select = document.getElementById(id);
-        if (!select) return;
-        const previousValue = select.value;
-        select.innerHTML = '<option value="">-- 全部球队 --</option>';
-        teams.forEach(team => {
-            const option = document.createElement('option');
-            option.value = team.name;
-            option.textContent = `${team.name} (${team.level})`;
-            select.appendChild(option);
-        });
-        if (teams.some(team => team.name === previousValue)) {
-            select.value = previousValue;
-        }
-    });
+    return renderLeagueLevelBadge(level);
 }

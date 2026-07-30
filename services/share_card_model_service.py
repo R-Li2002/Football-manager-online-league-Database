@@ -5,12 +5,14 @@ from math import ceil
 
 from domain_types import SLOT_TYPE_7M, SLOT_TYPE_8M, SLOT_TYPE_FAKE, normalize_slot_type
 from schemas_read import PlayerAttributeDetailResponse, PlayerResponse, TeamInfoResponse, WageDetailResponse
+from weighted_power import calculate_weighted_power
 
 
 SHARE_FONT_FAMILY = (
     '"Noto Sans CJK SC", "Noto Sans SC", "PingFang SC", '
     '"Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif'
 )
+SHARE_LATIN_FONT_FAMILY = '"DejaVu Sans", sans-serif'
 
 HALF_STEP_PREVIEW_KEYS = {"bravery", "leadership"}
 STATIC_PREVIEW_KEYS = {"aggression", "determination", "natural_fitness", "flair"}
@@ -224,6 +226,9 @@ class ShareCardModel:
     weak_foot_label: str
     theme: str
     is_goalkeeper: bool
+    weighted_power_value: str
+    heigo_power_value: str
+    top_percent_label: str
     info_rows: tuple[ShareInfoRow, ...]
     reaction_flower_count: int
     reaction_egg_count: int
@@ -291,19 +296,28 @@ def _clamp_growth_preview_step(step: int | None) -> int:
     return max(0, min(5, int(step or 0)))
 
 
-def _weak_foot_preview(player: PlayerAttributeDetailResponse, step: int) -> tuple[str, int] | None:
+def _weak_foot_preview(player, step: int) -> tuple[str, int] | None:
     if step < 5:
         return None
-    left = int(player.left_foot or 0)
-    right = int(player.right_foot or 0)
+    left = int(_source_value(player, "left_foot") or 0)
+    right = int(_source_value(player, "right_foot") or 0)
     if not left or not right or left == right:
         return None
     return ("左脚", min(20, left + 1)) if left < right else ("右脚", min(20, right + 1))
 
 
-def build_preview_player(player: PlayerAttributeDetailResponse, step: int) -> dict:
+def _source_value(source, key: str):
+    if isinstance(source, dict):
+        return source.get(key)
+    return getattr(source, key, None)
+
+
+def build_preview_attributes(source, step: int) -> dict:
     preview_step = _clamp_growth_preview_step(step)
-    payload = player.model_dump()
+    payload = {
+        key: _source_value(source, key)
+        for key in {*DETAIL_PREVIEW_KEYS, "left_foot", "right_foot", "pos_gk"}
+    }
 
     for key in DETAIL_PREVIEW_KEYS:
         base_value = payload.get(key)
@@ -315,7 +329,7 @@ def build_preview_player(player: PlayerAttributeDetailResponse, step: int) -> di
         gain = preview_step // 2 if key in HALF_STEP_PREVIEW_KEYS else preview_step
         payload[key] = _clamp_attribute_value(base_value + gain)
 
-    weak_foot = _weak_foot_preview(player, preview_step)
+    weak_foot = _weak_foot_preview(source, preview_step)
     if weak_foot:
         foot_label, foot_value = weak_foot
         if foot_label == "左脚":
@@ -325,6 +339,12 @@ def build_preview_player(player: PlayerAttributeDetailResponse, step: int) -> di
 
     payload["preview_step"] = preview_step
     payload["preview_weak_foot"] = weak_foot
+    return payload
+
+
+def build_preview_player(player: PlayerAttributeDetailResponse, step: int) -> dict:
+    payload = player.model_dump()
+    payload.update(build_preview_attributes(player, step))
     return payload
 
 
@@ -443,9 +463,15 @@ def build_player_share_card_model(
     version: str | None = None,
     step: int = 0,
     theme: str = "dark",
+    heigo_power: float | None = None,
+    top_percent: float | None = None,
 ) -> ShareCardModel:
     preview_player = build_preview_player(player, step)
     is_goalkeeper = int(preview_player.get("pos_gk") or 0) >= 15
+    weighted_power = calculate_weighted_power(preview_player)
+    weighted_power_value = "—" if weighted_power.score is None else f"{weighted_power.score:.2f}"
+    heigo_power_value = "—" if heigo_power is None else f"{float(heigo_power):.2f}"
+    top_percent_label = "" if top_percent is None else f"前 {max(1, int(float(top_percent) + 0.999999))}%"
     technical_fields = GOALKEEPER_TECHNICAL_FIELDS if is_goalkeeper else OUTFIELD_TECHNICAL_FIELDS + SET_PIECE_FIELDS
     weak_foot = preview_player.get("preview_weak_foot")
     weak_foot_label = f"{weak_foot[0]} +1" if weak_foot else ""
@@ -466,6 +492,9 @@ def build_player_share_card_model(
         weak_foot_label=weak_foot_label,
         theme=_normalize_theme(theme),
         is_goalkeeper=is_goalkeeper,
+        weighted_power_value=weighted_power_value,
+        heigo_power_value=heigo_power_value,
+        top_percent_label=top_percent_label,
         info_rows=_build_info_rows(player, preview_player),
         reaction_flower_count=0,
         reaction_egg_count=0,
@@ -481,7 +510,7 @@ def build_player_share_card_model(
         radar_metrics=radar_metrics,
         habit_text=(player.player_habits or "").strip(),
         canvas_width=1440,
-        canvas_height=1024,
+        canvas_height=1080,
     )
 
 

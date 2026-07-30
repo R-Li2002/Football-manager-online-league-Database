@@ -55,10 +55,7 @@ def consume_player(db: Session, admin: str | None, request: Any, write_to_log: L
             ],
         )
 
-    response = run_admin_mutation(db, admin, write_to_log, mutator=mutate)
-    if request.manager is not None or request.name is not None or request.level is not None:
-        refresh_coach_assignments(db)
-    return response
+    return run_admin_mutation(db, admin, write_to_log, mutator=mutate)
 
 
 def rejuvenate_player(db: Session, admin: str | None, request: Any, write_to_log: LogWriter):
@@ -152,6 +149,14 @@ def update_team_info(db: Session, admin: str | None, request: Any, write_to_log:
         old_name = team.name
         old_notes = team.notes
         old_level = team.level
+        old_wage_cap = team.wage_cap
+        request_fields_set = getattr(request, "model_fields_set", None)
+        wage_cap_provided = (
+            "wage_cap" in request_fields_set
+            if request_fields_set is not None
+            else hasattr(request, "wage_cap")
+        )
+        requested_wage_cap = getattr(request, "wage_cap", None)
 
         if request.manager is not None:
             team.manager = request.manager
@@ -168,6 +173,8 @@ def update_team_info(db: Session, admin: str | None, request: Any, write_to_log:
             team.notes = request.notes
         if request.level is not None:
             team.level = request.level
+        if wage_cap_provided:
+            team.wage_cap = requested_wage_cap
 
         changes = []
         if request.manager is not None and request.manager != old_manager:
@@ -178,6 +185,8 @@ def update_team_info(db: Session, admin: str | None, request: Any, write_to_log:
             changes.append("notes updated")
         if request.level is not None and request.level != old_level:
             changes.append(f"level {old_level}->{request.level}")
+        if wage_cap_provided and requested_wage_cap != old_wage_cap:
+            changes.append(f"wage cap {old_wage_cap}->{requested_wage_cap}")
         if not changes:
             changes.append("no field changes")
 
@@ -185,6 +194,8 @@ def update_team_info(db: Session, admin: str | None, request: Any, write_to_log:
         if request.level is not None and request.level != old_level:
             affected_scopes.add(TEAM_STAT_SCOPE_WAGE)
         if request.notes is not None and request.notes != old_notes:
+            affected_scopes.add(TEAM_STAT_SCOPE_WAGE)
+        if wage_cap_provided and requested_wage_cap != old_wage_cap:
             affected_scopes.add(TEAM_STAT_SCOPE_WAGE)
 
         return AdminMutationResult(
@@ -195,7 +206,10 @@ def update_team_info(db: Session, admin: str | None, request: Any, write_to_log:
             stat_scopes=affected_scopes if affected_scopes else None,
         )
 
-    return run_admin_mutation(db, admin, write_to_log, mutator=mutate)
+    response = run_admin_mutation(db, admin, write_to_log, mutator=mutate)
+    if request.manager is not None or request.name is not None or request.level is not None:
+        refresh_coach_assignments(db)
+    return response
 
 
 def update_player_info(db: Session, admin: str | None, request: Any, write_to_log: LogWriter):
@@ -208,6 +222,10 @@ def update_player_info(db: Session, admin: str | None, request: Any, write_to_lo
         old_position = player.position
         old_nationality = player.nationality
         old_age = player.age
+        old_ca = player.ca
+        old_pa = player.pa
+        requested_ca = getattr(request, "ca", None)
+        requested_pa = getattr(request, "pa", None)
 
         changes = []
         if request.name is not None and request.name != player.name:
@@ -222,8 +240,17 @@ def update_player_info(db: Session, admin: str | None, request: Any, write_to_lo
         if request.age is not None and request.age != player.age:
             player.age = request.age
             changes.append(f"age {old_age}->{request.age}")
+        if requested_ca is not None and requested_ca != player.ca:
+            player.ca = requested_ca
+            changes.append(f"CA {old_ca}->{requested_ca}")
+        if requested_pa is not None and requested_pa != player.pa:
+            player.pa = requested_pa
+            changes.append(f"PA {old_pa}->{requested_pa}")
 
-        should_refresh_financials = request.position is not None or request.age is not None
+        should_refresh_financials = any(
+            value is not None
+            for value in (request.position, request.age, requested_ca, requested_pa)
+        )
         if should_refresh_financials:
             refresh_player_financials(player, db)
 

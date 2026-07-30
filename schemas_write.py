@@ -1,4 +1,5 @@
-from typing import Any, Optional
+from datetime import datetime
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -25,6 +26,25 @@ class LogoutResponse(BaseModel):
 class AdminActionResponse(BaseModel):
     success: bool
     message: str
+
+
+class HomePromotionUpsertRequest(BaseModel):
+    content_type: Literal["announcement", "honor", "update", "event"] = "announcement"
+    theme: Literal["violet", "blue", "green", "gold", "rose", "neutral"] = "violet"
+    icon: Literal["megaphone", "trophy", "list", "star", "whistle", "info"] = "megaphone"
+    eyebrow: str = "HEIGO Broadcast"
+    title: str
+    body: str = ""
+    image_url: Optional[str] = None
+    action_label: Optional[str] = None
+    action_kind: Literal["none", "tab", "url"] = "none"
+    action_target: Optional[str] = None
+    is_active: bool = True
+    is_pinned: bool = False
+    is_dismissible: bool = True
+    sort_order: int = 100
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
 
 
 class ImportDatasetSummaryResponse(BaseModel):
@@ -118,6 +138,11 @@ class SiteNoteUpdateRequest(BaseModel):
     text: str = ""
 
 
+class TeamLineupUpdateRequest(BaseModel):
+    formation: str = "4-3-3"
+    picks: dict[str, int] = Field(default_factory=dict)
+
+
 class CoachUpdateRequest(BaseModel):
     nickname: Optional[str] = None
     title: Optional[str] = None
@@ -158,9 +183,45 @@ class CoachAccountUpsertRequest(BaseModel):
     can_manage_candidate_lists: bool = False
 
 
+class CoachTeamAssignmentRequest(BaseModel):
+    team_id: Optional[int] = None
+
+
+class CoachMergeRequest(BaseModel):
+    target_coach_uid: str
+
+
 class CoachPasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str
+
+
+class CoachQqBindingRequest(BaseModel):
+    qq_number: str
+    current_password: str
+
+
+class CompetitionRoundConfirmationRequest(BaseModel):
+    confirmed: bool = True
+    note: Optional[str] = None
+
+
+class CompetitionRoundAssignmentRequest(BaseModel):
+    assignee_principal_id: Optional[str] = None
+
+
+class CompetitionResponsibilityUpdateRequest(BaseModel):
+    schedule_principal_id: Optional[str] = None
+    suspension_principal_id: Optional[str] = None
+
+
+class CompetitionRoundSubmissionRequest(BaseModel):
+    note: Optional[str] = None
+
+
+class CompetitionRoundReviewRequest(BaseModel):
+    approved: bool = True
+    note: Optional[str] = None
 
 
 class BatchActionItemResponse(BaseModel):
@@ -244,6 +305,7 @@ class TeamUpdateRequest(BaseModel):
     name: Optional[str] = None
     notes: Optional[str] = None
     level: Optional[str] = None
+    wage_cap: Optional[float] = Field(default=None, gt=0, le=100)
 
 
 class PlayerUpdateRequest(BaseModel):
@@ -252,6 +314,8 @@ class PlayerUpdateRequest(BaseModel):
     position: Optional[str] = None
     nationality: Optional[str] = None
     age: Optional[int] = None
+    ca: Optional[int] = Field(default=None, ge=1, le=200)
+    pa: Optional[int] = Field(default=None, ge=-10, le=200)
 
 
 class UpdateUidRequest(BaseModel):
@@ -287,8 +351,11 @@ class AdvancedAttributeSearchRequest(BaseModel):
     age: Optional[AdvancedAttributeRangeRequest] = None
     ca: Optional[AdvancedAttributeRangeRequest] = None
     pa: Optional[AdvancedAttributeRangeRequest] = None
+    weighted_power: Optional[AdvancedAttributeRangeRequest] = None
     attributes: dict[str, AdvancedAttributeRangeRequest] = Field(default_factory=dict)
     positions: list[AdvancedAttributePositionRequest] = Field(default_factory=list)
+    sea_status: Optional[Literal["in_sea", "not_in_sea"]] = None
+    uids: list[int] = Field(default_factory=list)
     limit: int = 200
 
 

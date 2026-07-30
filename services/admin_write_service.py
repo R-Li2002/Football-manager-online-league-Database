@@ -8,6 +8,7 @@ from services.admin_write_actions import (
     initialize_cup_bracket,
     import_latest_schedule,
     import_current_league_data,
+    import_player_attributes_data,
     recalculate_wages,
     rebuild_team_stat_caches,
     rejuvenate_player,
@@ -48,4 +49,5 @@ __all__ = [
     "recalculate_wages",
     "rebuild_team_stat_caches",
     "import_current_league_data",
+    "import_player_attributes_data",
 ]

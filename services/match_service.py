@@ -185,18 +185,22 @@ def parse_schedule_workbook(path: Path) -> list[ParsedFixture]:
     return fixtures
 
 
-def import_latest_schedule(db: Session, admin: str | None, write_to_log: LogWriter) -> ScheduleImportResponse:
+def import_schedule_file(
+    db: Session,
+    admin: str | None,
+    write_to_log: LogWriter,
+    path: str | Path,
+) -> ScheduleImportResponse:
     operator = require_admin(admin)
-    path = find_latest_schedule_file()
+    path = Path(path)
     fixtures = parse_schedule_workbook(path)
-    team_by_name = {team.name: team for team in list_visible_teams(db, VISIBLE_LEVEL)}
     fixture_keys = {(item.level, item.round_no, item.home_team_name, item.away_team_name) for item in fixtures}
     warnings: list[str] = []
     created = updated = unchanged = 0
 
     for item in fixtures:
-        home_team = team_by_name.get(item.home_team_name)
-        away_team = team_by_name.get(item.away_team_name)
+        home_team = _resolve_schedule_team(db, None, item.home_team_name)
+        away_team = _resolve_schedule_team(db, None, item.away_team_name)
         if not home_team:
             warnings.append(f"未匹配主队：{item.home_team_name}")
         if not away_team:
@@ -260,6 +264,11 @@ def import_latest_schedule(db: Session, admin: str | None, write_to_log: LogWrit
     )
 
 
+def import_latest_schedule(db: Session, admin: str | None, write_to_log: LogWriter) -> ScheduleImportResponse:
+    require_admin(admin)
+    return import_schedule_file(db, admin, write_to_log, find_latest_schedule_file())
+
+
 def get_schedule(db: Session, *, level: str | None = None, round_no: int | None = None) -> ScheduleResponse:
     matches = list_matches(db, level=level, round_no=round_no)
     events_by_match: dict[int, list[MatchPlayerEventResponse]] = {}
@@ -317,12 +326,34 @@ def get_standings(db: Session) -> StandingsResponse:
         for team in teams
     }
     rows_by_team_id = {row["team_id"]: row for row in rows_by_team.values() if row["team_id"] is not None}
+    rows_by_lookup_name = dict(rows_by_team)
+    rows_by_normalized_name: dict[str, dict[str, Any]] = {}
+    for team in teams:
+        row = rows_by_team.get(team.name)
+        if not row:
+            continue
+        rows_by_lookup_name.setdefault(team.name, row)
+        normalized = _normalize_team_lookup_name(team.name)
+        if normalized:
+            rows_by_normalized_name.setdefault(normalized, row)
+    for raw_name, canonical_name in SCHEDULE_TEAM_ALIASES.items():
+        row = rows_by_lookup_name.get(canonical_name)
+        if not row:
+            continue
+        rows_by_lookup_name.setdefault(raw_name, row)
+        normalized = _normalize_team_lookup_name(raw_name)
+        if normalized:
+            rows_by_normalized_name.setdefault(normalized, row)
 
     for match in list_played_matches(db):
         home = rows_by_team_id.get(match.home_team_id) if match.home_team_id is not None else None
         away = rows_by_team_id.get(match.away_team_id) if match.away_team_id is not None else None
-        home = home or rows_by_team.get(match.home_team_name)
-        away = away or rows_by_team.get(match.away_team_name)
+        home = home or rows_by_lookup_name.get(match.home_team_name)
+        away = away or rows_by_lookup_name.get(match.away_team_name)
+        if not home:
+            home = rows_by_normalized_name.get(_normalize_team_lookup_name(match.home_team_name))
+        if not away:
+            away = rows_by_normalized_name.get(_normalize_team_lookup_name(match.away_team_name))
         if not home or not away:
             continue
         home_score = int(match.home_score or 0)

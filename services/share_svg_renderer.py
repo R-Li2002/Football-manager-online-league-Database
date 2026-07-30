@@ -8,6 +8,7 @@ from services.share_card_model_service import (
     RosterPlayerRow,
     RosterShareCardModel,
     SHARE_FONT_FAMILY,
+    SHARE_LATIN_FONT_FAMILY,
     ShareGroup,
     ShareMetric,
     SharePositionMarker,
@@ -16,6 +17,11 @@ from services.share_card_model_service import (
     build_roster_share_card_model,
     build_wage_share_card_model,
 )
+
+
+def _player_name_font_class(player_name: str) -> str:
+    has_cjk = any("\u3400" <= char <= "\u9fff" for char in str(player_name or ""))
+    return "player-name-cjk" if has_cjk else "player-name-latin"
 
 
 def _theme_tokens(theme: str) -> dict[str, str]:
@@ -179,6 +185,38 @@ def _render_player_info_rows(*, model, x: int, y: int, width: int, tokens: dict[
         )
         current_y += 38
     return "".join(rows)
+
+
+def _power_level_accent(value: str) -> str:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return "#edf2f7"
+    if score < 50:
+        return "#edf2f7"
+    if score < 60:
+        return "#39d98a"
+    if score < 70:
+        return "#4d8dff"
+    if score < 80:
+        return "#a66cff"
+    if score < 90:
+        return "#ff9f43"
+    return "#ff4d5e"
+
+
+def _render_player_power_panel(*, model, x: int, y: int, width: int, tokens: dict[str, str]) -> str:
+    accent = _power_level_accent(model.heigo_power_value)
+    split_x = x + width / 2
+    return (
+        f'<rect x="{x}" y="{y}" width="{width}" height="82" rx="12" fill="{accent}" fill-opacity="0.10" stroke="{accent}" stroke-opacity="0.42" />'
+        f'<line x1="{split_x:.1f}" y1="{y + 12}" x2="{split_x:.1f}" y2="{y + 70}" stroke="{accent}" stroke-opacity="0.32" />'
+        f'<text x="{x + 14}" y="{y + 24}" font-size="11.5" font-weight="800" fill="{tokens["muted"]}">加权战力值</text>'
+        f'<text x="{x + 14}" y="{y + 60}" font-size="27" font-weight="900" fill="{accent}">{escape(model.weighted_power_value)}</text>'
+        f'<text x="{split_x + 14:.1f}" y="{y + 24}" font-size="11.5" font-weight="800" fill="{tokens["muted"]}">HEIGO战力</text>'
+        f'<text x="{x + width - 14}" y="{y + 24}" font-size="10.5" font-weight="800" fill="{tokens["text"]}" text-anchor="end">{escape(model.top_percent_label)}</text>'
+        f'<text x="{split_x + 14:.1f}" y="{y + 60}" font-size="27" font-weight="900" fill="{accent}">{escape(model.heigo_power_value)}</text>'
+    )
 
 
 def _render_position_map(*, x: int, y: int, width: int, markers: tuple[SharePositionMarker, ...], tokens: dict[str, str]) -> str:
@@ -348,8 +386,17 @@ def build_player_share_svg(
     version: str | None = None,
     step: int = 0,
     theme: str = "dark",
+    heigo_power: float | None = None,
+    top_percent: float | None = None,
 ) -> str:
-    model = build_player_share_card_model(player, version=version, step=step, theme=theme)
+    model = build_player_share_card_model(
+        player,
+        version=version,
+        step=step,
+        theme=theme,
+        heigo_power=heigo_power,
+        top_percent=top_percent,
+    )
     tokens = _theme_tokens(model.theme)
     width = model.canvas_width
     height = model.canvas_height
@@ -367,8 +414,9 @@ def build_player_share_svg(
     hidden_h = height - hidden_y - 48
     reactions_svg = _render_reaction_pills(x=left_x + 20, y=left_y + 96, model=model, theme=model.theme)
     has_reactions = bool(reactions_svg)
-    info_y = left_y + (154 if has_reactions else 124)
-    position_map_y = left_y + (512 if has_reactions else 482)
+    power_y = left_y + (146 if has_reactions else 102)
+    info_y = power_y + 106
+    position_map_y = info_y + len(model.info_rows) * 38 + 28
     habit_y = position_map_y + 286
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
   <defs>
@@ -378,6 +426,8 @@ def build_player_share_svg(
     </linearGradient>
     <style>
       text {{ font-family: {SHARE_FONT_FAMILY}; dominant-baseline: alphabetic; }}
+      .player-name-latin {{ font-family: {SHARE_LATIN_FONT_FAMILY}; }}
+      .player-name-cjk {{ font-family: {SHARE_FONT_FAMILY}; }}
     </style>
   </defs>
   <rect width="{width}" height="{height}" fill="url(#page-bg)" />
@@ -387,9 +437,10 @@ def build_player_share_svg(
   <text x="54" y="66" font-size="12" font-weight="700" fill="{tokens["muted"]}">HEIGO 球员详情图</text>
   <text x="{width - 54}" y="66" font-size="12" font-weight="700" fill="{tokens["muted"]}" text-anchor="end">{escape(preview_copy + version_copy)}</text>
   <rect x="{left_x}" y="{left_y}" width="{left_w}" height="{left_h}" rx="18" fill="{tokens["panel_soft"]}" stroke="{tokens["line"]}" />
-  <text x="{left_x + 20}" y="{left_y + 46}" font-size="28" font-weight="800" fill="{tokens["text"]}">{escape(model.player_name)}</text>
+  <text class="{_player_name_font_class(model.player_name)}" x="{left_x + 20}" y="{left_y + 46}" font-size="28" font-weight="800" fill="{tokens["text"]}">{escape(model.player_name)}</text>
   <text x="{left_x + 20}" y="{left_y + 76}" font-size="14" fill="{tokens["muted"]}">UID: {model.uid}{escape(version_copy)}</text>
   {reactions_svg}
+  {_render_player_power_panel(model=model, x=left_x + 20, y=power_y, width=left_w - 40, tokens=tokens)}
   {_render_player_info_rows(model=model, x=left_x + 20, y=info_y, width=left_w - 40, tokens=tokens)}
   {_render_position_map(x=left_x + 20, y=position_map_y, width=left_w - 40, markers=model.position_markers, tokens=tokens)}
   {''.join(f'<text x="{left_x + 20}" y="{habit_y + index * 22}" font-size="12.5" fill="{tokens["muted"] if index == 0 else tokens["text"]}">{escape(line)}</text>' for index, line in enumerate((["球员习惯"] + habits[:2]) if habits else []))}

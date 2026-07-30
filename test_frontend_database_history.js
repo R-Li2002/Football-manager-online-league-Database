@@ -146,6 +146,7 @@ const history = {
 };
 
 const fetchPayloads = {
+    '/api/home/summary': {team_count: 0, player_count: 0, database_player_count: 0, default_attribute_version: '2620'},
     '/api/teams': [],
     '/api/players': [],
     '/api/league/info': [],
@@ -155,6 +156,8 @@ const fetchPayloads = {
 
 const context = {
     console,
+    URL,
+    URLSearchParams,
     document,
     window: {
         document,
@@ -247,6 +250,25 @@ async function flushMicrotasks() {
     assert.equal(restoredSearch.options.pushHistory, false);
     assert.equal(restoredSearch.filters.positions.ST, 15);
     assert.equal(restoredSearch.filters.ca.min, '120');
+
+    const competitionState = context.normalizeHistoryState({
+        __appHistory: 'heigo-spa',
+        tab: 'competition',
+        competition: {
+            subtab: 'schedule',
+            level: '甲级',
+            round: 17,
+            workFilter: 'missing_events',
+            rankingType: 'assists',
+        },
+    });
+    assert.equal(competitionState.competition.subtab, 'schedule');
+    assert.equal(competitionState.competition.level, '甲级');
+    assert.equal(competitionState.competition.round, 17);
+    assert.equal(competitionState.competition.workFilter, 'missing_events');
+    assert.equal(competitionState.competition.rankingType, 'assists');
+    assert.match(context.buildAppHistoryUrl(competitionState), /competitionSubtab=schedule/);
+    assert.match(context.buildAppHistoryUrl(competitionState), /workFilter=missing_events/);
 })().catch(error => {
     console.error(error);
     process.exit(1);

@@ -1,17 +1,23 @@
 ﻿from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime, time as day_time, timedelta
 from zoneinfo import ZoneInfo
 
 from nonebot import get_bots, get_driver, on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageEvent, MessageSegment
+from nonebot.matcher import Matcher
 from nonebot.params import EventPlainText
 from nonebot.rule import to_me
+from nonebot_plugin_waiter import waiter
 
+from .command_schema import create_command_matchers
 from .config import BotSettings
 from .heigo_api import HeigoApiClient
+from .models import CommandSpec, ReplySpec
 from .news_service import SeenNewsStore
+from .parser import parse_command
 from .rate_limit import InMemoryRateLimiter
 from .service import HeigoBotService
 from .signer import RenderUrlSigner
@@ -118,19 +124,15 @@ if hasattr(driver, "server_app"):
         }
 
 
-matcher = on_message(rule=to_me(), priority=10, block=False)
-
-
-@matcher.handle()
-async def _(bot: Bot, event: MessageEvent, plain_text: str = EventPlainText()):
+def _is_request_allowed(event: MessageEvent) -> bool:
     if isinstance(event, GroupMessageEvent) and not settings.is_group_allowed(str(event.group_id)):
-        return
+        return False
 
     user_id = str(getattr(event, "user_id", "") or "")
     if user_id:
         allowed, _ = rate_limiter.check_user_cooldown(f"user:{user_id}", settings.bot_user_cooldown_seconds)
         if not allowed:
-            return
+            return False
 
     if isinstance(event, GroupMessageEvent):
         allowed, _ = rate_limiter.check_group_window(
@@ -138,9 +140,11 @@ async def _(bot: Bot, event: MessageEvent, plain_text: str = EventPlainText()):
             settings.bot_group_limit_per_minute,
         )
         if not allowed:
-            return
+            return False
+    return True
 
-    reply = await service.handle_text(plain_text)
+
+async def _send_reply(event_matcher: type[Matcher], event: MessageEvent, reply: ReplySpec) -> None:
     if reply.reply_type == "noop":
         return
 
@@ -155,4 +159,92 @@ async def _(bot: Bot, event: MessageEvent, plain_text: str = EventPlainText()):
     else:
         message += MessageSegment.text(reply.text)
 
-    await matcher.send(message)
+    await event_matcher.send(message)
+
+
+def _candidate_prompt(keyword: str, candidates: tuple[dict, ...]) -> str:
+    lines = [f"“{keyword}”匹配到多个球员，请回复序号选择（30 秒内有效）："]
+    for index, candidate in enumerate(candidates, start=1):
+        name = str(candidate.get("name") or "未知球员")
+        uid = str(candidate.get("uid") or "-")
+        club = str(candidate.get("heigo_club") or candidate.get("club") or "").strip()
+        suffix = f" | {club}" if club else ""
+        lines.append(f"{index}. {name} | UID {uid}{suffix}")
+    lines.append("回复“取消”可结束选择。")
+    return "\n".join(lines)
+
+
+async def _resolve_ambiguous_player(
+    event_matcher: type[Matcher],
+    command: CommandSpec,
+) -> tuple[CommandSpec | None, ReplySpec | None]:
+    resolution = await service.resolve_player_command(command)
+    if resolution.error:
+        return None, resolution.error
+    if resolution.command:
+        return resolution.command, None
+
+    candidates = resolution.candidates
+
+    @waiter(["message"], matcher=event_matcher, keep_session=True, block=True)
+    async def wait_for_choice(event: MessageEvent) -> str:
+        return event.get_plaintext().strip()
+
+    prompt = _candidate_prompt(command.keyword, candidates)
+    for attempt in range(3):
+        before = prompt if attempt == 0 else f"请输入 1-{len(candidates)} 的序号，或回复“取消”。"
+        answer = await wait_for_choice.wait(before, timeout=30)
+        if answer is None:
+            return None, ReplySpec(reply_type="text", text="选择已超时，请重新发送原命令。")
+        normalized = answer.strip()
+        if normalized in {"取消", "cancel", "退出"}:
+            return None, ReplySpec(reply_type="text", text="已取消球员选择。")
+        if normalized.isdigit():
+            selected_index = int(normalized) - 1
+            if 0 <= selected_index < len(candidates):
+                selected_uid = int(candidates[selected_index]["uid"])
+                return replace(command, uid=selected_uid), None
+
+    return None, ReplySpec(reply_type="text", text="输入次数过多，已结束选择，请重新发送原命令。")
+
+
+async def _handle_command_message(
+    event_matcher: type[Matcher],
+    event: MessageEvent,
+    plain_text: str,
+) -> None:
+    if not _is_request_allowed(event):
+        return
+
+    command = parse_command(plain_text)
+    if command.command_type in {"player_image", "wage_text", "wage_image"}:
+        command, error = await _resolve_ambiguous_player(event_matcher, command)
+        if error:
+            await _send_reply(event_matcher, event, error)
+            return
+        if command is None:
+            return
+
+    reply = await service.handle_command(command)
+    await _send_reply(event_matcher, event, reply)
+
+
+command_matchers = create_command_matchers()
+
+
+def _register_command_handler(command_matcher: type[Matcher]) -> None:
+    @command_matcher.handle()
+    async def _(event: MessageEvent, plain_text: str = EventPlainText()):
+        await _handle_command_message(command_matcher, event, plain_text)
+
+
+for _command_matcher in command_matchers.values():
+    _register_command_handler(_command_matcher)
+
+
+fallback_matcher = on_message(rule=to_me(), priority=20, block=False)
+
+
+@fallback_matcher.handle()
+async def _(event: MessageEvent, plain_text: str = EventPlainText()):
+    await _handle_command_message(fallback_matcher, event, plain_text)

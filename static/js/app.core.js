@@ -58,6 +58,17 @@ var activeCandidateList = null;
 var activeCandidateListPlayers = [];
 var candidateDockExpanded = false;
 var candidateDockBusy = false;
+var currentCoachAccount = {authenticated: false};
+var workspaceSessionState = {authenticated: false, identity: null};
+var homeSummary = {
+    team_count: 0,
+    player_count: 0,
+    database_player_count: 0,
+    default_attribute_version: '',
+};
+var currentOverviewSort = {field: '', order: '', type: 'number'};
+var overviewMetaExpanded = false;
+var currentDbSort = {field: '', order: '', type: 'number'};
 
 window.AppState = window.AppState || {};
 Object.defineProperties(window.AppState, {
@@ -99,6 +110,9 @@ Object.defineProperties(window.AppState, {
     activeCandidateListPlayers: {enumerable: true, get: () => activeCandidateListPlayers, set: value => { activeCandidateListPlayers = value; }},
     candidateDockExpanded: {enumerable: true, get: () => candidateDockExpanded, set: value => { candidateDockExpanded = value; }},
     candidateDockBusy: {enumerable: true, get: () => candidateDockBusy, set: value => { candidateDockBusy = value; }},
+    homeSummary: {enumerable: true, get: () => homeSummary, set: value => { homeSummary = value; }},
+    currentCoachAccount: {enumerable: true, get: () => currentCoachAccount, set: value => { currentCoachAccount = value; }},
+    workspaceSessionState: {enumerable: true, get: () => workspaceSessionState, set: value => { workspaceSessionState = value; }},
 });
 
 function syncThemeToggleState() {
@@ -109,7 +123,7 @@ function syncThemeToggleState() {
         themeIcon.textContent = '☀';
         themeText.textContent = '切换白天';
     } else {
-        themeIcon.textContent = '🌙';
+        themeIcon.textContent = '☾';
         themeText.textContent = '切换夜间';
     }
 }
@@ -218,6 +232,30 @@ function escapeHtml(value) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function renderLeagueLevelSignature(level, options = {}) {
+    const config = {
+        '超级': {className: 'level-super', character: 'S', english: 'SUPER'},
+        '甲级': {className: 'level-a', character: 'A', english: 'FIRST'},
+        '乙级': {className: 'level-b', character: 'B', english: 'SECOND'},
+    }[level] || {className: '', character: '?', english: 'LEAGUE'};
+    const safeLevel = escapeHtml(level || '未知');
+    const compactClass = options.compact ? ' is-compact' : '';
+    const copy = options.compact ? '' : `<span class="league-level-copy"><strong>${safeLevel}</strong><small>${config.english}</small></span>`;
+    return `<span class="league-level-signature ${config.className}${compactClass}" title="${safeLevel}联赛"${options.compact ? ` aria-label="${safeLevel}联赛"` : ''}><span class="league-level-mark" aria-hidden="true">${config.character}</span>${copy}</span>`;
+}
+
+function renderLeagueLevelBadge(level) {
+    return renderLeagueLevelSignature(level);
+}
+
+function renderLeagueTierSet() {
+    return `<span class="league-tier-set" aria-label="超级、甲级、乙级联赛">${['超级', '甲级', '乙级'].map(level => renderLeagueLevelSignature(level, {compact: true})).join('')}</span>`;
+}
+
+function htmlJsString(value) {
+    return escapeHtml(JSON.stringify(String(value ?? '')));
 }
 
 const NATIONALITY_SHORT_NAME_MAP = {
@@ -424,14 +462,18 @@ function buildSearchNormalizedKeys(value) {
     return {strictKeys, looseKeys};
 }
 
-function showModal(title, body) {
+function showModal(title, body, options = {}) {
     document.getElementById('modalTitle').textContent = title;
     document.getElementById('modalBody').innerHTML = body;
-    document.getElementById('resultModal').classList.add('active');
+    const modal = document.getElementById('resultModal');
+    modal.classList.toggle('is-locked', options.locked === true);
+    modal.classList.add('active');
 }
 
-function closeModal() {
-    document.getElementById('resultModal').classList.remove('active');
+function closeModal(options = {}) {
+    const modal = document.getElementById('resultModal');
+    if (modal.classList.contains('is-locked') && options.force !== true) return;
+    modal.classList.remove('active', 'is-locked');
 }
 
 window.AppCore = {

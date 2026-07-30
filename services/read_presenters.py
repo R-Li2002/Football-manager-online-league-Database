@@ -23,6 +23,9 @@ TEAM_RESPONSE_FIELDS = (
     "wage",
     "team_size",
     "gk_count",
+    "extra_wage",
+    "wage_cap",
+    "after_tax",
     "final_wage",
     "count_8m",
     "count_7m",
@@ -220,7 +223,15 @@ def _coerce_birth_date(value: Any) -> str:
     return text
 
 
-def build_attribute_search_response(player: Any, *, data_version: str, heigo_club: str) -> AttributeSearchResponse:
+def build_attribute_search_response(
+    player: Any,
+    *,
+    data_version: str,
+    heigo_club: str,
+    weighted_power: float | None = None,
+    heigo_power: float | None = None,
+    top_percent: float | None = None,
+) -> AttributeSearchResponse:
     return AttributeSearchResponse(
         uid=player.uid,
         name=player.name,
@@ -232,6 +243,9 @@ def build_attribute_search_response(player: Any, *, data_version: str, heigo_clu
         nationality=player.nationality,
         club=player.club,
         heigo_club=heigo_club,
+        weighted_power=weighted_power,
+        heigo_power=heigo_power,
+        top_percent=top_percent,
     )
 
 
@@ -306,5 +320,6 @@ def build_team_info_response(team: Any) -> TeamInfoResponse:
         manager=team.manager,
         level=team.level,
         wage=team.wage,
+        wage_cap=team.wage_cap,
         notes=team.notes,
     )

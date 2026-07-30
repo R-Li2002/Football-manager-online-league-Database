@@ -1,7 +1,7 @@
 import os
 from uuid import uuid4
 
-from fastapi import APIRouter, Cookie, Depends, Response
+from fastapi import APIRouter, Cookie, Depends, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -17,25 +17,34 @@ from schemas_read import (
     CoachesResponse,
     CoachReactionActionResponse,
     DataFeedbackSubmitResponse,
+    HomePromotionResponse,
+    HomeSummaryResponse,
     CupBracketResponse,
     LeagueInfoResponse,
     ScheduleResponse,
     PlayerReactionActionResponse,
     PlayerReactionLeaderboardResponse,
+    PlayerPowerCalibrationResponse,
+    PlayerPowerRankingResponse,
+    TeamPowerSummariesResponse,
     PlayerAttributeDetailResponse,
     PlayerRankingsResponse,
     PlayerResponse,
     ProjectUpdateEntryResponse,
+    SiteVisitStatsResponse,
     SiteNoteResponse,
     StandingsResponse,
     SuspensionsResponse,
     TeamResponse,
+    TeamLineupResponse,
     WageDetailResponse,
 )
 from schemas_write import AdvancedAttributeSearchRequest, AttributeBatchLookupRequest, DataFeedbackRequest
-from services import candidate_list_service, coach_service, cup_service, data_feedback_service, export_service, player_ranking_service, project_update_service, read_service, reaction_service, site_note_service, suspension_service
+from services import candidate_list_service, coach_service, cup_service, data_feedback_service, export_service, home_promotion_service, home_service, player_ranking_service, project_update_service, read_service, reaction_service, site_note_service, site_visit_service, suspension_service, team_lineup_service
 
 REACTION_VISITOR_COOKIE_NAME = "heigo_reaction_visitor"
+ADMIN_SESSION_COOKIE_NAME = "session_token"
+COACH_SESSION_COOKIE_NAME = "coach_session_token"
 REACTION_VISITOR_COOKIE_MAX_AGE_SECONDS = 31536000
 REACTION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"}
 
@@ -63,9 +72,27 @@ def build_public_router(get_db):
     def get_league_info(db: Session = Depends(get_db)):
         return read_service.get_league_info(db)
 
+    @router.get("/api/home/summary", response_model=HomeSummaryResponse)
+    def get_home_summary(db: Session = Depends(get_db)):
+        return home_service.get_home_summary(db)
+
     @router.get("/api/teams", response_model=list[TeamResponse])
     def get_teams(db: Session = Depends(get_db)):
         return read_service.get_teams(db)
+
+    @router.get("/api/teams/{team_id}/lineup", response_model=TeamLineupResponse)
+    def get_team_lineup(
+        team_id: int,
+        admin_session_token: str | None = Cookie(None, alias=ADMIN_SESSION_COOKIE_NAME),
+        coach_session_token: str | None = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        return team_lineup_service.get_team_lineup(
+            db,
+            team_id,
+            admin_session_token=admin_session_token,
+            coach_session_token=coach_session_token,
+        )
 
     @router.get("/api/coaches", response_model=CoachesResponse)
     def get_coaches(
@@ -129,6 +156,14 @@ def build_public_router(get_db):
     def get_site_notes(db: Session = Depends(get_db)):
         return site_note_service.list_site_notes(db)
 
+    @router.get("/api/home-promotions", response_model=list[HomePromotionResponse])
+    def get_home_promotions(db: Session = Depends(get_db)):
+        return home_promotion_service.list_public_promotions(db)
+
+    @router.post("/api/site-visits", response_model=SiteVisitStatsResponse)
+    def record_site_visit(db: Session = Depends(get_db)):
+        return site_visit_service.record_site_visit(db)
+
     @router.get("/api/cups/{competition}/bracket", response_model=CupBracketResponse)
     def get_cup_bracket(competition: str, db: Session = Depends(get_db)):
         return cup_service.get_bracket(db, competition)
@@ -184,6 +219,50 @@ def build_public_router(get_db):
     def get_attribute_versions(db: Session = Depends(get_db)):
         return read_service.get_attribute_versions(db)
 
+    @router.get("/api/attributes/power-ranking", response_model=PlayerPowerRankingResponse)
+    def get_player_power_ranking(
+        shape: str = "all",
+        limit: str = "50",
+        team: str | None = None,
+        version: str | None = None,
+        db: Session = Depends(get_db),
+    ):
+        from services import player_power_ranking_service
+
+        return player_power_ranking_service.get_player_power_ranking(
+            db,
+            shape=shape,
+            limit=limit,
+            team_name=team,
+            data_version=version,
+        )
+
+    @router.get("/api/attributes/power-calibration", response_model=PlayerPowerCalibrationResponse)
+    def get_player_power_calibration(
+        version: str | None = None,
+        db: Session = Depends(get_db),
+    ):
+        from services import player_power_ranking_service
+
+        calibration = player_power_ranking_service.get_power_calibration(db, data_version=version)
+        return PlayerPowerCalibrationResponse(
+            data_version=calibration.data_version,
+            player_count=calibration.player_count,
+            median_score=calibration.median_score,
+            mad=calibration.mad,
+            robust_scale=calibration.robust_scale,
+            sorted_scores=list(calibration.sorted_scores),
+        )
+
+    @router.get("/api/teams/power-summaries", response_model=TeamPowerSummariesResponse)
+    def get_team_power_summaries(
+        version: str | None = None,
+        db: Session = Depends(get_db),
+    ):
+        from services import player_power_ranking_service
+
+        return player_power_ranking_service.get_team_power_summaries(db, data_version=version)
+
     @router.get("/api/attributes/{uid}", response_model=PlayerAttributeDetailResponse | None)
     def get_player_attribute_detail(
         uid: int,
@@ -230,6 +309,43 @@ def build_public_router(get_db):
     @router.get("/api/export/excel")
     def export_excel(db: Session = Depends(get_db)):
         output, filename = export_service.build_export_excel(db)
+        media_type = (
+            "application/vnd.ms-excel.sheet.macroEnabled.12"
+            if filename.lower().endswith(".xlsm")
+            else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        return StreamingResponse(
+            output,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @router.get("/api/export/suspensions.xlsx")
+    def export_suspensions_excel(
+        level: str = Query(...),
+        db: Session = Depends(get_db),
+    ):
+        try:
+            output, filename = export_service.build_suspensions_excel(db, level)
+        except ValueError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @router.get("/api/export/standings.xlsx")
+    def export_standings_excel(
+        level: str = Query(...),
+        db: Session = Depends(get_db),
+    ):
+        try:
+            output, filename = export_service.build_standings_excel(db, level)
+        except ValueError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return StreamingResponse(
             output,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

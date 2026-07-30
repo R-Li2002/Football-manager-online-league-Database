@@ -148,6 +148,7 @@ function buildComparisonEntry(slot, slotIndex) {
         slotIndex,
         accentClass: getCompareAccentClass(slotIndex),
         previewPlayer,
+        weightedPower: calculateWeightedPower(previewPlayer),
         weakFootPreview: getWeakFootPreview(slot.player, slot.step),
         collections: getPlayerFieldCollections(previewPlayer),
     };
@@ -258,7 +259,9 @@ function buildComparisonSlider(slotIndex, slot, accentClass) {
 }
 
 function buildComparisonPlayerCard(entry) {
-    const {slot, slotIndex, accentClass, previewPlayer, weakFootPreview} = entry;
+    const {slot, slotIndex, accentClass, previewPlayer, weakFootPreview, weightedPower} = entry;
+    const weightedPowerLabel = weightedPower.score === null ? '—' : weightedPower.score.toFixed(2);
+    const heigoMetrics = calculateHeigoPowerMetrics(weightedPower.score);
     return `
         <section class="comparison-player-card ${accentClass}">
             <div class="comparison-player-head">
@@ -269,6 +272,16 @@ function buildComparisonPlayerCard(entry) {
                 <div class="comparison-player-tag">${escapeHtml(slot.player.position || '-')}</div>
             </div>
             <div class="comparison-player-club">${escapeHtml(slot.player.heigo_club || '-')} / ${escapeHtml(slot.player.club || '-')}</div>
+            <div class="comparison-weighted-power ${getHeigoPowerTone(heigoMetrics?.heigoPower)}">
+                <div class="comparison-power-entry">
+                    <span>加权战力值</span>
+                    <strong>${escapeHtml(weightedPowerLabel)}${weightedPower.score === null ? '' : '<small>/100</small>'}</strong>
+                </div>
+                <div class="comparison-power-entry is-heigo">
+                    <span>HEIGO战力 ${heigoMetrics ? `<em>前 ${heigoMetrics.topPercentLabel}%</em>` : ''}</span>
+                    <strong>${heigoMetrics ? heigoMetrics.heigoPower.toFixed(2) : '—'}</strong>
+                </div>
+            </div>
             ${buildComparisonSlider(slotIndex, slot, accentClass)}
             <div class="comparison-player-badges">
                 <span class="foot-badge">成长预览 <strong>+${clampGrowthPreviewStep(slot.step)}</strong></span>
@@ -361,6 +374,19 @@ function buildComparisonMetaRows(entries) {
         {label: '位置', values: entries.map(entry => entry.previewPlayer.position || '-')},
         {label: 'CA', values: entries.map(entry => entry.previewPlayer.ca ?? '-'), highlightValues: entries.map(entry => Number(entry.previewPlayer.ca) || null)},
         {label: 'PA', values: entries.map(entry => entry.previewPlayer.pa ?? '-'), highlightValues: entries.map(entry => Number(entry.previewPlayer.pa) || null)},
+        {
+            label: '加权战力值',
+            values: entries.map(entry => entry.weightedPower.score === null ? '—' : entry.weightedPower.score.toFixed(2)),
+            highlightValues: entries.map(entry => entry.weightedPower.score),
+        },
+        {
+            label: 'HEIGO战力 / 联赛位置',
+            values: entries.map(entry => {
+                const metrics = calculateHeigoPowerMetrics(entry.weightedPower.score);
+                return metrics ? `${metrics.heigoPower.toFixed(2)} · 前 ${metrics.topPercentLabel}%` : '—';
+            }),
+            highlightValues: entries.map(entry => calculateHeigoPowerMetrics(entry.weightedPower.score)?.heigoPower ?? null),
+        },
         {label: '身高', values: entries.map(entry => formatHeight(entry.previewPlayer.height)), highlightValues: entries.map(entry => Number(entry.previewPlayer.height) || null)},
         {label: '左脚', values: entries.map(entry => entry.previewPlayer.left_foot ?? '-'), highlightValues: entries.map(entry => Number(entry.previewPlayer.left_foot) || null)},
         {label: '右脚', values: entries.map(entry => entry.previewPlayer.right_foot ?? '-'), highlightValues: entries.map(entry => Number(entry.previewPlayer.right_foot) || null)},
@@ -459,7 +485,7 @@ function setCompareSlotGrowthStep(slotIndex, step) {
     }
 }
 
-function openComparisonWorkspace() {
+async function openComparisonWorkspace() {
     normalizeCompareSlots();
     if (playerCompareSlots.filter(Boolean).length < 2) {
         showModal('无法开始对比', '请先在球员详情页加入至少两名球员，再打开对比界面。');
@@ -469,6 +495,9 @@ function openComparisonWorkspace() {
     const overlay = document.getElementById('comparisonOverlay');
     overlay.classList.add('active');
     overlay.setAttribute('aria-hidden', 'false');
+    const content = document.getElementById('comparisonContent');
+    if (content) content.innerHTML = '<div class="loading">正在计算 HEIGO 相对战力...</div>';
+    await loadHeigoPowerCalibration(getPlayerDataVersion(playerCompareSlots.find(Boolean)?.player));
     renderComparisonWorkspace();
 }
 

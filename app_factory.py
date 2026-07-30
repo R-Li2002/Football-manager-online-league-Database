@@ -9,6 +9,7 @@ from fastapi import Cookie, Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from starlette.middleware.gzip import GZipMiddleware
 
 from app_bootstrap import LOG_FILE, initialize_app_state, shutdown_app_state, write_to_log
 from app_security import clear_session_cookie, set_session_cookie
@@ -18,13 +19,14 @@ from routers.admin_read_routes import build_admin_read_router
 from routers.admin_write_routes import build_admin_write_router
 from routers.frontend_routes import build_frontend_router
 from routers.public_routes import build_public_router
+from routers.workspace_routes import build_workspace_router
 from services import auth_service
 
 INTERNAL_SHARE_TOKEN = os.environ.get("INTERNAL_SHARE_TOKEN", "").strip()
 INTERNAL_SHARE_HEADER_NAME = "X-Internal-Share-Token"
 INTERNAL_RENDER_SIGNING_KEY = os.environ.get("INTERNAL_RENDER_SIGNING_KEY", "").strip()
 SHARE_CACHE_ROOT = os.environ.get("HEIGO_SHARE_CACHE_ROOT", "data/share-cache").strip() or "data/share-cache"
-SHARE_TEMPLATE_VERSION = int(os.environ.get("HEIGO_SHARE_TEMPLATE_VERSION", "2"))
+SHARE_TEMPLATE_VERSION = int(os.environ.get("HEIGO_SHARE_TEMPLATE_VERSION", "6"))
 COACH_SESSION_COOKIE_NAME = "coach_session_token"
 
 
@@ -173,6 +175,7 @@ def _make_border_white_transparent(image_path: str) -> None:
 
 def _register_routes(app: FastAPI) -> None:
     app.include_router(build_public_router(get_db))
+    app.include_router(build_workspace_router(get_db))
     app.include_router(build_admin_read_router(get_db, verify_authenticated_admin, verify_admin, LOG_FILE))
     app.include_router(
         build_admin_write_router(
@@ -199,6 +202,20 @@ def _register_routes(app: FastAPI) -> None:
     )
 
 
+def configure_http_delivery(app: FastAPI) -> None:
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
+
+    @app.middleware("http")
+    async def add_static_cache_headers(request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            if request.query_params.get("v"):
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            else:
+                response.headers["Cache-Control"] = "public, max-age=3600"
+        return response
+
+
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -209,6 +226,7 @@ def create_app() -> FastAPI:
             shutdown_app_state()
 
     app = FastAPI(title="HEIGO联机联赛数据库", lifespan=lifespan)
+    configure_http_delivery(app)
     _ensure_static_assets()
     app.mount("/static", StaticFiles(directory="static"), name="static")
     app.get("/health")(health_check)

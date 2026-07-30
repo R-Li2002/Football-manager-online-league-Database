@@ -1,11 +1,26 @@
 const ADVANCED_DB_SEARCH_LIMIT = 200;
 const ADVANCED_POSITION_SCORE_STEPS = [10, 15, 18];
 var currentAdvancedSearchTab = 'base';
+var databaseSearchRequestSequence = 0;
 const ADVANCED_DB_BASE_FIELDS = [
     ['age', '年龄'],
     ['ca', 'CA'],
     ['pa', 'PA'],
+    ['weighted_power', '加权战力值'],
+    ['height', '身高'],
+    ['left_foot', '左脚'],
+    ['right_foot', '右脚'],
 ];
+const ADVANCED_DB_TOP_LEVEL_RANGE_FIELDS = new Set(['age', 'ca', 'pa', 'weighted_power']);
+const ADVANCED_DB_BASE_RANGE_LIMITS = {
+    age: {min: 0, max: 99},
+    ca: {min: 0, max: 200},
+    pa: {min: 0, max: 200},
+    weighted_power: {min: 0, max: 100},
+    height: {min: 100, max: 250},
+    left_foot: {min: 1, max: 20},
+    right_foot: {min: 1, max: 20},
+};
 const ADVANCED_DB_ATTRIBUTE_GROUPS = [
     {
         key: 'technical',
@@ -119,9 +134,8 @@ function getAdvancedAttributeGroup(key) {
 
 function createEmptyDatabaseAdvancedFilters() {
     return {
-        age: {min: '', max: ''},
-        ca: {min: '', max: ''},
-        pa: {min: '', max: ''},
+        ...Object.fromEntries(ADVANCED_DB_BASE_FIELDS.map(([field]) => [field, {min: '', max: ''}])),
+        sea_status: '',
         attributes: {},
         positions: {},
     };
@@ -147,9 +161,10 @@ function normalizeAdvancedRangeState(rangeValue, options = {}) {
 
 function normalizeAdvancedDatabaseFilters(rawFilters = {}) {
     const nextState = createEmptyDatabaseAdvancedFilters();
-    nextState.age = normalizeAdvancedRangeState(rawFilters.age);
-    nextState.ca = normalizeAdvancedRangeState(rawFilters.ca);
-    nextState.pa = normalizeAdvancedRangeState(rawFilters.pa);
+    ADVANCED_DB_BASE_FIELDS.forEach(([field]) => {
+        nextState[field] = normalizeAdvancedRangeState(rawFilters[field], ADVANCED_DB_BASE_RANGE_LIMITS[field]);
+    });
+    nextState.sea_status = ['in_sea', 'not_in_sea'].includes(rawFilters.sea_status) ? rawFilters.sea_status : '';
 
     const attributes = rawFilters.attributes && typeof rawFilters.attributes === 'object' ? rawFilters.attributes : {};
     Object.entries(attributes).forEach(([field, value]) => {
@@ -189,9 +204,10 @@ function isRangeActive(rangeValue = {}) {
 function countActiveAdvancedFilters() {
     const filters = ensureCurrentDbAdvancedFilters();
     let total = 0;
-    ['age', 'ca', 'pa'].forEach(field => {
+    ADVANCED_DB_BASE_FIELDS.forEach(([field]) => {
         if (isRangeActive(filters[field])) total += 1;
     });
+    if (filters.sea_status) total += 1;
     total += Object.values(filters.attributes || {}).filter(isRangeActive).length;
     total += Object.keys(filters.positions || {}).length;
     return total;
@@ -331,6 +347,9 @@ async function applyDatabaseBatchScope(rawValue, options = {}) {
 
 function getDatabasePlayerAttributeValue(player, field) {
     if (!player || !field) return null;
+    if (field === 'weighted_power' && typeof calculateWeightedPower === 'function') {
+        return calculateWeightedPower(player).score;
+    }
     if (player[field] !== undefined && player[field] !== null) return player[field];
     if (player.attributes && player.attributes[field] !== undefined && player.attributes[field] !== null) return player.attributes[field];
     return null;
@@ -347,9 +366,13 @@ function databasePlayerMatchesRange(player, field, rangeValue = {}) {
 
 function databasePlayerMatchesAdvancedFilters(player) {
     const filters = ensureCurrentDbAdvancedFilters();
-    if (!['age', 'ca', 'pa'].every(field => databasePlayerMatchesRange(player, field, filters[field]))) {
+    if (!ADVANCED_DB_BASE_FIELDS.every(([field]) => databasePlayerMatchesRange(player, field, filters[field]))) {
         return false;
     }
+    const clubName = String(player?.heigo_club || '').trim();
+    const isSeaPlayer = !clubName || clubName === '大海' || clubName === '85大海';
+    if (filters.sea_status === 'in_sea' && !isSeaPlayer) return false;
+    if (filters.sea_status === 'not_in_sea' && isSeaPlayer) return false;
     const attributesMatch = Object.entries(filters.attributes || {}).every(([field, rangeValue]) => (
         databasePlayerMatchesRange(player, field, rangeValue)
     ));
@@ -418,10 +441,13 @@ function formatRangeSummary(label, rangeValue = {}) {
 function buildAppliedAdvancedFilterSummary() {
     const filters = ensureCurrentDbAdvancedFilters();
     const summary = [];
-    ['age', 'ca', 'pa'].forEach(field => {
+    ADVANCED_DB_BASE_FIELDS.forEach(([field]) => {
         const text = formatRangeSummary(ADVANCED_DB_FIELD_LABEL_MAP[field], filters[field]);
         if (text) summary.push(text);
     });
+    if (filters.sea_status) {
+        summary.push(filters.sea_status === 'in_sea' ? '仅大海球员' : '排除大海球员');
+    }
     Object.entries(filters.attributes || {}).forEach(([field, value]) => {
         const text = formatRangeSummary(ADVANCED_DB_FIELD_LABEL_MAP[field] || field, value);
         if (text) summary.push(text);
@@ -442,12 +468,21 @@ function buildAdvancedSearchRequestPayload(query, options = {}) {
         positions: [],
     };
 
-    ['age', 'ca', 'pa'].forEach(field => {
+    ADVANCED_DB_BASE_FIELDS.forEach(([field]) => {
         if (!isRangeActive(filters[field])) return;
-        payload[field] = {};
-        if (filters[field].min) payload[field].min = Number(filters[field].min);
-        if (filters[field].max) payload[field].max = Number(filters[field].max);
+        const target = {};
+        if (filters[field].min) target.min = Number(filters[field].min);
+        if (filters[field].max) target.max = Number(filters[field].max);
+        if (ADVANCED_DB_TOP_LEVEL_RANGE_FIELDS.has(field)) {
+            payload[field] = target;
+        } else {
+            payload.attributes[field] = target;
+        }
     });
+    if (filters.sea_status) payload.sea_status = filters.sea_status;
+    if (Array.isArray(options.uids) && options.uids.length) {
+        payload.uids = [...new Set(options.uids.map(Number).filter(Number.isFinite))].slice(0, 1000);
+    }
 
     Object.entries(filters.attributes || {}).forEach(([field, value]) => {
         if (!isRangeActive(value)) return;
@@ -618,6 +653,16 @@ function renderDatabaseAdvancedSearchPanel() {
     const baseFieldsMarkup = ADVANCED_DB_BASE_FIELDS
         .map(([field, label]) => buildAdvancedRangeFieldMarkup(field, label, filters[field]))
         .join('');
+    const seaStatusMarkup = `
+        <label class="database-advanced-choice-field">
+            <span class="database-advanced-range-label">大海状态</span>
+            <select onchange="updateAdvancedSeaStatus(this.value)">
+                <option value="" ${filters.sea_status ? '' : 'selected'}>全部球员</option>
+                <option value="in_sea" ${filters.sea_status === 'in_sea' ? 'selected' : ''}>仅大海球员</option>
+                <option value="not_in_sea" ${filters.sea_status === 'not_in_sea' ? 'selected' : ''}>排除大海球员</option>
+            </select>
+        </label>
+    `;
     const activeGroup = getAdvancedAttributeGroup(currentAdvancedSearchTab);
     const tabButtons = tabs.map(tab => `
         <button
@@ -634,10 +679,11 @@ function renderDatabaseAdvancedSearchPanel() {
             <section class="database-advanced-tab-panel">
                 <div class="database-advanced-section-head">
                     <h4>基础区间</h4>
-                    <span>年龄 / CA / PA</span>
+                    <span>基础资料、加权战力、双脚能力与名单状态</span>
                 </div>
                 <div class="database-advanced-field-grid database-advanced-field-grid-base">
                     ${baseFieldsMarkup}
+                    ${seaStatusMarkup}
                 </div>
                 <div class="database-advanced-section-head">
                     <h4>位置熟练度</h4>
@@ -724,7 +770,13 @@ function toggleAdvancedSearchPanel(force) {
 function updateAdvancedBaseRange(field, boundary, value) {
     ensureCurrentDbAdvancedFilters();
     if (!currentDbAdvancedFilters[field]) currentDbAdvancedFilters[field] = {min: '', max: ''};
-    currentDbAdvancedFilters[field][boundary] = sanitizeNumericInput(value, {min: 0, max: field === 'age' ? 99 : 200});
+    currentDbAdvancedFilters[field][boundary] = sanitizeNumericInput(value, ADVANCED_DB_BASE_RANGE_LIMITS[field] || {min: 0, max: 200});
+    renderAdvancedSearchTriggerState();
+}
+
+function updateAdvancedSeaStatus(value) {
+    ensureCurrentDbAdvancedFilters();
+    currentDbAdvancedFilters.sea_status = ['in_sea', 'not_in_sea'].includes(value) ? value : '';
     renderAdvancedSearchTriggerState();
 }
 
@@ -854,7 +906,7 @@ async function executeDatabaseSearchRequest(name, options = {}) {
     const query = String(name || '').trim();
     const version = options.version || getCurrentAttributeVersion();
     if (hasActiveAdvancedFilters()) {
-        const payload = buildAdvancedSearchRequestPayload(query, {version});
+        const payload = buildAdvancedSearchRequestPayload(query, {version, uids: options.uids});
         const result = await fetchDatabaseAdvancedSearchResults(payload);
         return {
             mode: 'advanced',
@@ -882,11 +934,14 @@ async function executeDatabaseSearchRequest(name, options = {}) {
 }
 
 async function searchDatabase(nameOverride = null, options = {}) {
+    const requestId = ++databaseSearchRequestSequence;
+    const isLatestRequest = () => requestId === databaseSearchRequestSequence;
     const shouldSyncHistory = options.pushHistory !== false;
     const historyMode = options.historyMode || 'push';
     currentDatabaseSubtab = 'search';
     syncDatabaseSubtabUI();
     await loadAttributeVersionCatalog();
+    if (!isLatestRequest()) return;
     refreshAttributeVersionBanner();
     ensureCurrentDbAdvancedFilters();
     const name = nameOverride ?? document.getElementById('dbPlayerSearch').value.trim();
@@ -900,17 +955,43 @@ async function searchDatabase(nameOverride = null, options = {}) {
     if (databaseSearchScope.type !== 'candidate_list' && (batchRaw !== databaseBatchScope.raw || getCurrentAttributeVersion() !== databaseBatchScope.version)) {
         document.getElementById('dbPlayersTable').innerHTML = '<div class="loading">正在解析批量范围...</div>';
         await applyDatabaseBatchScope(batchRaw, {version: getCurrentAttributeVersion()});
+        if (!isLatestRequest()) return;
     }
 
     if (hasDatabaseSearchScope()) {
-        currentDbPlayers = filterDatabaseBatchPlayersLocally(name);
+        let scopedResult = null;
+        if (databaseSearchScope.type === 'candidate_list' && hasActiveAdvancedFilters()) {
+            document.getElementById('dbPlayersTable').innerHTML = '<div class="loading">正在筛选候选名单...</div>';
+            try {
+                scopedResult = await executeDatabaseSearchRequest(name, {
+                    version: databaseSearchScope.dataVersion || getCurrentAttributeVersion(),
+                    uids: databaseSearchScope.uids,
+                });
+            } catch (error) {
+                if (!isLatestRequest()) return;
+                renderDatabaseSearchPlaceholder(`搜索失败：${error?.message || '请稍后重试'}`, {
+                    meta: {
+                        mode: 'advanced',
+                        query: name,
+                        applied_filters_summary: buildAppliedAdvancedFilterSummary(),
+                        data_version: databaseSearchScope.dataVersion || getCurrentAttributeVersion(),
+                        batch_scope_count: databaseSearchScope.players.length,
+                        scope_type: databaseSearchScope.type,
+                        scope_label: getDatabaseSearchScopeLabel(),
+                    },
+                });
+                return;
+            }
+            if (!isLatestRequest()) return;
+        }
+        currentDbPlayers = scopedResult?.items || filterDatabaseBatchPlayersLocally(name);
         setCurrentDbSearchMeta({
             mode: hasActiveAdvancedFilters() ? 'advanced' : 'basic',
             query: name,
-            truncated: false,
-            limit: ADVANCED_DB_SEARCH_LIMIT,
-            applied_filters_summary: hasActiveAdvancedFilters() ? buildAppliedAdvancedFilterSummary() : [],
-            data_version: databaseSearchScope.dataVersion || getCurrentAttributeVersion(),
+            truncated: Boolean(scopedResult?.truncated),
+            limit: Number(scopedResult?.limit) || ADVANCED_DB_SEARCH_LIMIT,
+            applied_filters_summary: scopedResult?.applied_filters_summary || (hasActiveAdvancedFilters() ? buildAppliedAdvancedFilterSummary() : []),
+            data_version: scopedResult?.data_version || databaseSearchScope.dataVersion || getCurrentAttributeVersion(),
             batch_scope_count: databaseSearchScope.players.length,
             batch_unmatched_count: databaseSearchScope.unmatched.length,
             scope_type: databaseSearchScope.type,
@@ -946,6 +1027,7 @@ async function searchDatabase(nameOverride = null, options = {}) {
     document.getElementById('dbPlayersTable').innerHTML = '<div class="loading">搜索中...</div>';
     try {
         const result = await executeDatabaseSearchRequest(name, {version: getCurrentAttributeVersion()});
+        if (!isLatestRequest()) return;
         currentDbPlayers = result.items;
         setCurrentDbSearchMeta({
             mode: result.mode,
@@ -957,6 +1039,7 @@ async function searchDatabase(nameOverride = null, options = {}) {
         });
         renderDbPlayers(currentDbPlayers);
     } catch (error) {
+        if (!isLatestRequest()) return;
         renderDatabaseSearchPlaceholder(`搜索失败：${error?.message || '请稍后重试'}`, {
             meta: {
                 mode: hasActiveAdvancedFilters() ? 'advanced' : 'basic',
@@ -1111,12 +1194,16 @@ function buildCandidateAdminListItems(selectedId = currentCandidateListId) {
         return '<div class="no-data candidate-admin-empty">没有符合条件的名单。</div>';
     }
     return lists.map(item => {
-        const playerCount = Number(item.player_count || item.published_player_count || 0);
+        const playerCount = getCandidateListPlayerCount(item);
+        const publishedCount = Number(item.published_player_count || 0);
+        const publishedSnapshotText = item.status === 'published' && publishedCount !== playerCount
+            ? ` · 发布时 ${publishedCount.toLocaleString()} 人`
+            : '';
         const isSelected = Number(item.id) === Number(selectedId);
         return `
             <button class="candidate-admin-item ${isSelected ? 'active' : ''}" type="button" onclick="selectCandidateListForAdmin(${Number(item.id)})">
                 <span class="candidate-admin-item-title">${escapeHtml(item.name)}</span>
-                <span class="candidate-admin-item-meta">${playerCount.toLocaleString()} 名球员 · ${escapeHtml(item.base_data_version || '-')} 版本</span>
+                <span class="candidate-admin-item-meta">${playerCount.toLocaleString()} 名当前球员${publishedSnapshotText} · ${escapeHtml(item.base_data_version || '-')} 版本</span>
                 <span class="candidate-admin-item-badges">${buildCandidateListBadges(item)}</span>
             </button>
         `;
@@ -1151,13 +1238,15 @@ function updateCandidateListPageHeader() {
     if (title) title.textContent = '候选名单';
     if (description) {
         description.textContent = canManageCandidateLists
-            ? '管理候选范围、维护名单球员，并将名单发布给教练继续筛选。'
-            : '查看已发布的候选范围，进入后继续筛选球员。';
+            ? '管理候选范围、维护名单球员；名单发布后，后续编辑会实时公开给教练。'
+            : '查看已发布的候选范围；名单内容会随维护实时更新。';
     }
 }
 
 function getCandidateListPlayerCount(item) {
-    return Number(item?.player_count || item?.published_player_count || 0);
+    const currentCount = Number(item?.player_count);
+    if (Number.isFinite(currentCount)) return currentCount;
+    return Number(item?.published_player_count || 0);
 }
 
 function getCandidatePublicResultLabel(count = candidateLists.length) {
@@ -1308,7 +1397,7 @@ function renderPublicCandidateListsBoard() {
             <div class="candidate-public-compact-head">
                 <div>
                     <h2>候选名单</h2>
-                    <p>查看已发布的候选范围，进入后继续筛选球员。</p>
+                    <p>查看已发布的候选范围；名单内容会随维护实时更新。</p>
                 </div>
                 <span>${escapeHtml(resultSummary)}</span>
             </div>
@@ -1706,7 +1795,8 @@ function buildCandidateAdminMoreMenu(item) {
 
 function buildCandidateAdminDetailMarkup(item) {
     const isActive = Number(activeCandidateList?.id) === Number(item.id);
-    const playerCount = Number(item.player_count || item.published_player_count || 0);
+    const playerCount = getCandidateListPlayerCount(item);
+    const publishedCount = Number(item.published_player_count || 0);
     return `
         <div class="candidate-admin-detail-head">
             <div class="candidate-admin-detail-title">
@@ -1722,7 +1812,11 @@ function buildCandidateAdminDetailMarkup(item) {
         <div class="candidate-admin-overview">
             <div class="candidate-admin-stat">
                 <strong>${playerCount.toLocaleString()}</strong>
-                <span>名单球员</span>
+                <span>当前名单球员</span>
+            </div>
+            <div class="candidate-admin-stat">
+                <strong>${item.status === 'published' ? publishedCount.toLocaleString() : '-'}</strong>
+                <span>发布时人数</span>
             </div>
             <div class="candidate-admin-stat">
                 <strong>${escapeHtml(item.base_data_version || '-')}</strong>
@@ -2267,6 +2361,7 @@ async function loadReactionLeaderboard(options = {}) {
     syncDatabaseSubtabUI();
     activateDatabaseView('leaderboard');
     await loadAttributeVersionCatalog();
+    if (typeof ensureTeamsLoaded === 'function') await ensureTeamsLoaded();
     refreshAttributeVersionBanner();
     populateReactionLeaderboardTeamSelect();
 
@@ -2396,11 +2491,89 @@ function resetReactionLeaderboardFilters() {
     loadReactionLeaderboard({pushHistory: true, historyMode: 'replace'});
 }
 
-function showDatabaseSubtab(subtab, options = {}) {
-    currentDatabaseSubtab = subtab === 'leaderboard' ? 'leaderboard' : subtab === 'candidates' ? 'candidates' : 'search';
+function getPowerShapeLabel(shape) {
+    if (shape === 'current') return '当前形态';
+    if (/^[1-5]$/.test(String(shape))) return `+${shape} 形态`;
+    return '全部形态';
+}
+
+function getTopPercentLabel(value) {
+    const numeric = Number(value);
+    return Math.max(1, Math.ceil((Number.isFinite(numeric) ? numeric : 100) - 0.000001));
+}
+
+async function loadPowerRanking(options = {}) {
+    const shouldSyncHistory = options.pushHistory !== false;
+    currentDatabaseSubtab = 'power';
     syncDatabaseSubtabUI();
+    activateDatabaseView('power');
+    await loadAttributeVersionCatalog();
+    if (typeof ensureTeamsLoaded === 'function') await ensureTeamsLoaded();
+    refreshAttributeVersionBanner();
+    populatePowerRankingTeamSelect();
+    const shape = document.getElementById('dbPowerShapeSelect')?.value || 'all';
+    const limit = document.getElementById('dbPowerLimitSelect')?.value || '50';
+    const team = document.getElementById('dbPowerTeamSelect')?.value || '';
+    const table = document.getElementById('dbPowerRankingTable');
+    if (table) table.innerHTML = '<div class="loading">正在推算各成长形态战力...</div>';
+    const params = new URLSearchParams({shape, limit: String(limit)});
+    if (team) params.set('team', team);
+    const version = getCurrentAttributeVersion();
+    if (version) params.set('version', version);
+    try {
+        const response = await fetch(`/api/attributes/power-ranking?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.detail || `HTTP ${response.status}`);
+        renderPowerRanking(payload);
+    } catch (error) {
+        if (table) table.innerHTML = `<div class="no-data">${escapeHtml(error?.message || '战力排行榜加载失败，请稍后重试。')}</div>`;
+    }
+    if (shouldSyncHistory && typeof syncAppHistory === 'function') syncAppHistory(options.historyMode || 'push');
+}
+
+function renderPowerRanking(payload) {
+    const table = document.getElementById('dbPowerRankingTable');
+    const title = document.getElementById('dbPowerRankingTitle');
+    if (!table) return;
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    const versionLabel = payload?.data_version ? ` · ${payload.data_version}` : '';
+    const limitLabel = payload?.limit === 'all' ? `全部 ${items.length} 条` : `Top ${payload?.limit || items.length}`;
+    if (title) title.textContent = `战力排行榜 · ${getPowerShapeLabel(payload?.shape || 'all')} · ${limitLabel}${versionLabel}`;
+    if (!items.length) {
+        table.innerHTML = '<div class="no-data">当前筛选条件下没有符合资格的外场球员形态</div>';
+        return;
+    }
+    const playerLink = item => `<button class="power-player-link" type="button" onclick="showPlayerDetail(${item.uid}, {returnTab: 'database', returnSubtab: 'power', version: '${escapeHtml(item.data_version)}', previewStep: ${Number(item.growth_step || 0)}})">${escapeHtml(item.name)}${item.growth_step ? ` <span class="power-growth-badge">+${item.growth_step}</span>` : ''}</button>`;
+    table.innerHTML = `
+        <table class="db-power-table" aria-label="球员加权战力排行榜"><thead><tr><th class="numeric-column">排名</th><th>球员</th><th>形态</th><th class="numeric-column">加权战力</th><th>HEIGO战力 / 联赛位置</th><th class="numeric-column">当前 CA</th><th class="numeric-column">推算 CA</th><th class="numeric-column">PA</th><th class="numeric-column">潜力空间</th><th>位置</th><th>HEIGO 球队</th><th>现实俱乐部</th></tr></thead>
+        <tbody>${items.map(item => `<tr><td class="numeric-cell"><span class="leaderboard-rank-badge">${item.rank}</span></td><td>${playerLink(item)}</td><td><span class="power-shape-pill ${item.growth_step ? 'is-growth' : ''}">${item.growth_step ? `+${item.growth_step}` : '当前'}</span></td><td class="numeric-cell"><strong class="power-score-value">${Number(item.weighted_power).toFixed(2)}</strong></td><td><span class="power-relative-inline"><strong>${Number(item.heigo_power).toFixed(2)}</strong><small>前 ${getTopPercentLabel(item.top_percent)}%</small></span></td><td class="numeric-cell">${item.ca}</td><td class="numeric-cell"><strong>${item.projected_ca}</strong></td><td class="numeric-cell">${item.pa}</td><td class="numeric-cell">${item.potential_gap}</td><td>${escapeHtml(item.position || '-')}</td><td class="${item.heigo_club !== '大海' ? 'heigo-club' : ''}">${escapeHtml(item.heigo_club || '大海')}</td><td>${escapeHtml(item.club || '-')}</td></tr>`).join('')}</tbody></table>
+        <div class="mobile-power-ranking">${items.map(item => `<article class="power-ranking-card"><div class="power-card-rank">#${item.rank}</div><div class="power-card-main"><div class="power-card-name">${playerLink(item)}</div><div class="power-card-meta"><span>${escapeHtml(item.position || '-')}</span><span>${escapeHtml(item.heigo_club || '大海')}</span><span>CA ${item.ca} → ${item.projected_ca} / PA ${item.pa}</span></div></div><div class="power-card-score"><strong>${Number(item.weighted_power).toFixed(2)}</strong><small>加权战力</small><span class="power-relative-inline"><b>${Number(item.heigo_power).toFixed(2)}</b><em>前 ${getTopPercentLabel(item.top_percent)}%</em></span></div></article>`).join('')}</div>`;
+}
+
+function resetPowerRankingFilters() {
+    const shape = document.getElementById('dbPowerShapeSelect');
+    const limit = document.getElementById('dbPowerLimitSelect');
+    const team = document.getElementById('dbPowerTeamSelect');
+    if (shape) shape.value = 'all';
+    if (limit) limit.value = '50';
+    if (team) team.value = '';
+    loadPowerRanking({pushHistory: true, historyMode: 'replace'});
+}
+
+function showDatabaseSubtab(subtab, options = {}) {
+    currentDatabaseSubtab = subtab === 'tactics' ? 'tactics' : subtab === 'power' ? 'power' : subtab === 'leaderboard' ? 'leaderboard' : subtab === 'candidates' ? 'candidates' : 'search';
+    syncDatabaseSubtabUI();
+    if (currentDatabaseSubtab === 'tactics') {
+        activateDatabaseView('tactics');
+        loadDatabaseTacticsBoard(options);
+        return;
+    }
     if (currentDatabaseSubtab === 'leaderboard') {
         loadReactionLeaderboard(options);
+        return;
+    }
+    if (currentDatabaseSubtab === 'power') {
+        loadPowerRanking(options);
         return;
     }
     if (currentDatabaseSubtab === 'candidates') {
@@ -2461,9 +2634,17 @@ function queueDbResultPlayerForCompare(uid, dataVersion = '') {
     queuePlayerForCompare(player);
 }
 
-function getMobileDbMetric(player, field, label) {
-    const value = getDatabasePlayerAttributeValue(player, field);
-    return `<span><em>${escapeHtml(label)}</em><strong>${escapeHtml(value ?? '-')}</strong></span>`;
+function getMobileDbPowerMetrics(player) {
+    const weightedPower = Number(player?.weighted_power);
+    const heigoPower = Number(player?.heigo_power);
+    const topPercent = Number(player?.top_percent);
+    if (!Number.isFinite(weightedPower) || !Number.isFinite(heigoPower)) return null;
+    return {
+        weightedPower,
+        heigoPower,
+        topPercent: Number.isFinite(topPercent) ? topPercent : 100,
+        tone: getHeigoPowerTone(heigoPower),
+    };
 }
 
 function buildMobileDbCandidateAction(player) {
@@ -2497,6 +2678,8 @@ function renderMobileDbResultToolbar(players) {
                     <option value="" ${sortedValue === '' ? 'selected' : ''}>默认</option>
                     <option value="ca_desc" ${sortedValue === 'ca_desc' ? 'selected' : ''}>CA 高到低</option>
                     <option value="pa_desc" ${sortedValue === 'pa_desc' ? 'selected' : ''}>PA 高到低</option>
+                    <option value="weighted_power_desc" ${sortedValue === 'weighted_power_desc' ? 'selected' : ''}>加权战力高到低</option>
+                    <option value="heigo_power_desc" ${sortedValue === 'heigo_power_desc' ? 'selected' : ''}>HEIGO战力高到低</option>
                     <option value="age_asc" ${sortedValue === 'age_asc' ? 'selected' : ''}>年龄小到大</option>
                     <option value="name_asc" ${sortedValue === 'name_asc' ? 'selected' : ''}>姓名 A-Z</option>
                 </select>
@@ -2521,6 +2704,19 @@ function renderMobileDbPlayerCard(player) {
     const versionArg = htmlJsString(version);
     const uid = Number(player.uid || 0);
     const club = player.heigo_club || player.club || '-';
+    const power = getMobileDbPowerMetrics(player);
+    const powerMarkup = power ? `
+        <div class="mobile-db-power-panel ${power.tone}" aria-label="加权战力值 ${power.weightedPower.toFixed(2)}，HEIGO战力 ${power.heigoPower.toFixed(2)}，前 ${getTopPercentLabel(power.topPercent)}%">
+            <div class="mobile-db-power-metric">
+                <em>加权战力值</em>
+                <strong>${power.weightedPower.toFixed(2)}</strong>
+            </div>
+            <div class="mobile-db-power-metric is-heigo">
+                <div><em>HEIGO战力</em><small>前 ${getTopPercentLabel(power.topPercent)}%</small></div>
+                <strong>${power.heigoPower.toFixed(2)}</strong>
+            </div>
+        </div>
+    ` : '<div class="mobile-db-power-unavailable">门将暂不计入外场战力模型</div>';
     return `
         <article class="mobile-db-player-card">
             <div class="mobile-db-player-head">
@@ -2537,13 +2733,7 @@ function renderMobileDbPlayerCard(player) {
                 <span title="${escapeHtml(club)}">${escapeHtml(club)}</span>
                 <span title="${escapeHtml(player.nationality || '-')}">${escapeHtml(formatCompactNationality(player.nationality, {maxLength: 18}))}</span>
             </div>
-            <div class="mobile-db-metric-strip">
-                ${getMobileDbMetric(player, 'pace', '速度')}
-                ${getMobileDbMetric(player, 'technique', '技术')}
-                ${getMobileDbMetric(player, 'passing', '传球')}
-                ${getMobileDbMetric(player, 'strength', '强壮')}
-                ${getMobileDbMetric(player, 'decisions', '决断')}
-            </div>
+            ${powerMarkup}
             <div class="mobile-db-card-actions">
                 <button class="mobile-db-card-action is-primary" type="button" onclick="showPlayerDetail(${uid}, {returnTab: 'database', returnSubtab: 'search', version: ${versionArg}})">详情</button>
                 <button class="mobile-db-card-action" type="button" onclick="queueDbResultPlayerForCompare(${uid}, ${versionArg})">对比</button>
@@ -2606,13 +2796,6 @@ function renderDbPlayers(players) {
         </table>
     `;
     document.getElementById('dbPlayersTable').innerHTML = `${html}${renderMobileDbPlayerResults(sortedPlayers)}`;
-}
-
-async function viewPlayerInDatabase(uid) {
-    if (typeof selectRosterPlayer === 'function') {
-        selectRosterPlayer(uid);
-    }
-    await showPlayerDetail(uid, {returnTab: 'players', returnSubtab: currentDatabaseSubtab || 'search'});
 }
 
 function initializeDatabaseAdvancedSearchUI() {
