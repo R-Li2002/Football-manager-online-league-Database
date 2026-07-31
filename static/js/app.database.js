@@ -950,13 +950,13 @@ function buildWeightedPowerCard(player, options = {}) {
                     type="button"
                     aria-expanded="false"
                     onclick="toggleWeightedPowerCollapsed()"
-                ><span aria-hidden="true">＋</span> 显示</button>
+                ><span aria-hidden="true"><svg class="ui-icon is-small" viewBox="0 0 24 24" focusable="false"><path d="M12 5v14M5 12h14"/></svg></span> 显示</button>
             </div>
         `;
     }
     return `
         <div class="weighted-power-card ${powerTone}${collapsible ? ' is-collapsible' : ''}" title="${escapeHtml(explanation)}">
-            ${collapsible ? `<button class="weighted-power-toggle is-side-control" type="button" aria-expanded="true" aria-label="收起战力值" title="收起战力值" onclick="toggleWeightedPowerCollapsed()"><span aria-hidden="true">−</span></button>` : ''}
+            ${collapsible ? `<button class="weighted-power-toggle is-side-control" type="button" aria-expanded="true" aria-label="收起战力值" title="收起战力值" onclick="toggleWeightedPowerCollapsed()"><span aria-hidden="true">${uiIconSvg('minus', 'ui-icon is-small')}</span></button>` : ''}
             <div class="weighted-power-metrics">
                 <div class="power-metric-entry" aria-label="加权战力值 ${escapeHtml(scoreLabel)}">
                     <span class="power-metric-label">加权战力值</span>
@@ -1210,6 +1210,10 @@ function ensureDetailExportToast() {
 }
 
 function showDetailExportToast(message, tone = 'success') {
+    if (typeof showUiToast === 'function') {
+        showUiToast(message, tone === 'warning' ? 'warning' : tone);
+        return;
+    }
     const toast = ensureDetailExportToast();
     toast.textContent = message;
     toast.className = `detail-export-toast is-visible is-${tone}`;
@@ -1362,7 +1366,7 @@ function showGeneratedPlayerImageFallback(blob, fileName) {
             </div>
             <div class="player-image-fallback-actions">
                 <a class="btn btn-primary player-image-fallback-action" href="${escapeHtml(objectUrl)}" download="${escapeHtml(fileName)}">
-                    <span class="player-image-action-icon" aria-hidden="true">↓</span>
+                    <span class="player-image-action-icon" aria-hidden="true">${uiIconSvg('download', 'ui-icon is-small')}</span>
                     <span>下载球员图</span>
                 </a>
                 <button class="btn btn-secondary player-image-fallback-action" type="button" onclick="closeModal()">返回球员详情</button>

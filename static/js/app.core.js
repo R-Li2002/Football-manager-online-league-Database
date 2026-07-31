@@ -69,6 +69,9 @@ var homeSummary = {
 var currentOverviewSort = {field: '', order: '', type: 'number'};
 var overviewMetaExpanded = false;
 var currentDbSort = {field: '', order: '', type: 'number'};
+var dataStatusData = {generated_at: null, items: []};
+var dataStatusLoadPromise = null;
+var dataStatusLoadError = '';
 
 window.AppState = window.AppState || {};
 Object.defineProperties(window.AppState, {
@@ -119,13 +122,243 @@ function syncThemeToggleState() {
     const themeIcon = document.getElementById('themeIcon');
     const themeText = document.getElementById('themeText');
     if (!themeIcon || !themeText) return;
+    themeIcon.classList.toggle('is-dark-mode', isDarkMode);
     if (isDarkMode) {
-        themeIcon.textContent = '☀';
         themeText.textContent = '切换白天';
     } else {
-        themeIcon.textContent = '☾';
         themeText.textContent = '切换夜间';
     }
+}
+
+function dataStatusIconSvg(status) {
+    const paths = {
+        normal: '<path d="M5 12.5 9.2 16.5 19 6.5"/>',
+        pending: '<path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="8.5"/>',
+        stale: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 9"/><path d="M4.5 4.5V9H9"/>',
+        error: '<path d="M12 8v5"/><path d="M12 16.5h.01"/><path d="M10.2 4.7 3.7 16a2 2 0 0 0 1.7 3h13.2a2 2 0 0 0 1.7-3L13.8 4.7a2 2 0 0 0-3.6 0Z"/>',
+        unknown: '<circle cx="12" cy="12" r="8.5"/><path d="M9.8 9.5a2.3 2.3 0 1 1 3.2 2.1c-.7.3-1 .8-1 1.5"/><path d="M12 16.5h.01"/>',
+    };
+    return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[status] || paths.unknown}</svg>`;
+}
+
+function uiStateIconSvg(tone = 'info') {
+    const paths = {
+        success: '<path d="M5 12.5 9.2 16.5 19 6.5"/><circle cx="12" cy="12" r="9"/>',
+        warning: '<path d="M12 8v5M12 16.5h.01"/><path d="M10.2 4.7 3.7 16a2 2 0 0 0 1.7 3h13.2a2 2 0 0 0 1.7-3L13.8 4.7a2 2 0 0 0-3.6 0Z"/>',
+        danger: '<circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/>',
+        empty: '<path d="M4 8.5h16v10H4zM8 8.5V6h8v2.5M9 13h6"/>',
+        loading: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/>',
+        info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+    };
+    return `<svg class="ui-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">${paths[tone] || paths.info}</svg>`;
+}
+
+function uiIconSvg(name, className = 'ui-icon') {
+    const paths = {
+        close: '<path d="m7 7 10 10M17 7 7 17"/>',
+        'arrow-right': '<path d="M5 12h14m-5-5 5 5-5 5"/>',
+        'arrow-left': '<path d="M19 12H5m5-5-5 5 5 5"/>',
+        download: '<path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/>',
+        return: '<path d="m9 7-5 5 5 5M5 12h9a5 5 0 0 1 5 5v2"/>',
+        check: '<path d="M5 12.5 9.2 16.5 19 6.5"/>',
+        minus: '<path d="M5 12h14"/>',
+        'chevron-down': '<path d="m7 10 5 5 5-5"/>',
+        alert: '<path d="M12 8v5M12 16.5h.01"/><path d="M10.2 4.7 3.7 16a2 2 0 0 0 1.7 3h13.2a2 2 0 0 0 1.7-3L13.8 4.7a2 2 0 0 0-3.6 0Z"/>',
+    };
+    return `<svg class="${escapeHtml(className)}" viewBox="0 0 24 24" focusable="false" aria-hidden="true">${paths[name] || paths.alert}</svg>`;
+}
+
+function renderUiState(options = {}) {
+    const allowedTones = new Set(['success', 'warning', 'danger', 'empty', 'loading', 'info']);
+    const tone = allowedTones.has(options.tone) ? options.tone : 'info';
+    const title = escapeHtml(options.title || (tone === 'empty' ? '暂无数据' : '状态提示'));
+    const message = options.message ? `<p>${escapeHtml(options.message)}</p>` : '';
+    const action = options.actionLabel && options.actionOnclick
+        ? `<button class="btn ${escapeHtml(options.actionClass || 'btn-secondary')} ui-state-action" type="button" onclick="${escapeHtml(options.actionOnclick)}">${escapeHtml(options.actionLabel)}</button>`
+        : '';
+    const role = tone === 'danger' ? 'alert' : 'status';
+    return `<div class="ui-state-panel is-${tone}${options.compact ? ' is-compact' : ''}" role="${role}" aria-live="${tone === 'danger' ? 'assertive' : 'polite'}"><span class="ui-state-icon">${uiStateIconSvg(tone)}</span><div class="ui-state-copy"><strong>${title}</strong>${message}</div>${action}</div>`;
+}
+
+let uiToastTimer = null;
+
+function showUiToast(message, tone = 'success', options = {}) {
+    const allowedTones = new Set(['success', 'warning', 'danger', 'info']);
+    const normalizedTone = allowedTones.has(tone) ? tone : 'info';
+    let toast = document.getElementById('uiToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'uiToast';
+        toast.className = 'ui-toast';
+        document.body.appendChild(toast);
+    }
+    toast.className = `ui-toast is-${normalizedTone}`;
+    toast.setAttribute('role', normalizedTone === 'danger' ? 'alert' : 'status');
+    toast.setAttribute('aria-live', normalizedTone === 'danger' ? 'assertive' : 'polite');
+    toast.innerHTML = `<span class="ui-toast-icon">${uiStateIconSvg(normalizedTone)}</span><span>${escapeHtml(message || '')}</span>`;
+    window.clearTimeout(uiToastTimer);
+    requestAnimationFrame(() => toast.classList.add('is-visible'));
+    uiToastTimer = window.setTimeout(() => toast.classList.remove('is-visible'), Number(options.duration || 3200));
+    return toast;
+}
+
+function setUiButtonBusy(buttonOrId, busy, label = '处理中...') {
+    const button = typeof buttonOrId === 'string' ? document.getElementById(buttonOrId) : buttonOrId;
+    if (!button) return;
+    if (busy) {
+        if (!button.dataset.uiOriginalHtml) button.dataset.uiOriginalHtml = button.innerHTML;
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        button.innerHTML = `<span class="ui-button-spinner" aria-hidden="true"></span><span>${escapeHtml(label)}</span>`;
+        return;
+    }
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+    if (button.dataset.uiOriginalHtml) {
+        button.innerHTML = button.dataset.uiOriginalHtml;
+        delete button.dataset.uiOriginalHtml;
+    }
+}
+
+let uiFieldIdSeed = 0;
+
+function setUiFieldError(inputOrId, message = '') {
+    const input = typeof inputOrId === 'string' ? document.getElementById(inputOrId) : inputOrId;
+    if (!input) return;
+    if (!input.id) input.id = `uiField${++uiFieldIdSeed}`;
+    const errorId = input.dataset.uiErrorId || `${input.id}Error`;
+    input.dataset.uiErrorId = errorId;
+    let error = document.getElementById(errorId);
+    if (!error) {
+        error = document.createElement('small');
+        error.id = errorId;
+        error.className = 'ui-field-error';
+        input.insertAdjacentElement('afterend', error);
+    }
+    const describedBy = new Set(String(input.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean));
+    describedBy.add(errorId);
+    input.setAttribute('aria-describedby', [...describedBy].join(' '));
+    if (message) {
+        input.setAttribute('aria-invalid', 'true');
+        error.textContent = message;
+        error.hidden = false;
+    } else {
+        input.removeAttribute('aria-invalid');
+        error.textContent = '';
+        error.hidden = true;
+    }
+}
+
+function setUiInlineFeedback(containerOrId, message = '', tone = 'info') {
+    const container = typeof containerOrId === 'string' ? document.getElementById(containerOrId) : containerOrId;
+    if (!container) return;
+    if (!message) {
+        container.hidden = true;
+        container.innerHTML = '';
+        return;
+    }
+    const normalizedTone = ['success', 'warning', 'danger', 'info'].includes(tone) ? tone : 'info';
+    container.hidden = false;
+    container.className = `ui-inline-feedback is-${normalizedTone}`;
+    container.setAttribute('role', normalizedTone === 'danger' ? 'alert' : 'status');
+    container.setAttribute('aria-live', normalizedTone === 'danger' ? 'assertive' : 'polite');
+    container.innerHTML = `<span>${uiStateIconSvg(normalizedTone)}</span><span>${escapeHtml(message)}</span>`;
+}
+
+function dataStatusJsString(value) {
+    return escapeHtml(JSON.stringify(String(value ?? '')));
+}
+
+function getDataStatusItem(key, scope = 'all') {
+    return (dataStatusData.items || []).find(item => item.key === key && String(item.scope || 'all') === String(scope || 'all')) || null;
+}
+
+function formatDataStatusTime(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleString('zh-CN', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'});
+}
+
+function dataStatusMeta(item) {
+    const parts = [];
+    if (Number(item.updated_round || 0) > 0) parts.push(`更新至第 ${Number(item.updated_round)} 轮`);
+    if (Number(item.issue_count || 0) > 0) parts.push(`${Number(item.issue_count)} 项待处理`);
+    if (item.data_version) parts.push(`版本 ${item.data_version}`);
+    const updateTime = formatDataStatusTime(item.updated_at);
+    if (updateTime) parts.push(`${updateTime} 更新`);
+    return parts;
+}
+
+function renderDataStatusStrip(containerId, key, scope = 'all') {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    if (dataStatusLoadError) {
+        container.hidden = false;
+        container.innerHTML = `<button class="data-status-strip is-unknown" type="button" onclick="loadDataStatus({force:true})" aria-label="数据状态读取失败，点击重试"><span class="data-status-icon">${dataStatusIconSvg('unknown')}</span><span class="data-status-state">读取失败</span><span class="data-status-copy"><strong>状态暂不可用</strong><small>点击重新读取，不影响当前页面数据</small></span><span class="data-status-action">重试</span></button>`;
+        return;
+    }
+    const item = getDataStatusItem(key, scope);
+    if (!item) {
+        container.hidden = true;
+        container.innerHTML = '';
+        return;
+    }
+    const meta = dataStatusMeta(item);
+    const ariaLabel = `${item.scope !== 'all' ? `${item.scope}` : ''}${item.label}，${item.status_label}，${item.message}`;
+    container.hidden = false;
+    container.innerHTML = `
+        <button class="data-status-strip is-${escapeHtml(item.status || 'unknown')}" type="button" onclick="openDataStatusItem(${dataStatusJsString(item.key)}, ${dataStatusJsString(item.scope || 'all')})" aria-label="${escapeHtml(ariaLabel)}">
+            <span class="data-status-icon">${dataStatusIconSvg(item.status)}</span>
+            <span class="data-status-state">${escapeHtml(item.status_label || '状态未知')}</span>
+            <span class="data-status-copy"><strong>${escapeHtml(item.message || item.label)}</strong>${meta.length ? `<small>${meta.map(value => escapeHtml(value)).join('<i>·</i>')}</small>` : ''}</span>
+            <span class="data-status-action">查看</span>
+        </button>
+    `;
+}
+
+function refreshVisibleDataStatus() {
+    renderDataStatusStrip('rosterDataStatus', 'roster', 'all');
+    renderDataStatusStrip('databaseDataStatus', 'attributes', 'all');
+    if (typeof renderCompetitionDataStatus === 'function') renderCompetitionDataStatus();
+}
+
+async function loadDataStatus(options = {}) {
+    if ((dataStatusData.items || []).length && options.force !== true) {
+        refreshVisibleDataStatus();
+        return dataStatusData;
+    }
+    if (dataStatusLoadPromise && options.force !== true) return dataStatusLoadPromise;
+    dataStatusLoadError = '';
+    dataStatusLoadPromise = fetch('/api/data-status')
+        .then(async response => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            dataStatusData = await response.json();
+            return dataStatusData;
+        })
+        .catch(error => {
+            dataStatusLoadError = error?.message || '数据状态读取失败';
+            return dataStatusData;
+        })
+        .finally(() => {
+            dataStatusLoadPromise = null;
+            refreshVisibleDataStatus();
+        });
+    return dataStatusLoadPromise;
+}
+
+async function openDataStatusItem(key, scope = 'all') {
+    const item = getDataStatusItem(key, scope);
+    if (!item?.target_tab) return;
+    await showTab(item.target_tab, null, {syncHistory: false});
+    if (item.target_tab === 'competition' && typeof showCompetitionSubtab === 'function') {
+        if (item.target_level) currentCompetitionLevel = item.target_level;
+        showCompetitionSubtab(item.target_subtab || 'standings');
+        if (item.target_level && typeof setCompetitionLevel === 'function') setCompetitionLevel(item.target_level);
+    } else if (item.target_tab === 'database' && typeof showDatabaseSubtab === 'function') {
+        showDatabaseSubtab(item.target_subtab || 'search');
+    }
+    if (typeof syncAppHistory === 'function') syncAppHistory('push');
 }
 
 function isAdminEntryQuery(value) {
@@ -236,9 +469,9 @@ function escapeHtml(value) {
 
 function renderLeagueLevelSignature(level, options = {}) {
     const config = {
-        '超级': {className: 'level-super', character: 'S', english: 'SUPER'},
-        '甲级': {className: 'level-a', character: 'A', english: 'FIRST'},
-        '乙级': {className: 'level-b', character: 'B', english: 'SECOND'},
+        '超级': {className: 'level-super', character: '超', english: 'SUPER'},
+        '甲级': {className: 'level-a', character: '甲', english: 'FIRST'},
+        '乙级': {className: 'level-b', character: '乙', english: 'SECOND'},
     }[level] || {className: '', character: '?', english: 'LEAGUE'};
     const safeLevel = escapeHtml(level || '未知');
     const compactClass = options.compact ? ' is-compact' : '';
@@ -462,18 +695,59 @@ function buildSearchNormalizedKeys(value) {
     return {strictKeys, looseKeys};
 }
 
+let resultModalReturnFocus = null;
+
+function handleResultModalKeydown(event) {
+    const modal = document.getElementById('resultModal');
+    if (!modal?.classList.contains('active')) return;
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        closeModal();
+        return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = [...modal.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')]
+        .filter(element => !element.hidden && element.getClientRects().length);
+    if (!focusable.length) {
+        event.preventDefault();
+        modal.querySelector('.modal-content')?.focus();
+        return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
+}
+
 function showModal(title, body, options = {}) {
     document.getElementById('modalTitle').textContent = title;
     document.getElementById('modalBody').innerHTML = body;
     const modal = document.getElementById('resultModal');
+    resultModalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     modal.classList.toggle('is-locked', options.locked === true);
     modal.classList.add('active');
+    modal.setAttribute('aria-hidden', 'false');
+    modal.removeEventListener('keydown', handleResultModalKeydown);
+    modal.addEventListener('keydown', handleResultModalKeydown);
+    requestAnimationFrame(() => {
+        const focusTarget = modal.querySelector('[autofocus], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled), a[href]') || modal.querySelector('.modal-content');
+        focusTarget?.focus();
+    });
 }
 
 function closeModal(options = {}) {
     const modal = document.getElementById('resultModal');
     if (modal.classList.contains('is-locked') && options.force !== true) return;
     modal.classList.remove('active', 'is-locked');
+    modal.setAttribute('aria-hidden', 'true');
+    const returnFocus = resultModalReturnFocus;
+    resultModalReturnFocus = null;
+    if (returnFocus?.isConnected) requestAnimationFrame(() => returnFocus.focus());
 }
 
 window.AppCore = {
@@ -493,4 +767,10 @@ window.AppCore = {
     formatCompactNationality,
     showModal,
     closeModal,
+    renderUiState,
+    showUiToast,
+    setUiButtonBusy,
+    setUiFieldError,
+    setUiInlineFeedback,
+    uiIconSvg,
 };

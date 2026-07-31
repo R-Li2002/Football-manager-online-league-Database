@@ -9,6 +9,8 @@ let teamCenterCoachAuthPromise = null;
 let teamRosterCopyToastTimer = null;
 const teamDetailCache = new Map();
 const TEAM_ROSTER_VIEW_MODES = new Set(['compact', 'detail', 'cards']);
+const teamCenterExpandedLevels = new Set();
+let teamCenterExpandedInitialized = false;
 
 function teamDetailSafeNumber(value, fallback = 0) {
     const number = Number(value);
@@ -89,7 +91,7 @@ function teamCenterCoachAccessMarkup() {
     const detail = authenticated
         ? escapeHtml(currentCoachAccount.nickname || currentCoachAccount.username || '已登录教练')
         : '登录后直达关联球队';
-    return `<button class="team-center-coach-access" type="button" onclick="openTeamCenterCoachAccess()"><span>${label}</span><small>${detail}</small><b aria-hidden="true">→</b></button>`;
+    return `<button class="team-center-coach-access" type="button" onclick="openTeamCenterCoachAccess()"><span>${label}</span><small>${detail}</small><b aria-hidden="true">${uiIconSvg('arrow-right')}</b></button>`;
 }
 
 function teamDetailPositionGroup(position) {
@@ -549,7 +551,7 @@ function downloadTeamRosterBlob(blob, fileName) {
 
 function showTeamRosterImageFallback(blob, fileName) {
     const objectUrl = URL.createObjectURL(blob);
-    showModal('保存球队名单图', `<div class="player-image-fallback"><div class="player-image-fallback-copy"><span class="panel-kicker">Team Roster</span><h2>球队名单图已生成</h2><p>当前环境无法直接复制图片，请下载保存；手机端也可以长按下方图片。</p></div><div class="player-image-fallback-preview"><img src="${escapeHtml(objectUrl)}" alt="球队名单图片预览"></div><div class="player-image-fallback-actions"><a class="btn btn-primary player-image-fallback-action" href="${escapeHtml(objectUrl)}" download="${escapeHtml(fileName)}"><span class="player-image-action-icon" aria-hidden="true">↓</span><span>下载球队名单</span></a><button class="btn btn-secondary player-image-fallback-action" type="button" onclick="closeModal()">返回球队中心</button></div></div>`);
+    showModal('保存球队名单图', `<div class="player-image-fallback"><div class="player-image-fallback-copy"><span class="panel-kicker">Team Roster</span><h2>球队名单图已生成</h2><p>当前环境无法直接复制图片，请下载保存；手机端也可以长按下方图片。</p></div><div class="player-image-fallback-preview"><img src="${escapeHtml(objectUrl)}" alt="球队名单图片预览"></div><div class="player-image-fallback-actions"><a class="btn btn-primary player-image-fallback-action" href="${escapeHtml(objectUrl)}" download="${escapeHtml(fileName)}"><span class="player-image-action-icon" aria-hidden="true">${uiIconSvg('download', 'ui-icon is-small')}</span><span>下载球队名单</span></a><button class="btn btn-secondary player-image-fallback-action" type="button" onclick="closeModal()">返回球队中心</button></div></div>`);
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120000);
 }
 
@@ -563,7 +565,7 @@ function buildTeamLineupImageFileName(teamName, formation) {
 
 function showTeamLineupImageFallback(blob, fileName) {
     const objectUrl = URL.createObjectURL(blob);
-    showModal('保存阵容图', `<div class="player-image-fallback"><div class="player-image-fallback-copy"><span class="panel-kicker">Starting XI</span><h2>阵容图已生成</h2><p>当前环境无法直接复制图片，请下载保存；手机端也可以长按下方图片。</p></div><div class="player-image-fallback-preview"><img src="${escapeHtml(objectUrl)}" alt="阵容预览图片"></div><div class="player-image-fallback-actions"><a class="btn btn-primary player-image-fallback-action" href="${escapeHtml(objectUrl)}" download="${escapeHtml(fileName)}"><span class="player-image-action-icon" aria-hidden="true">↓</span><span>下载阵容图</span></a><button class="btn btn-secondary player-image-fallback-action" type="button" onclick="closeModal()">返回球队中心</button></div></div>`);
+    showModal('保存阵容图', `<div class="player-image-fallback"><div class="player-image-fallback-copy"><span class="panel-kicker">Starting XI</span><h2>阵容图已生成</h2><p>当前环境无法直接复制图片，请下载保存；手机端也可以长按下方图片。</p></div><div class="player-image-fallback-preview"><img src="${escapeHtml(objectUrl)}" alt="阵容预览图片"></div><div class="player-image-fallback-actions"><a class="btn btn-primary player-image-fallback-action" href="${escapeHtml(objectUrl)}" download="${escapeHtml(fileName)}"><span class="player-image-action-icon" aria-hidden="true">${uiIconSvg('download', 'ui-icon is-small')}</span><span>下载阵容图</span></a><button class="btn btn-secondary player-image-fallback-action" type="button" onclick="closeModal()">返回球队中心</button></div></div>`);
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120000);
 }
 
@@ -695,14 +697,39 @@ function teamCenterDirectoryCard(team) {
         <span class="team-center-club-crest ${team.logo_path ? 'has-logo' : ''}">${logo}</span>
         <span class="team-center-club-copy"><strong>${escapeHtml(team.name)}</strong><small>主教练 ${escapeHtml(team.manager || '待定')}</small></span>
         <span class="team-center-club-stats"><b>${teamDetailSafeNumber(team.team_size)}</b><small>球员</small></span>
-        <span class="team-center-club-arrow" aria-hidden="true">→</span>
+        <span class="team-center-club-arrow" aria-hidden="true">${uiIconSvg('arrow-right', 'ui-icon is-small')}</span>
     </button>`;
+}
+
+function teamCenterDefaultExpandedLevel() {
+    const linkedTeam = (teams || []).find(team => (
+        (Number(currentCoachAccount?.team_id) > 0 && Number(team.id) === Number(currentCoachAccount.team_id))
+        || (currentCoachAccount?.team_name && team.name === currentCoachAccount.team_name)
+    ));
+    return linkedTeam?.level || '超级';
+}
+
+function ensureTeamCenterExpandedLevel() {
+    if (teamCenterExpandedInitialized) return;
+    teamCenterExpandedLevels.add(teamCenterDefaultExpandedLevel());
+    teamCenterExpandedInitialized = true;
+}
+
+function toggleTeamCenterLeague(level) {
+    if (!window.matchMedia?.('(max-width: 700px)').matches) return;
+    if (teamCenterExpandedLevels.has(level)) {
+        teamCenterExpandedLevels.delete(level);
+    } else {
+        teamCenterExpandedLevels.add(level);
+    }
+    renderTeamCenterDirectory(document.getElementById('teamCenterSearchInput')?.value || '');
 }
 
 function renderTeamCenterDirectory(query = '') {
     const root = document.getElementById('teamCenterDirectory');
     if (!root) return;
     const normalizedQuery = String(query || '').trim().toLocaleLowerCase();
+    ensureTeamCenterExpandedLevel();
     const levels = ['超级', '甲级', '乙级'];
     const sections = levels.map(level => {
         const levelTeams = teams
@@ -710,9 +737,11 @@ function renderTeamCenterDirectory(query = '') {
             .filter(team => !normalizedQuery || [team.name, team.manager].some(value => String(value || '').toLocaleLowerCase().includes(normalizedQuery)))
             .sort((a, b) => a.name.localeCompare(b.name));
         if (!levelTeams.length) return '';
-        return `<section class="team-center-league-group">
-            <header><div>${teamDetailLevelBadge(level, {compact: true})}<h2>${level}联赛</h2></div><span>${levelTeams.length} 支球队</span></header>
-            <div class="team-center-club-grid">${levelTeams.map(teamCenterDirectoryCard).join('')}</div>
+        const expanded = Boolean(normalizedQuery) || teamCenterExpandedLevels.has(level);
+        const contentId = `teamCenterLeague${level}`;
+        return `<section class="team-center-league-group ${expanded ? 'is-expanded' : 'is-collapsed'} ${normalizedQuery ? 'is-searching' : ''}">
+            <header><button class="team-center-league-toggle" type="button" onclick="toggleTeamCenterLeague('${level}')" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${contentId}"><span>${teamDetailLevelBadge(level, {compact: true})}<span class="team-center-league-heading"><strong>${level}联赛</strong><small>${levelTeams.length} 支球队</small></span></span><i aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="m7 10 5 5 5-5"/></svg></i></button></header>
+            <div class="team-center-club-grid" id="${contentId}">${levelTeams.map(teamCenterDirectoryCard).join('')}</div>
         </section>`;
     }).join('');
     root.innerHTML = sections || `<div class="team-center-no-results"><strong>没有找到匹配的球队</strong><p>试试输入球队名或主教练名称。</p><button type="button" onclick="clearTeamCenterSearch()">清除搜索</button></div>`;
@@ -793,7 +822,7 @@ function renderTeamDetailLoaded(data) {
     const encodedName = teamDetailHandlerArg(team.name);
 
     root.innerHTML = `${teamDetailTeamSwitcher(team)}<div class="team-detail-toolbar">
-        <button class="team-detail-back" type="button" onclick="closeTeamDetail()" aria-label="返回上一页"><span aria-hidden="true">←</span> 返回</button>
+        <button class="team-detail-back" type="button" onclick="closeTeamDetail()" aria-label="返回上一页"><span aria-hidden="true">${uiIconSvg('arrow-left', 'ui-icon is-small')}</span> 返回</button>
         <div class="team-detail-toolbar-meta">${teamDetailLevelBadge(team.level)}<span>数据版本 ${escapeHtml(powerPayload?.data_version || currentAttributeVersion || '--')}</span></div>
     </div>
     <section class="team-hero surface-card">
@@ -869,7 +898,7 @@ async function renderTeamDetail(options = {}) {
     } catch (error) {
         console.error('球队详情加载失败:', error);
         if (sequence !== teamDetailLoadSequence) return;
-        root.innerHTML = `<div class="team-detail-empty surface-card"><span class="panel-kicker">Load Error</span><h2>球队详情暂时无法加载</h2><p>${escapeHtml(error.message || '请稍后重试')}</p><button class="btn btn-primary" type="button" onclick="renderTeamDetail({force: true})">重新加载</button></div>`;
+        root.innerHTML = renderUiState({tone: 'danger', title: '球队详情暂时无法加载', message: error.message || '请稍后重试。', actionLabel: '重新加载', actionClass: 'btn-primary', actionOnclick: 'renderTeamDetail({force:true})'});
     }
 }
 

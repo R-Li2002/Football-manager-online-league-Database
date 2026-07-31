@@ -12,6 +12,7 @@ var currentPlayerRankingType = 'goals';
 var activeSuspensionEditorTeamId = null;
 var competitionImageExportBusy = false;
 var currentMobileStandingsScope = 'total';
+var expandedMobileStandingRows = new Set();
 var matchTeamPlayerCache = new Map();
 var activeMatchEventSuggestionContext = null;
 var activeSuspensionSuggestionContext = null;
@@ -19,12 +20,147 @@ var activeMobileScheduleEditMatchId = null;
 var matchEventRowDomIdSeed = 0;
 var scheduleAutoSaveTimers = new Map();
 var scheduleMatchSaveStates = new Map();
+var scheduleMatchSaveVersions = new Map();
+var scheduleMatchSaveInFlight = new Set();
+var scheduleMatchSaveQueued = new Set();
+var expandedMobileScheduleMatches = new Set();
+var expandedMobilePlayerRankingRows = new Set();
+var expandedMobileSuspensionTeams = new Set();
 var competitionWorkData = null;
 var competitionWorkLoadPromise = null;
 var competitionWorkLoadError = '';
 var currentCompetitionWorkFilter = 'all';
 var currentCompetitionWorkTargetMatchId = null;
 var competitionAssignableAccounts = [];
+
+function renderCompetitionDataStatus() {
+    const container = document.getElementById('competitionDataStatus');
+    if (!container) return;
+    const keys = {
+        standings: 'standings',
+        schedule: 'schedule',
+        playerRankings: 'player_rankings',
+        suspensions: 'suspensions',
+    };
+    const labels = {
+        standings: '积分榜',
+        schedule: '赛程',
+        playerRankings: '球员榜',
+        suspensions: '伤停',
+    };
+    const moduleLabel = labels[currentCompetitionSubtab] || '积分榜';
+    const metrics = getCompetitionModuleMetrics();
+    const item = isCupCompetitionLevel() ? null : getDataStatusItem(keys[currentCompetitionSubtab] || 'standings', currentCompetitionLevel);
+    const status = item?.status || (isCupCompetitionLevel() ? 'normal' : 'unknown');
+    const statusLabel = item?.status_label || (isCupCompetitionLevel() ? (currentCupPhase === 'group' ? '小组赛' : '淘汰赛') : '读取中');
+    const updateTime = item?.updated_at ? formatDataStatusTime(item.updated_at) : '';
+    const cupPhaseLabel = currentCupPhase === 'group' ? '小组赛阶段' : '淘汰赛阶段';
+    const headline = isCupCompetitionLevel()
+        ? `${currentCompetitionLevel} · ${cupPhaseLabel}`
+        : `${currentCompetitionLevel}${moduleLabel}`;
+    const description = isCupCompetitionLevel()
+        ? (currentCompetitionSubtab === 'schedule'
+            ? (currentCupPhase === 'group' ? '查看小组赛安排与比赛状态' : '淘汰赛对阵与晋级关系集中在阶段图中')
+            : '小组赛与淘汰赛使用独立阶段视图')
+        : (item?.message || `${moduleLabel}会随当前赛事数据自动更新`);
+    const summary = !isCupCompetitionLevel() && hasCompetitionWorkAccess() ? getCompetitionWorkSummary() : null;
+    container.hidden = false;
+    container.innerHTML = `
+        <section class="competition-module-status is-${escapeHtml(status)}" aria-label="${escapeHtml(headline)}数据摘要">
+            <div class="competition-module-status-head">
+                <div class="competition-module-status-title">
+                    <span>${isCupCompetitionLevel() ? 'CUP STAGE' : 'MATCHDAY DATA'}</span>
+                    <strong>${escapeHtml(headline)}</strong>
+                    <p>${escapeHtml(description)}</p>
+                </div>
+                <div class="competition-module-status-badge">
+                    ${dataStatusIconSvg(status)}
+                    <span>${escapeHtml(statusLabel)}</span>
+                    ${updateTime ? `<small>${escapeHtml(updateTime)}</small>` : ''}
+                </div>
+            </div>
+            <div class="competition-module-metrics">
+                ${metrics.map(metric => `
+                    <span class="competition-module-metric ${metric.tone ? `is-${escapeHtml(metric.tone)}` : ''}">
+                        <small>${escapeHtml(metric.label)}</small>
+                        <strong>${escapeHtml(metric.value)}</strong>
+                        ${metric.note ? `<em>${escapeHtml(metric.note)}</em>` : ''}
+                    </span>
+                `).join('')}
+            </div>
+            ${summary ? renderCompetitionIssueNavigator(summary) : ''}
+        </section>
+    `;
+}
+
+function getCompetitionModuleMetrics() {
+    if (isCupCompetitionLevel()) {
+        const cupConfig = getCurrentCupConfig();
+        const bracket = cupConfig ? cupBracketData[cupConfig.key] : null;
+        const stages = bracket?.stages || [];
+        const stageMatches = stages.flatMap(stage => stage.matches || []);
+        const resolved = stageMatches.filter(match => String(match.status || '') !== 'scheduled' && match.home_score !== null && match.away_score !== null).length;
+        return [
+            {label: '当前阶段', value: currentCupPhase === 'group' ? '小组赛' : '淘汰赛'},
+            {label: '淘汰轮次', value: String(stages.length || 0), note: stages.length ? '阶段' : '待初始化'},
+            {label: '已决对阵', value: `${resolved}/${stageMatches.length || 0}`},
+        ];
+    }
+    if (currentCompetitionSubtab === 'schedule') {
+        const levelMatches = (scheduleData.matches || []).filter(match => match.level === currentCompetitionLevel);
+        const rounds = getScheduleRoundsForCurrentLevel();
+        const currentRound = getCurrentScheduleRound();
+        const pair = buildRoundPairs(rounds).find(item => item.pairStart === getRoundPairStart(currentRound)) || {rounds: [currentRound].filter(Boolean)};
+        const pairMatches = levelMatches.filter(match => pair.rounds.includes(Number(match.round_no)));
+        const pairPlayed = pairMatches.filter(isScheduleMatchPlayed).length;
+        const totalPlayed = levelMatches.filter(isScheduleMatchPlayed).length;
+        return [
+            {label: '当前轮次', value: formatRoundPairLabel(pair.rounds)},
+            {label: '本轮已赛', value: `${pairPlayed}/${pairMatches.length || 0}`, tone: pairPlayed === pairMatches.length && pairMatches.length ? 'normal' : ''},
+            {label: '全部进度', value: `${totalPlayed}/${levelMatches.length || 0}`},
+        ];
+    }
+    if (currentCompetitionSubtab === 'playerRankings') {
+        const coverage = getPlayerRankingCoverage();
+        const rows = getPlayerRankingRows();
+        return [
+            {label: '上榜球员', value: String(rows.length)},
+            {label: '已赛覆盖', value: `${coverage.matches_with_events}/${coverage.played_matches}`},
+            {label: '待补明细', value: String(coverage.matches_missing_events), tone: coverage.matches_missing_events ? 'warning' : 'normal'},
+        ];
+    }
+    if (currentCompetitionSubtab === 'suspensions') {
+        const teams = (suspensionData.teams || []).filter(team => team.level === currentCompetitionLevel);
+        const suspended = teams.reduce((total, team) => total + (team.suspended || []).length, 0);
+        const cautions = teams.reduce((total, team) => total + (team.one_yellow || []).length + (team.two_yellows || []).length, 0);
+        const roundNo = getSuspensionUpdateRound(currentCompetitionLevel);
+        return [
+            {label: '球队', value: String(teams.length)},
+            {label: '黄牌关注', value: String(cautions)},
+            {label: '停赛', value: String(suspended), tone: suspended ? 'warning' : 'normal', note: roundNo !== null ? `更新至第 ${roundNo} 轮` : '轮次待标注'},
+        ];
+    }
+    const rows = (standingsData.rows || []).filter(row => row.level === currentCompetitionLevel);
+    const leader = rows[0];
+    const played = Math.round(rows.reduce((total, row) => total + Number(row.played || 0), 0) / 2);
+    return [
+        {label: '参赛球队', value: String(rows.length)},
+        {label: '已赛场次', value: String(played)},
+        {label: '当前领跑', value: leader?.team_name || '待定', note: leader ? `${Number(leader.points || 0)} 分` : ''},
+    ];
+}
+
+function renderCompetitionIssueNavigator(summary) {
+    return `
+        <div class="competition-issue-navigator" aria-label="当前工作轮次问题分类">
+            <span>工作定位</span>
+            <button type="button" class="${summary.missing_result_count ? 'has-issue' : 'is-clear'}" onclick="openCompetitionWorkQueue('missing_result')"><strong>${Number(summary.missing_result_count || 0)}</strong><small>待录比分</small></button>
+            <button type="button" class="${summary.missing_event_count ? 'has-issue' : 'is-clear'}" onclick="openCompetitionWorkQueue('missing_events')"><strong>${Number(summary.missing_event_count || 0)}</strong><small>缺少事件</small></button>
+            <button type="button" class="${summary.invalid_count ? 'has-error' : 'is-clear'}" onclick="openCompetitionWorkQueue('invalid')"><strong>${Number(summary.invalid_count || 0)}</strong><small>数据异常</small></button>
+            <button type="button" class="${summary.suspension_confirmed ? 'is-clear' : 'has-issue'}" onclick="showCompetitionSubtab('suspensions')"><strong>${summary.suspension_confirmed ? '✓' : '!'}</strong><small>${summary.suspension_confirmed ? '伤停已确认' : '伤停待确认'}</small></button>
+        </div>
+    `;
+}
 
 const COMPETITION_LEVEL_ORDER = {'超级': 1, '甲级': 2, '乙级': 3, '冠军杯': 4, '联盟杯': 5, '无铭剑杯': 6};
 const LEAGUE_COMPETITION_LEVELS = ['超级', '甲级', '乙级'];
@@ -200,14 +336,19 @@ function showCompetitionSubtab(subtab) {
     if (['playerRankings', 'suspensions'].includes(currentCompetitionSubtab) && !LEAGUE_COMPETITION_LEVELS.includes(currentCompetitionLevel)) {
         currentCompetitionLevel = '超级';
     }
-    document.getElementById('competitionSubtabStandings')?.classList.toggle('active', currentCompetitionSubtab === 'standings');
-    document.getElementById('competitionSubtabSchedule')?.classList.toggle('active', currentCompetitionSubtab === 'schedule');
-    document.getElementById('competitionSubtabPlayerRankings')?.classList.toggle('active', currentCompetitionSubtab === 'playerRankings');
-    document.getElementById('competitionSubtabSuspensions')?.classList.toggle('active', currentCompetitionSubtab === 'suspensions');
-    document.getElementById('competitionSubtabStandings')?.setAttribute('aria-selected', currentCompetitionSubtab === 'standings' ? 'true' : 'false');
-    document.getElementById('competitionSubtabSchedule')?.setAttribute('aria-selected', currentCompetitionSubtab === 'schedule' ? 'true' : 'false');
-    document.getElementById('competitionSubtabPlayerRankings')?.setAttribute('aria-selected', currentCompetitionSubtab === 'playerRankings' ? 'true' : 'false');
-    document.getElementById('competitionSubtabSuspensions')?.setAttribute('aria-selected', currentCompetitionSubtab === 'suspensions' ? 'true' : 'false');
+    [
+        ['competitionSubtabStandings', 'standings'],
+        ['competitionSubtabSchedule', 'schedule'],
+        ['competitionSubtabPlayerRankings', 'playerRankings'],
+        ['competitionSubtabSuspensions', 'suspensions'],
+    ].forEach(([id, value]) => {
+        const button = document.getElementById(id);
+        if (!button) return;
+        const active = currentCompetitionSubtab === value;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+        button.tabIndex = active ? 0 : -1;
+    });
     document.getElementById('competitionStandingsView')?.classList.toggle('active', currentCompetitionSubtab === 'standings');
     document.getElementById('competitionScheduleView')?.classList.toggle('active', currentCompetitionSubtab === 'schedule');
     document.getElementById('competitionPlayerRankingsView')?.classList.toggle('active', currentCompetitionSubtab === 'playerRankings');
@@ -216,6 +357,7 @@ function showCompetitionSubtab(subtab) {
     syncCupPhaseTabs();
     renderCompetitionAdminActions();
     renderCompetitionWorkPanel();
+    renderCompetitionDataStatus();
     if (currentCompetitionSubtab === 'schedule') {
         renderScheduleBoard();
     } else if (currentCompetitionSubtab === 'playerRankings') {
@@ -235,10 +377,11 @@ function setCompetitionLevel(level) {
     if (['playerRankings', 'suspensions'].includes(currentCompetitionSubtab) && !LEAGUE_COMPETITION_LEVELS.includes(currentCompetitionLevel)) {
         currentCompetitionLevel = '超级';
     }
-    syncCompetitionLevelTabs();
+    syncCompetitionLevelTabs({revealActive: true});
     syncCupPhaseTabs();
     renderCompetitionAdminActions();
     renderCompetitionWorkPanel();
+    renderCompetitionDataStatus();
     if (currentCompetitionWorkFilter !== 'all') {
         const summary = getCompetitionWorkSummary();
         const roundSelect = document.getElementById('scheduleRoundSelect');
@@ -265,21 +408,60 @@ function setCompetitionLevel(level) {
     }
 }
 
-function syncCompetitionLevelTabs() {
+function updateCompetitionSelectorOverflow(options = {}) {
+    const selector = document.getElementById('competitionSelector');
+    const viewport = document.getElementById('competitionSelectorViewport');
+    const hint = document.getElementById('competitionSelectorHint');
+    if (!selector || !viewport) return;
+
+    if (viewport.dataset.overflowBound !== 'true') {
+        viewport.dataset.overflowBound = 'true';
+        viewport.addEventListener('scroll', () => updateCompetitionSelectorOverflow(), {passive: true});
+        window.addEventListener('resize', () => updateCompetitionSelectorOverflow(), {passive: true});
+    }
+
+    if (options.revealActive === true && isMobileViewport()) {
+        const active = viewport.querySelector('.competition-level-tab.active');
+        if (active) {
+            const viewportRect = viewport.getBoundingClientRect();
+            const activeRect = active.getBoundingClientRect();
+            const targetLeft = viewport.scrollLeft + activeRect.left - viewportRect.left - (viewport.clientWidth - activeRect.width) / 2;
+            const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+            viewport.scrollTo({left: Math.max(0, targetLeft), behavior: reducedMotion ? 'auto' : 'smooth'});
+        }
+    }
+
+    window.requestAnimationFrame(() => {
+        const hasOverflow = viewport.scrollWidth > viewport.clientWidth + 2;
+        const atStart = viewport.scrollLeft <= 2;
+        const atEnd = viewport.scrollLeft + viewport.clientWidth >= viewport.scrollWidth - 2;
+        selector.classList.toggle('has-overflow', hasOverflow);
+        selector.classList.toggle('is-at-start', atStart);
+        selector.classList.toggle('is-at-end', atEnd);
+        if (hint) hint.textContent = hasOverflow && !atEnd ? '横滑查看更多' : '联赛与杯赛';
+    });
+}
+
+function syncCompetitionLevelTabs(options = {}) {
     const hideCupLevels = ['playerRankings', 'suspensions'].includes(currentCompetitionSubtab);
-    document.getElementById('competitionLevelSuper')?.classList.toggle('active', currentCompetitionLevel === '超级');
-    document.getElementById('competitionLevelFirst')?.classList.toggle('active', currentCompetitionLevel === '甲级');
-    document.getElementById('competitionLevelSecond')?.classList.toggle('active', currentCompetitionLevel === '乙级');
     [
+        ['competitionLevelSuper', '超级'],
+        ['competitionLevelFirst', '甲级'],
+        ['competitionLevelSecond', '乙级'],
         ['competitionLevelChampionsCup', '冠军杯'],
         ['competitionLevelLeagueCup', '联盟杯'],
         ['competitionLevelWumingjianCup', '无铭剑杯'],
     ].forEach(([id, level]) => {
         const button = document.getElementById(id);
         if (!button) return;
-        button.classList.toggle('active', currentCompetitionLevel === level);
-        button.style.display = hideCupLevels ? 'none' : '';
+        const active = currentCompetitionLevel === level;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+        button.tabIndex = active ? 0 : -1;
     });
+    const cupGroup = document.getElementById('competitionCupGroup');
+    if (cupGroup) cupGroup.hidden = hideCupLevels;
+    updateCompetitionSelectorOverflow(options);
     syncCupPhaseTabs();
 }
 
@@ -764,6 +946,16 @@ function setMobileStandingsScope(scope) {
     renderStandingsBoard();
 }
 
+function toggleMobileStandingRow(level, teamName) {
+    const key = `${level}:${teamName}`;
+    if (expandedMobileStandingRows.has(key)) {
+        expandedMobileStandingRows.delete(key);
+    } else {
+        expandedMobileStandingRows.add(key);
+    }
+    renderStandingsBoard();
+}
+
 function getMobileStandingsScopeMeta(scope = currentMobileStandingsScope) {
     if (scope === 'home') {
         return {
@@ -837,30 +1029,93 @@ function renderMobileStandingsCards(level, rows) {
                 const goalsAgainst = Number(row[scope.goalsAgainst] || 0);
                 const goalDifference = Number(row[scope.goalDifference] || 0);
                 const points = Number(row[scope.points] || 0);
+                const expandedKey = `${level}:${row.team_name || ''}`;
+                const expanded = expandedMobileStandingRows.has(expandedKey);
+                const detailsId = `mobileStandingDetails-${level}-${Number(row.rank || 0)}`;
                 return `
-                    <article class="mobile-standings-card ${zoneClass}">
-                        <div class="mobile-standings-rank">${row.rank}</div>
-                        <div class="mobile-standings-team">
-                            <button class="player-link mobile-standings-team-name" type="button" onclick="viewTeamPlayers(${htmlJsString(row.team_name || '')})">${escapeHtml(row.team_name || '-')}</button>
-                            <div class="mobile-standings-coach">${renderCoachProfileLink(row.manager, 'coach-profile-link standings-coach-link')}</div>
-                        </div>
-                        <div class="mobile-standings-points">
-                            <strong>${points}</strong>
-                            <span>积分</span>
-                        </div>
-                        <div class="mobile-standings-strip">
-                            <span><em>场</em>${scope.played(row)}</span>
-                            <span><em>胜</em>${wins}</span>
-                            <span><em>平</em>${draws}</span>
-                            <span><em>负</em>${losses}</span>
-                            <span><em>进</em>${goalsFor}</span>
-                            <span><em>失</em>${goalsAgainst}</span>
-                            <span><em>净</em>${goalDifference}</span>
-                            <span><em>胜率</em>${scope.rate(row)}</span>
-                        </div>
+                    <article class="mobile-standings-card ${zoneClass} ${expanded ? 'is-expanded' : ''}">
+                        <button class="mobile-standings-row-toggle" type="button" onclick="toggleMobileStandingRow(${htmlJsString(level)}, ${htmlJsString(row.team_name || '')})" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${detailsId}" aria-label="${expanded ? '收起' : '展开'} ${escapeHtml(row.team_name || '-')} 积分榜详情">
+                            <span class="mobile-standings-rank">${row.rank}</span>
+                            <span class="mobile-standings-team"><strong class="mobile-standings-team-name">${escapeHtml(row.team_name || '-')}</strong><small class="mobile-standings-coach">${escapeHtml(row.manager || '待定')}</small></span>
+                            <span class="mobile-standings-quick-stats">
+                                <span><small>场</small><b>${scope.played(row)}</b></span>
+                                <span><small>净</small><b>${goalDifference > 0 ? '+' : ''}${goalDifference}</b></span>
+                                <strong>${points}<small>分</small></strong>
+                            </span>
+                            <span class="mobile-standings-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="m7 10 5 5 5-5"/></svg></span>
+                        </button>
+                        ${expanded ? `<div class="mobile-standings-details" id="${detailsId}"><div class="mobile-standings-strip">
+                                <span><em>胜</em>${wins}</span>
+                                <span><em>平</em>${draws}</span>
+                                <span><em>负</em>${losses}</span>
+                                <span><em>进</em>${goalsFor}</span>
+                                <span><em>失</em>${goalsAgainst}</span>
+                                <span><em>胜率</em>${scope.rate(row)}</span>
+                            </div><div class="mobile-standings-detail-actions"><button type="button" onclick="viewTeamPlayers(${htmlJsString(row.team_name || '')})">查看球队</button>${renderCoachProfileLink(row.manager, 'coach-profile-link standings-coach-link')}</div></div>` : ''}
                     </article>
                 `;
             }).join('')}
+        </div>
+    `;
+}
+
+function renderDesktopStandingsTable(level, rows) {
+    const scope = getMobileStandingsScopeMeta();
+    return `
+        <div class="table-container competition-table-container standings-table-container">
+            <table class="competition-table standings-table standings-table-compact" aria-label="${escapeHtml(level)}${escapeHtml(scope.label)}积分榜">
+                <colgroup>
+                    <col class="standings-col-rank">
+                    <col class="standings-col-team">
+                    <col class="standings-col-coach">
+                    ${Array.from({length: 9}, () => '<col class="standings-col-total">').join('')}
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>排名</th>
+                        <th>球队</th>
+                        <th class="coach-column">主教练</th>
+                        <th>场次</th>
+                        <th>胜</th>
+                        <th>平</th>
+                        <th>负</th>
+                        <th>进球</th>
+                        <th>失球</th>
+                        <th>净胜球</th>
+                        <th>积分</th>
+                        <th>胜率</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map(row => {
+                        const wins = Number(row[scope.wins] || 0);
+                        const draws = Number(row[scope.draws] || 0);
+                        const losses = Number(row[scope.losses] || 0);
+                        const goalsFor = Number(row[scope.goalsFor] || 0);
+                        const goalsAgainst = Number(row[scope.goalsAgainst] || 0);
+                        const goalDifference = Number(row[scope.goalDifference] || 0);
+                        const points = Number(row[scope.points] || 0);
+                        return `
+                            <tr class="${getStandingZoneClass(row, rows)}">
+                                <td class="numeric-cell rank-cell">${row.rank}</td>
+                                <td class="team-name-cell standings-team-cell" title="${escapeHtml(row.manager ? `${row.team_name || '-'} / ${row.manager}` : (row.team_name || '-'))}">
+                                    <button class="player-link standings-team-link" type="button" onclick="viewTeamPlayers(${htmlJsString(row.team_name || '')})">${escapeHtml(row.team_name || '-')}</button>
+                                </td>
+                                <td class="coach-cell" title="${escapeHtml(row.manager || '-')}">${renderCoachProfileLink(row.manager, 'coach-profile-link standings-coach-link')}</td>
+                                <td class="numeric-cell">${scope.played(row)}</td>
+                                <td class="numeric-cell">${wins}</td>
+                                <td class="numeric-cell">${draws}</td>
+                                <td class="numeric-cell">${losses}</td>
+                                <td class="numeric-cell">${goalsFor}</td>
+                                <td class="numeric-cell">${goalsAgainst}</td>
+                                <td class="numeric-cell">${goalDifference}</td>
+                                <td class="numeric-cell points-cell">${points}</td>
+                                <td class="numeric-cell win-rate-cell">${scope.rate(row)}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
         </div>
     `;
 }
@@ -870,13 +1125,13 @@ function renderStandingsBoard() {
     if (!container) return;
     const rows = Array.isArray(standingsData.rows) ? standingsData.rows : [];
     if (!rows.length) {
-        container.innerHTML = '<div class="no-data">暂无积分榜数据。导入赛程并录入比分后，这里会自动生成排名。</div>';
+        container.innerHTML = renderUiState({tone: 'empty', title: '暂无积分榜数据', message: '导入赛程并录入比分后，这里会自动生成排名。', compact: true});
+        renderCompetitionDataStatus();
         return;
     }
 
     const grouped = groupStandingsByLevel(rows.filter(row => row.level === currentCompetitionLevel));
     const levels = Object.keys(grouped).sort((a, b) => getCompetitionLevelOrder(a) - getCompetitionLevelOrder(b) || a.localeCompare(b));
-    const mobileMode = isMobileViewport();
     container.innerHTML = levels.map(level => `
         <section class="competition-level-section standings-level-section exportable-panel" data-export-view="standings-${escapeHtml(level)}">
             <div class="table-header-row standings-header-row">
@@ -890,119 +1145,12 @@ function renderStandingsBoard() {
                     <button class="btn btn-secondary competition-image-btn capture-exclude" type="button" onclick="saveCompetitionImage('standings', ${htmlJsString(level)})">保存图片</button>
                 </div>
             </div>
-            ${mobileMode ? renderMobileStandingsScopeTabs(level) : ''}
-            ${mobileMode ? renderMobileStandingsCards(level, grouped[level]) : `
-            <div class="table-container competition-table-container standings-table-container">
-                <table class="competition-table standings-table" aria-label="${escapeHtml(level)}积分榜">
-                    <colgroup>
-                        <col class="standings-col-rank">
-                        <col class="standings-col-team">
-                        <col class="standings-col-coach">
-                        <col class="standings-col-total">
-                        <col class="standings-col-total">
-                        <col class="standings-col-total">
-                        <col class="standings-col-total">
-                        <col class="standings-col-total">
-                        <col class="standings-col-total">
-                        <col class="standings-col-total">
-                        <col class="standings-col-total">
-                        <col class="standings-col-total">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                        <col class="standings-col-split">
-                    </colgroup>
-                    <thead>
-                        <tr>
-                            <th class="standings-group-spacer" colspan="3"></th>
-                            <th class="standings-group-title" colspan="9">总数据</th>
-                            <th class="standings-group-title" colspan="8">主场数据</th>
-                            <th class="standings-group-title" colspan="8">客场数据</th>
-                        </tr>
-                        <tr>
-                            <th>排名</th>
-                            <th>球队</th>
-                            <th class="coach-column">主教练</th>
-                            <th>场次</th>
-                            <th>胜</th>
-                            <th>平</th>
-                            <th>负</th>
-                            <th>进球</th>
-                            <th>失球</th>
-                            <th>净胜球</th>
-                            <th>积分</th>
-                            <th>进球率</th>
-                            <th>胜</th>
-                            <th>平</th>
-                            <th>负</th>
-                            <th>进</th>
-                            <th>失</th>
-                            <th>净</th>
-                            <th>积</th>
-                            <th>胜率</th>
-                            <th>胜</th>
-                            <th>平</th>
-                            <th>负</th>
-                            <th>进</th>
-                            <th>失</th>
-                            <th>净</th>
-                            <th>积</th>
-                            <th>胜率</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${grouped[level].map(row => `
-                            <tr class="${getStandingZoneClass(row, grouped[level])}">
-                                <td class="numeric-cell rank-cell">${row.rank}</td>
-                                <td class="team-name-cell standings-team-cell" title="${escapeHtml(row.manager ? `${row.team_name || '-'} / ${row.manager}` : (row.team_name || '-'))}">
-                                    <span class="player-link" onclick="viewTeamPlayers(${htmlJsString(row.team_name || '')})">${escapeHtml(row.team_name || '-')}</span>
-                                </td>
-                                <td class="coach-cell" title="${escapeHtml(row.manager || '-')}">${renderCoachProfileLink(row.manager, 'coach-profile-link standings-coach-link')}</td>
-                                <td class="numeric-cell">${row.played}</td>
-                                <td class="numeric-cell">${row.wins}</td>
-                                <td class="numeric-cell">${row.draws}</td>
-                                <td class="numeric-cell">${row.losses}</td>
-                                <td class="numeric-cell">${row.goals_for}</td>
-                                <td class="numeric-cell">${row.goals_against}</td>
-                                <td class="numeric-cell">${row.goal_difference}</td>
-                                <td class="numeric-cell points-cell">${row.points}</td>
-                                <td class="numeric-cell rate-cell">${formatGoalRate(row)}</td>
-                                <td class="numeric-cell">${row.home_wins}</td>
-                                <td class="numeric-cell">${row.home_draws}</td>
-                                <td class="numeric-cell">${row.home_losses}</td>
-                                <td class="numeric-cell">${row.home_goals_for}</td>
-                                <td class="numeric-cell">${row.home_goals_against}</td>
-                                <td class="numeric-cell">${row.home_goal_difference}</td>
-                                <td class="numeric-cell points-cell">${row.home_points}</td>
-                                <td class="numeric-cell win-rate-cell">${formatRateValue(row.home_win_rate)}</td>
-                                <td class="numeric-cell">${row.away_wins}</td>
-                                <td class="numeric-cell">${row.away_draws}</td>
-                                <td class="numeric-cell">${row.away_losses}</td>
-                                <td class="numeric-cell">${row.away_goals_for}</td>
-                                <td class="numeric-cell">${row.away_goals_against}</td>
-                                <td class="numeric-cell">${row.away_goal_difference}</td>
-                                <td class="numeric-cell points-cell">${row.away_points}</td>
-                                <td class="numeric-cell win-rate-cell">${formatRateValue(row.away_win_rate)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-            `}
+            ${renderMobileStandingsScopeTabs(level)}
+            ${renderMobileStandingsCards(level, grouped[level])}
+            ${renderDesktopStandingsTable(level, grouped[level])}
         </section>
     `).join('');
+    renderCompetitionDataStatus();
 }
 
 function renderCompetitionPrimaryBoard() {
@@ -1140,6 +1288,7 @@ function renderPlayerRankingsBoard() {
                 <div class="no-data">${escapeHtml(emptyText)}</div>
             </section>
         `;
+        renderCompetitionDataStatus();
         return;
     }
     container.innerHTML = `
@@ -1180,13 +1329,18 @@ function renderPlayerRankingsBoard() {
             `}
         </section>
     `;
+    renderCompetitionDataStatus();
 }
 
 function renderMobilePlayerRankingCards(rows, metricLabel) {
     return `
         <div class="mobile-player-ranking-list" aria-label="${escapeHtml(currentCompetitionLevel)}${escapeHtml(metricLabel)}榜">
-            ${rows.map(row => `
-                <article class="mobile-player-ranking-card">
+            ${rows.map(row => {
+                const rowKey = String(row.player_uid || `${row.player_name || ''}:${row.team_name || ''}`);
+                const expanded = expandedMobilePlayerRankingRows.has(rowKey);
+                const detailsId = `mobilePlayerRankingDetails-${Number(row.rank || 0)}`;
+                return `
+                <article class="mobile-player-ranking-card ${expanded ? 'is-expanded' : ''}">
                     <div class="mobile-player-ranking-rank">${Number(row.rank || 0)}</div>
                     <div class="mobile-player-ranking-main">
                         ${renderPlayerRankingPlayerName(row, 'mobile-player-ranking-name')}
@@ -1196,16 +1350,25 @@ function renderMobilePlayerRankingCards(rows, metricLabel) {
                         <strong>${Number(currentPlayerRankingType === 'assists' ? row.assists || 0 : (currentPlayerRankingType === 'mvps' ? row.mvps || 0 : row.goals || 0))}</strong>
                         <span>${escapeHtml(metricLabel)}</span>
                     </div>
-                    <div class="mobile-player-ranking-stats">
+                    <button class="mobile-player-ranking-toggle" type="button" onclick="toggleMobilePlayerRankingRow(${htmlJsString(rowKey)})" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${detailsId}" aria-label="${expanded ? '收起' : '展开'} ${escapeHtml(row.player_name || '-')}详细数据">${uiIconSvg('chevron-down', 'ui-icon is-small')}</button>
+                    ${expanded ? `<div class="mobile-player-ranking-stats" id="${detailsId}">
                         <span><em>进球</em>${Number(row.goals || 0)}</span>
                         <span><em>助攻</em>${Number(row.assists || 0)}</span>
                         <span><em>最佳</em>${Number(row.mvps || 0)}</span>
                         <span><em>出场</em>${Number(row.appearances || 0)}</span>
-                    </div>
+                    </div>` : ''}
                 </article>
-            `).join('')}
+            `;}).join('')}
         </div>
     `;
+}
+
+function toggleMobilePlayerRankingRow(rowKey) {
+    const key = String(rowKey || '');
+    if (!key) return;
+    if (expandedMobilePlayerRankingRows.has(key)) expandedMobilePlayerRankingRows.delete(key);
+    else expandedMobilePlayerRankingRows.add(key);
+    renderPlayerRankingsBoard();
 }
 
 function getTeamPlayersForSuspension(team) {
@@ -1439,6 +1602,13 @@ function getSuspensionUpdateNote(level) {
     return String(siteNotesData[getSuspensionNoteKey(level)]?.text || '').trim();
 }
 
+function getSuspensionUpdateRound(level) {
+    const rawValue = siteNotesData[getSuspensionNoteKey(level)]?.round_no;
+    if (rawValue === null || rawValue === undefined || rawValue === '') return null;
+    const value = Number(rawValue);
+    return Number.isInteger(value) && value >= 0 ? value : null;
+}
+
 function getSuspensionTeamNoteKey(teamId) {
     return `competition.suspensions.team.${Number(teamId)}`;
 }
@@ -1447,32 +1617,43 @@ function getSuspensionTeamNote(teamId) {
     return String(siteNotesData[getSuspensionTeamNoteKey(teamId)]?.text || '').trim();
 }
 
+function getSuspensionTeamRound(teamId) {
+    const rawValue = siteNotesData[getSuspensionTeamNoteKey(teamId)]?.round_no;
+    if (rawValue === null || rawValue === undefined || rawValue === '') return null;
+    const value = Number(rawValue);
+    return Number.isInteger(value) && value >= 0 ? value : null;
+}
+
 function renderSuspensionTeamNote(team) {
     if (team.is_orphaned) return '';
     const teamId = Number(team.team_id || 0);
     const note = getSuspensionTeamNote(teamId);
+    const roundNo = getSuspensionTeamRound(teamId);
     if (!canManageCurrentCompetitionSuspensions()) {
-        return note ? `<div class="suspension-team-note"><strong>更新备注</strong><span>${escapeHtml(note)}</span></div>` : '';
+        return note || roundNo !== null ? `<div class="suspension-team-note"><strong>更新进度</strong><span>${roundNo !== null ? `第 ${roundNo} 轮` : '轮次未标注'}${note ? ` · ${escapeHtml(note)}` : ''}</span></div>` : '';
     }
     return `
         <div class="suspension-team-note capture-exclude">
-            <strong>更新备注</strong>
-            <input id="suspension-team-note-${teamId}" type="text" maxlength="160" value="${escapeHtml(note)}" placeholder="例如：更新至第 8 轮赛后">
-            <button class="suspension-link-btn" type="button" onclick="saveSuspensionTeamNote(${teamId})">保存备注</button>
+            <strong>更新进度</strong>
+            <label class="suspension-round-field"><span>轮次</span><input id="suspension-team-round-${teamId}" type="number" min="0" max="34" inputmode="numeric" value="${roundNo ?? ''}" placeholder="轮次"></label>
+            <input id="suspension-team-note-${teamId}" type="text" maxlength="160" value="${escapeHtml(note)}" placeholder="可选备注，例如赛后已核对">
+            <button class="suspension-link-btn" type="button" onclick="saveSuspensionTeamNote(${teamId})">保存</button>
         </div>
     `;
 }
 
 function renderSuspensionUpdateNote(level) {
     const note = getSuspensionUpdateNote(level);
-    const displayText = note || '伤停更新时间待补充';
+    const roundNo = getSuspensionUpdateRound(level);
+    const displayText = `${roundNo !== null ? `更新至第 ${roundNo} 轮` : '伤停轮次待补充'}${note ? ` · ${note}` : ''}`;
     return `
         <div class="suspension-update-note">
             <span class="suspension-update-note-text">${escapeHtml(displayText)}</span>
             ${canManageCurrentCompetitionSuspensions() ? `
                 <div class="suspension-note-editor capture-exclude">
-                    <input id="suspension-note-${escapeHtml(level)}" type="text" maxlength="160" value="${escapeHtml(note)}" placeholder="例如：伤停统计更新至第 8 轮赛后">
-                    <button class="btn btn-secondary" type="button" onclick="saveSuspensionUpdateNote(${htmlJsString(level)})">保存注释</button>
+                    <label class="suspension-round-field"><span>更新至轮次</span><input id="suspension-round-${escapeHtml(level)}" type="number" min="0" max="34" inputmode="numeric" value="${roundNo ?? ''}" placeholder="轮次"></label>
+                    <input id="suspension-note-${escapeHtml(level)}" type="text" maxlength="160" value="${escapeHtml(note)}" placeholder="可选备注，例如全部球队已核对">
+                    <button class="btn btn-secondary" type="button" onclick="saveSuspensionUpdateNote(${htmlJsString(level)})">保存进度</button>
                 </div>
             ` : ''}
         </div>
@@ -1485,7 +1666,8 @@ function renderSuspensionsBoard() {
     if (!container) return;
     const teamsForLevel = (suspensionData.teams || []).filter(team => team.level === currentCompetitionLevel);
     if (!teamsForLevel.length) {
-        container.innerHTML = '<div class="no-data">暂无伤停统计数据。</div>';
+        container.innerHTML = renderUiState({tone: 'empty', title: '暂无伤停统计数据', message: '当前级别没有已登记的伤停或纪律记录。', compact: true});
+        renderCompetitionDataStatus();
         return;
     }
     container.innerHTML = `
@@ -1501,15 +1683,24 @@ function renderSuspensionsBoard() {
                 </div>
             </div>
             <div class="suspension-team-grid">
-                ${teamsForLevel.map(team => `
-                    <article class="suspension-team-card ${team.is_orphaned ? 'is-orphaned' : ''}">
+                ${teamsForLevel.map(team => {
+                    const teamId = Number(team.team_id || 0);
+                    const expanded = !isMobileViewport() || expandedMobileSuspensionTeams.has(teamId) || Number(activeSuspensionEditorTeamId || 0) === teamId;
+                    const detailsId = `suspensionTeamDetails-${teamId}`;
+                    const cautionCount = (team.one_yellow || []).length + (team.two_yellows || []).length;
+                    const suspendedCount = (team.suspended || []).length;
+                    return `
+                    <article class="suspension-team-card ${team.is_orphaned ? 'is-orphaned' : ''} ${expanded ? 'is-expanded' : ''}">
                         <header class="suspension-team-head">
                             <div>
                                 <h3>${escapeHtml(team.team_name)}</h3>
                                 <span>${team.is_orphaned ? '可直接清除已离队或球队不一致的历史记录' : renderCoachProfileLink(team.manager, 'coach-profile-link suspension-coach-link')}</span>
                             </div>
+                            <div class="suspension-team-quick-stats"><span><strong>${cautionCount}</strong>黄牌关注</span><span class="${suspendedCount ? 'has-suspension' : ''}"><strong>${suspendedCount}</strong>停赛</span></div>
                             ${renderSuspensionTeamActions(team)}
+                            <button class="suspension-team-toggle" type="button" onclick="toggleMobileSuspensionTeam(${teamId})" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${detailsId}" aria-label="${expanded ? '收起' : '展开'} ${escapeHtml(team.team_name)}伤停详情">${uiIconSvg('chevron-down', 'ui-icon is-small')}</button>
                         </header>
+                        ${expanded ? `<div class="suspension-team-details" id="${detailsId}">
                         ${renderSuspensionTeamNote(team)}
                         <div class="suspension-columns">
                             <section class="is-one-yellow">
@@ -1527,11 +1718,21 @@ function renderSuspensionsBoard() {
                         </div>
                         ${renderSuspensionNotes(team.notes)}
                         ${renderSuspensionEditor(team)}
+                        </div>` : ''}
                     </article>
-                `).join('')}
+                `;}).join('')}
             </div>
         </section>
     `;
+    renderCompetitionDataStatus();
+}
+
+function toggleMobileSuspensionTeam(teamId) {
+    const numericTeamId = Number(teamId || 0);
+    if (!numericTeamId) return;
+    if (expandedMobileSuspensionTeams.has(numericTeamId)) expandedMobileSuspensionTeams.delete(numericTeamId);
+    else expandedMobileSuspensionTeams.add(numericTeamId);
+    renderSuspensionsBoard();
 }
 
 function toggleSuspensionEditor(teamId) {
@@ -1544,11 +1745,14 @@ async function saveSuspensionUpdateNote(level) {
     if (!canManageCurrentCompetitionSuspensions()) return;
     const key = getSuspensionNoteKey(level);
     const input = document.getElementById(`suspension-note-${level}`);
+    const roundInput = document.getElementById(`suspension-round-${level}`);
     const text = String(input?.value || '').trim();
+    const roundValue = String(roundInput?.value || '').trim();
+    const roundNo = roundValue === '' ? null : Number(roundValue);
     const result = await adminJsonRequest(`/api/admin/site-notes/${encodeURIComponent(key)}`, {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({text}),
+        body: JSON.stringify({text, round_no: roundNo}),
     });
     if (!result) return;
     const {response, data} = result;
@@ -1556,7 +1760,8 @@ async function saveSuspensionUpdateNote(level) {
         showModal('保存失败', escapeHtml(data.detail || data.message || '保存注释失败'));
         return;
     }
-    siteNotesData[key] = {...(siteNotesData[key] || {}), key, text};
+    siteNotesData[key] = {...(siteNotesData[key] || {}), key, text, round_no: roundNo, updated_at: new Date().toISOString()};
+    if (typeof loadDataStatus === 'function') await loadDataStatus({force: true});
     renderSuspensionsBoard();
 }
 
@@ -1564,11 +1769,14 @@ async function saveSuspensionTeamNote(teamId) {
     if (!canManageCurrentCompetitionSuspensions()) return;
     const key = getSuspensionTeamNoteKey(teamId);
     const input = document.getElementById(`suspension-team-note-${teamId}`);
+    const roundInput = document.getElementById(`suspension-team-round-${teamId}`);
     const text = String(input?.value || '').trim();
+    const roundValue = String(roundInput?.value || '').trim();
+    const roundNo = roundValue === '' ? null : Number(roundValue);
     const result = await adminJsonRequest(`/api/admin/site-notes/${encodeURIComponent(key)}`, {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({text}),
+        body: JSON.stringify({text, round_no: roundNo}),
     });
     if (!result) return;
     const {response, data} = result;
@@ -1576,7 +1784,8 @@ async function saveSuspensionTeamNote(teamId) {
         showModal('保存失败', escapeHtml(data.detail || data.message || '保存球队伤停备注失败'));
         return;
     }
-    siteNotesData[key] = {...(siteNotesData[key] || {}), key, text};
+    siteNotesData[key] = {...(siteNotesData[key] || {}), key, text, round_no: roundNo, updated_at: new Date().toISOString()};
+    if (typeof loadDataStatus === 'function') await loadDataStatus({force: true});
     renderSuspensionsBoard();
 }
 
@@ -2171,7 +2380,7 @@ function renderScheduleRoundNavigator(rounds, currentRound, matches) {
             <button class="schedule-round-arrow" type="button" onclick="stepScheduleRound(-1)" ${currentIndex <= 0 ? 'disabled' : ''} aria-label="上一轮">‹</button>
             <div class="schedule-round-chip ${isRoundComplete ? 'is-complete' : ''}">
                 <span>${escapeHtml(formatRoundPairLabel(currentPair.rounds))}</span>
-                <span class="schedule-round-check" aria-hidden="true">✓</span>
+                <span class="schedule-round-check" aria-hidden="true">${uiIconSvg('check', 'ui-icon is-small')}</span>
                 <select class="schedule-round-direct-select" aria-label="选择赛程轮次" onchange="setScheduleRound(this.value)">
                     ${roundPairs.map(pair => `<option value="${Number(pair.pairStart)}" ${Number(pair.pairStart) === Number(currentPair.pairStart) ? 'selected' : ''}>${escapeHtml(formatRoundPairLabel(pair.rounds))}</option>`).join('')}
                 </select>
@@ -2415,7 +2624,7 @@ function renderMatchEventRow(match, event = {}, options = {}) {
                     <option value="assist" ${selectedType === 'assist' ? 'selected' : ''}>助攻</option>
                 </select>
                 <input class="match-event-quantity" type="number" min="1" value="${quantity}" aria-label="事件数量" oninput="scheduleMatchAutoSave(${Number(match.id)})" onchange="scheduleMatchAutoSave(${Number(match.id)})">
-                <button class="match-event-remove" type="button" onclick="removeMatchEventRow(this)" aria-label="删除明细">×</button>
+                <button class="match-event-remove" type="button" onclick="removeMatchEventRow(this)" aria-label="删除明细">${uiIconSvg('close', 'ui-icon is-small')}</button>
             `}
         </div>
     `;
@@ -2628,7 +2837,7 @@ function getScheduleMatchSaveState(matchId) {
 
 function renderScheduleMatchSaveState(matchId) {
     const status = getScheduleMatchSaveState(matchId);
-    return `<span class="match-save-state is-${escapeHtml(status.state)}" data-match-save-id="${Number(matchId)}">${escapeHtml(status.message)}</span>`;
+    return `<span class="match-save-state ui-save-state is-${escapeHtml(status.state)}" data-match-save-id="${Number(matchId)}" role="status" aria-live="polite">${escapeHtml(status.message)}</span>`;
 }
 
 function setScheduleMatchSaveState(matchId, state, message = '') {
@@ -2644,10 +2853,11 @@ function setScheduleMatchSaveState(matchId, state, message = '') {
     const nextState = {state, message: message || fallbackMessages[state] || ''};
     scheduleMatchSaveStates.set(numericMatchId, nextState);
     document.querySelectorAll(`[data-match-save-id="${numericMatchId}"]`).forEach(element => {
-        element.className = `match-save-state is-${state}`;
+        element.className = `match-save-state ui-save-state is-${state}`;
         element.textContent = nextState.message;
         element.onclick = state === 'error' ? () => saveScheduleMatchQuietly(numericMatchId) : null;
         element.setAttribute('role', state === 'error' ? 'button' : 'status');
+        element.setAttribute('aria-live', state === 'error' ? 'assertive' : 'polite');
         element.tabIndex = state === 'error' ? 0 : -1;
     });
 }
@@ -2815,8 +3025,14 @@ function renderMobileScheduleMatchCard(match) {
     const status = match.status || 'scheduled';
     const score = getScheduleMatchScoreText(match);
     const statusToneClass = getScheduleStatusTone(status);
+    const events = Array.isArray(match.events) ? match.events : [];
+    const goalCount = events.filter(event => event.event_type === 'goal').reduce((total, event) => total + Number(event.quantity || 0), 0);
+    const assistCount = events.filter(event => event.event_type === 'assist').reduce((total, event) => total + Number(event.quantity || 0), 0);
+    const hasMvp = events.some(event => event.event_type === 'mvp');
+    const expanded = expandedMobileScheduleMatches.has(Number(match.id)) || Number(currentCompetitionWorkTargetMatchId || 0) === Number(match.id);
+    const detailsId = `mobileScheduleDetails-${Number(match.id)}`;
     return `
-        <article class="mobile-schedule-card ${played ? 'is-played' : 'is-pending'} ${getCompetitionWorkMatchClass(match.id)}" data-match-id="${Number(match.id) || 0}">
+        <article class="mobile-schedule-card ${played ? 'is-played' : 'is-pending'} ${expanded ? 'is-expanded' : ''} ${getCompetitionWorkMatchClass(match.id)}" data-match-id="${Number(match.id) || 0}">
             <div class="mobile-schedule-card-head">
                 <span class="mobile-schedule-round">第 ${Number(match.round_no) || '-'} 轮</span>
                 <span class="mobile-schedule-status ${statusToneClass}">
@@ -2831,10 +3047,14 @@ function renderMobileScheduleMatchCard(match) {
                 </div>
                 ${renderScheduleMobileTeam(match, 'away')}
             </div>
-            <div class="mobile-schedule-card-events">
-                ${renderScheduleMatchEvents(match)}
-                ${renderCompetitionWorkMatchIssue(match.id)}
+            <div class="mobile-schedule-detail-bar">
+                <span><strong>${goalCount}</strong>进球</span>
+                <span><strong>${assistCount}</strong>助攻</span>
+                <span class="${hasMvp ? 'is-ready' : ''}">${hasMvp ? '已评最佳' : '最佳待补'}</span>
+                <button type="button" onclick="toggleMobileScheduleMatchDetails(${Number(match.id)})" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${detailsId}">${expanded ? '收起' : '明细'}${uiIconSvg('chevron-down', 'ui-icon is-small')}</button>
             </div>
+            ${expanded ? `<div class="mobile-schedule-card-events" id="${detailsId}">${renderScheduleMatchEvents(match)}</div>` : ''}
+            ${renderCompetitionWorkMatchIssue(match.id)}
             ${canManageCurrentCompetitionSchedule() ? `
                 <button class="mobile-schedule-edit-trigger" type="button" onclick="openMobileScheduleEditDrawer(${Number(match.id)})">
                     <span>编辑事件</span>
@@ -2843,6 +3063,14 @@ function renderMobileScheduleMatchCard(match) {
             ` : ''}
         </article>
     `;
+}
+
+function toggleMobileScheduleMatchDetails(matchId) {
+    const numericMatchId = Number(matchId || 0);
+    if (!numericMatchId) return;
+    if (expandedMobileScheduleMatches.has(numericMatchId)) expandedMobileScheduleMatches.delete(numericMatchId);
+    else expandedMobileScheduleMatches.add(numericMatchId);
+    renderScheduleBoard();
 }
 
 function renderMobileScheduleList(matches, rounds = []) {
@@ -2948,7 +3176,7 @@ function renderMobileScheduleEditDrawer() {
                         <span>赛程维护</span>
                         <strong>${escapeHtml(match.home_team_name || '-')} vs ${escapeHtml(match.away_team_name || '-')}</strong>
                     </div>
-                    <button type="button" class="mobile-schedule-editor-close" onclick="closeMobileScheduleEditDrawer()" aria-label="关闭编辑">×</button>
+                    <button type="button" class="mobile-schedule-editor-close" onclick="closeMobileScheduleEditDrawer()" aria-label="关闭编辑">${uiIconSvg('close')}</button>
                 </header>
                 <div class="mobile-schedule-editor-summary">
                     <span>${escapeHtml(match.home_team_name || '-')}</span>
@@ -3086,6 +3314,7 @@ function renderScheduleBoard() {
         container.innerHTML = currentCupPhase === 'group'
             ? '<div class="no-data">本届杯赛尚未录入小组赛分组与赛程。</div>'
             : '<div class="no-data">淘汰赛赛程请在“积分榜 → 淘汰赛阶段”查看完整晋级图。</div>';
+        renderCompetitionDataStatus();
         return;
     }
     const matches = getFilteredScheduleMatches();
@@ -3094,7 +3323,8 @@ function renderScheduleBoard() {
         document.body.classList.remove('mobile-schedule-editor-open');
         container.innerHTML = currentCompetitionWorkFilter !== 'all'
             ? '<div class="no-data">当前工作筛选下没有待处理比赛。</div>'
-            : '<div class="no-data">暂无赛程数据。管理员可先导入 imports/schedules/ 下的最新赛程文件。</div>';
+            : renderUiState({tone: 'empty', title: '暂无赛程数据', message: '管理员可先从联赛工作台导入最新赛程文件。', compact: true});
+        renderCompetitionDataStatus();
         return;
     }
 
@@ -3112,15 +3342,18 @@ function renderScheduleBoard() {
             ${renderMobileScheduleEditDrawer()}
         </section>
     `;
+    renderCompetitionDataStatus();
 }
 
 async function loadCompetitionData(options = {}) {
     renderCompetitionAdminActions();
+    if (typeof loadDataStatus === 'function') loadDataStatus({force: options.force === true});
     if (hasCompetitionWorkAccess()) loadCompetitionWorkSummary({force: options.force === true});
     if (competitionDataLoaded && options.force !== true) {
         renderCompetitionPrimaryBoard();
         renderScheduleBoard();
         renderSuspensionsBoard();
+        renderCompetitionDataStatus();
         return;
     }
 
@@ -3155,8 +3388,8 @@ async function loadCompetitionData(options = {}) {
         };
         competitionDataLoaded = true;
     } catch (error) {
-        if (standingsContainer) standingsContainer.innerHTML = '<div class="no-data">积分榜加载失败，请稍后重试。</div>';
-        if (scheduleContainer) scheduleContainer.innerHTML = '<div class="no-data">赛程加载失败，请稍后重试。</div>';
+        if (standingsContainer) standingsContainer.innerHTML = renderUiState({tone: 'danger', title: '积分榜加载失败', message: '请检查网络连接后重新读取。', actionLabel: '重新读取', actionOnclick: 'loadCompetitionData({force:true})', compact: true});
+        if (scheduleContainer) scheduleContainer.innerHTML = renderUiState({tone: 'danger', title: '赛程加载失败', message: '请检查网络连接后重新读取。', actionLabel: '重新读取', actionOnclick: 'loadCompetitionData({force:true})', compact: true});
         return;
     }
 
@@ -3165,6 +3398,7 @@ async function loadCompetitionData(options = {}) {
     renderScheduleBoard();
     renderPlayerRankingsBoard();
     renderSuspensionsBoard();
+    renderCompetitionDataStatus();
     renderCompetitionWorkPanel();
 }
 
@@ -3324,6 +3558,7 @@ function scheduleMatchAutoSave(matchId) {
     if (!canManageCurrentCompetitionSchedule()) return;
     const numericMatchId = Number(matchId || 0);
     if (!numericMatchId) return;
+    scheduleMatchSaveVersions.set(numericMatchId, Number(scheduleMatchSaveVersions.get(numericMatchId) || 0) + 1);
     setScheduleMatchSaveState(numericMatchId, 'dirty');
     if (scheduleAutoSaveTimers.has(numericMatchId)) {
         window.clearTimeout(scheduleAutoSaveTimers.get(numericMatchId));
@@ -3337,40 +3572,58 @@ function scheduleMatchAutoSave(matchId) {
 
 async function saveScheduleMatchQuietly(matchId) {
     if (!canManageCurrentCompetitionSchedule()) return;
-    let payload;
-    try {
-        payload = readMatchScorePayload(matchId);
-    } catch (error) {
-        setScheduleMatchSaveState(matchId, 'error', error.message || '数据不完整，点击重试');
+    const numericMatchId = Number(matchId || 0);
+    if (!numericMatchId) return;
+    if (scheduleMatchSaveInFlight.has(numericMatchId)) {
+        scheduleMatchSaveQueued.add(numericMatchId);
         return;
     }
-    setScheduleMatchSaveState(matchId, 'saving');
-    let result;
+    let payload;
     try {
-        result = await adminJsonRequest('/api/admin/matches/batch', {
+        payload = readMatchScorePayload(numericMatchId);
+    } catch (error) {
+        setScheduleMatchSaveState(numericMatchId, 'error', error.message || '数据不完整，点击重试');
+        return;
+    }
+    const saveVersion = Number(scheduleMatchSaveVersions.get(numericMatchId) || 0);
+    const isCurrentAttempt = () => Number(scheduleMatchSaveVersions.get(numericMatchId) || 0) === saveVersion;
+    scheduleMatchSaveInFlight.add(numericMatchId);
+    setScheduleMatchSaveState(numericMatchId, 'saving');
+    try {
+        const result = await adminJsonRequest('/api/admin/matches/batch', {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({matches: [payload]}),
         });
+        if (!result) {
+            if (isCurrentAttempt()) setScheduleMatchSaveState(numericMatchId, 'error');
+            return;
+        }
+        const {response, data} = result;
+        if (!response.ok || !data.success) {
+            if (isCurrentAttempt()) setScheduleMatchSaveState(numericMatchId, 'error', data.detail || data.message || '保存失败，点击重试');
+            return;
+        }
+        if (!isCurrentAttempt()) {
+            scheduleMatchSaveQueued.add(numericMatchId);
+            return;
+        }
+        applyMatchPayloadLocally(payload);
+        setScheduleMatchSaveState(numericMatchId, 'saved');
+        competitionDataLoaded = false;
+        await refreshPlayerRankingsData();
+        await refreshCompetitionWorkSummary({renderBoards: false});
+        renderCompetitionDataStatus();
     } catch (error) {
         console.error('赛程自动保存失败:', error);
-        setScheduleMatchSaveState(matchId, 'error');
-        return;
+        if (isCurrentAttempt()) setScheduleMatchSaveState(numericMatchId, 'error');
+    } finally {
+        scheduleMatchSaveInFlight.delete(numericMatchId);
+        if (scheduleMatchSaveQueued.has(numericMatchId) || !isCurrentAttempt()) {
+            scheduleMatchSaveQueued.delete(numericMatchId);
+            window.setTimeout(() => saveScheduleMatchQuietly(numericMatchId), 0);
+        }
     }
-    if (!result) {
-        setScheduleMatchSaveState(matchId, 'error');
-        return;
-    }
-    const {response, data} = result;
-    if (!response.ok || !data.success) {
-        setScheduleMatchSaveState(matchId, 'error', data.detail || data.message || '保存失败，点击重试');
-        return;
-    }
-    applyMatchPayloadLocally(payload);
-    setScheduleMatchSaveState(matchId, 'saved');
-    competitionDataLoaded = false;
-    await refreshPlayerRankingsData();
-    await refreshCompetitionWorkSummary({renderBoards: false});
 }
 
 async function saveCurrentMatchProgress(matchIds) {

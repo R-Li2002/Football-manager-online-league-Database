@@ -26,11 +26,12 @@ assert(players.includes("buildRosterHeader('所属球队', 'team_name'"), 'compl
 assert(players.includes("buildRosterHeader('工资', 'wage'"), 'complete roster should retain wage');
 assert(css.includes('.league-data-switch-button.is-active'), 'league data switch should have a clear active state');
 assert(overview.includes('return renderLeagueLevelBadge(level);'), 'overview should reuse the shared league signature');
-assert(core.includes("'超级': {className: 'level-super', character: 'S', english: 'SUPER'}"), 'super league signature should use the S monogram');
-assert(core.includes("'甲级': {className: 'level-a', character: 'A', english: 'FIRST'}"), 'first division signature should use the A monogram');
-assert(core.includes("'乙级': {className: 'level-b', character: 'B', english: 'SECOND'}"), 'second division signature should use the B monogram');
+assert(core.includes("'超级': {className: 'level-super', character: '超', english: 'SUPER'}"), 'super league signature should use the Chinese super mark');
+assert(core.includes("'甲级': {className: 'level-a', character: '甲', english: 'FIRST'}"), 'first division signature should use the Chinese first mark');
+assert(core.includes("'乙级': {className: 'level-b', character: '乙', english: 'SECOND'}"), 'second division signature should use the Chinese second mark');
 assert(!core.includes('league-tier-shield') && !core.includes('league-tier-wings'), 'rejected shield and ribbon markup should be removed');
 assert(css.includes('font: 900 .82rem/1 var(--font-data);'), 'league monograms should use the crisp data typeface');
+assert(css.includes('.league-level-mark {\n    font-family: var(--font-cn-display);'), 'Chinese league marks should use the same display font as the website');
 assert(css.includes('.league-level-signature.is-compact { min-height: 27px; padding: 0; border: 0;'), 'compact monograms should not carry a redundant outer frame');
 assert(css.includes('.league-level-signature.level-super { --league-level-color: #9c82ff;'), 'super league signature should use the violet palette');
 assert(css.includes('.league-level-signature.level-a { --league-level-color: #55aeff;'), 'first division signature should use the blue palette');

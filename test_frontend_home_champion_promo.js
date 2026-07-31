@@ -34,6 +34,9 @@ const elements = new Map();
     'heroDbPlayerCount',
     'heroModeBadge',
     'heroPlayerSearch',
+    'homePromotionModalLayer',
+    'homePromotionModalContent',
+    'homePromotionModalClose',
 ].forEach(id => elements.set(id, createElement(id)));
 
 const storageState = new Map();
@@ -95,6 +98,7 @@ const context = {
         getElementById(id) {
             return elements.get(id) || null;
         },
+        addEventListener() {},
     },
     window: {
         localStorage,
@@ -134,6 +138,12 @@ const context = {
     showDatabaseSubtab(subtab) {
         navigationCalls.push(['database', subtab]);
     },
+    openTeamCenter() {
+        navigationCalls.push(['teamCenter']);
+    },
+    openFullLeagueRoster() {
+        navigationCalls.push(['fullRoster']);
+    },
     setCompetitionLevel(level) {
         navigationCalls.push(['level', level]);
     },
@@ -163,11 +173,33 @@ vm.runInContext(homeCode, context, {filename: 'app.home.js'});
     assert.match(banner.innerHTML, /87届初期强制名单已发布/);
     assert.match(storageState.get('heigoHomePromotionsDismissed'), /2026-07-16/);
 
+    const modalPromotion = {id: 9, display_mode: 'modal', theme: 'violet', icon: 'star', eyebrow: 'WELCOME TO HEIGO', title: '教练数据台', body: '球队中心｜查看赛程与战力\n10W+ 球员库｜高级搜索', updated_at: '2026-07-30T13:00:00'};
+    context.showHomePromotionModal(modalPromotion);
+    assert.match(elements.get('homePromotionModalContent').innerHTML, /COACH DESK/);
+    assert.match(elements.get('homePromotionModalContent').innerHTML, /10W\+ 球员库/);
+    assert.match(elements.get('homePromotionModalContent').innerHTML, /DATABASE/);
+
     await context.openHomePromotionAction(1);
     assert.deepEqual(navigationCalls, [
         ['tab', 'competition'],
         ['subtab', 'standings'],
         ['level', '冠军杯'],
         ['history', 'push'],
+    ]);
+
+    configuredPromotions.push(
+        {id: 3, action_kind: 'tab', action_target: 'team'},
+        {id: 4, action_kind: 'tab', action_target: 'competition:playerRankings:甲级'},
+        {id: 5, action_kind: 'tab', action_target: 'players'},
+    );
+    context.homePromotions = configuredPromotions;
+    navigationCalls.length = 0;
+    await context.openHomePromotionAction(3);
+    await context.openHomePromotionAction(4);
+    await context.openHomePromotionAction(5);
+    assert.deepEqual(navigationCalls, [
+        ['teamCenter'],
+        ['tab', 'competition'], ['subtab', 'playerRankings'], ['level', '甲级'], ['history', 'push'],
+        ['tab', 'players'], ['fullRoster'], ['history', 'push'],
     ]);
 })();

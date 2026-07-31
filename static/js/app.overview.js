@@ -494,7 +494,7 @@ function renderOverviewTeamCardStat(label, value, extraClass = '') {
 function renderTeamsCardViewWithData(data) {
     const sortedData = getSortedTeams(data);
     if (!sortedData.length) {
-        document.getElementById('teamsTable').innerHTML = '<div class="no-data">暂无球队数据。</div>';
+        document.getElementById('teamsTable').innerHTML = renderUiState({tone: 'empty', title: '暂无球队数据', message: '完成联赛名单导入后，球队会显示在这里。', compact: true});
         return;
     }
 

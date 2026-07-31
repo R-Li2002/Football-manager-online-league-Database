@@ -712,7 +712,7 @@ function renderDatabaseAdvancedSearchPanel() {
                     <h3 id="dbAdvancedSearchTitle">高级搜索条件</h3>
                     <p class="database-advanced-helper">在当前版本球员库上叠加范围和位置筛选。保留现有关键词时会做联合搜索。</p>
                 </div>
-                <button class="database-advanced-close" type="button" onclick="toggleAdvancedSearchPanel(false)" aria-label="关闭高级搜索">×</button>
+                <button class="database-advanced-close" type="button" onclick="toggleAdvancedSearchPanel(false)" aria-label="关闭高级搜索">${uiIconSvg('close')}</button>
             </div>
             <div class="database-advanced-summary-row">
                 <span class="query-chip ${countActiveAdvancedFilters() ? '' : 'is-muted'}">已启用 <strong>${countActiveAdvancedFilters()}</strong> 个高级条件</span>

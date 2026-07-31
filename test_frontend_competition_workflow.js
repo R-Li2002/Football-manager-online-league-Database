@@ -29,6 +29,17 @@ assert.match(
     /refreshCompetitionWorkSummary\(\{renderBoards: false\}\)/,
     'quiet match saves should refresh workflow counts without rebuilding the active schedule editor',
 );
+assert.match(competitionCode, /scheduleMatchSaveVersions = new Map\(\)/, 'match saves should version local edits');
+assert.match(competitionCode, /scheduleMatchSaveInFlight = new Set\(\)/, 'only one save request per match should be in flight');
+assert.match(competitionCode, /scheduleMatchSaveQueued = new Set\(\)/, 'new edits should queue a follow-up save');
+assert.match(
+    competitionCode,
+    /scheduleMatchSaveQueued\.has\(numericMatchId\) \|\| !isCurrentAttempt\(\)/,
+    'a stale save response should trigger the latest queued save instead of winning',
+);
+for (const issueLabel of ['待录比分', '缺少事件', '数据异常', '伤停待确认']) {
+    assert.match(competitionCode, new RegExp(issueLabel), `competition status should expose ${issueLabel}`);
+}
 
 function createElement() {
     return {

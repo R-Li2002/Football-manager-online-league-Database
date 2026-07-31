@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
 from database import Base, init_database
-from models import Player, Team, TransferLog
+from models import Player, PlayerAttribute, Team, TransferLog
 from services import league_service, transfer_service
 from team_links import SEA_TEAM_NAME
 
@@ -34,7 +34,8 @@ class TransferServiceTests(unittest.TestCase):
         alpha = Team(name="Alpha FC", manager="A", level="\u8d85\u7ea7", wage=0)
         beta = Team(name="Beta FC", manager="B", level="\u7532\u7ea7", wage=0)
         sea = Team(name=SEA_TEAM_NAME, manager="Sea", level="\u9690\u85cf", wage=0)
-        self.db.add_all([alpha, beta, sea])
+        archive = Team(name="Archive", manager="Archive", level="\u9690\u85cf", wage=0)
+        self.db.add_all([alpha, beta, sea, archive])
         self.db.flush()
 
         alpha_player = Player(
@@ -65,9 +66,49 @@ class TransferServiceTests(unittest.TestCase):
             wage=0,
             slot_type="",
         )
-        for player in (alpha_player, beta_player):
+        sea_player = Player(
+            uid=1003,
+            name="Sea One",
+            age=24,
+            initial_ca=105,
+            ca=118,
+            pa=130,
+            position="AMC",
+            nationality="ESP",
+            team_id=sea.id,
+            team_name=sea.name,
+            wage=0,
+            slot_type="",
+        )
+        outside_player = Player(
+            uid=1004,
+            name="Outside One",
+            age=23,
+            initial_ca=102,
+            ca=111,
+            pa=126,
+            position="DC",
+            nationality="ITA",
+            team_id=archive.id,
+            team_name=archive.name,
+            wage=0,
+            slot_type="",
+        )
+        for player in (alpha_player, beta_player, sea_player, outside_player):
             league_service.refresh_player_financials(player, self.db)
             self.db.add(player)
+        self.db.add(
+            PlayerAttribute(
+                uid=72048200,
+                name="Miles Robinson",
+                age=28,
+                ca=134,
+                pa=137,
+                position="D C",
+                nationality="United States",
+                club="FC Cincinnati",
+            )
+        )
 
         self.db.commit()
         league_service.recalculate_team_stats(self.db)
@@ -110,6 +151,129 @@ class TransferServiceTests(unittest.TestCase):
         self.assertEqual(logs, [])
         player = self.db.query(Player).filter(Player.uid == 1001).one()
         self.assertEqual(player.team_name, "Alpha FC")
+
+    def test_fish_sea_player_moves_existing_player_and_resets_current_ca(self):
+        old_wage = self.db.query(Player).filter(Player.uid == 1003).one().wage
+
+        result = transfer_service.fish_sea_player(
+            self.db,
+            "HEIGO01",
+            SimpleNamespace(player_uid=1003, to_team="Alpha FC", notes="sea signing"),
+            lambda *_args: None,
+        )
+
+        self.assertTrue(result["success"])
+        player = self.db.query(Player).filter(Player.uid == 1003).one()
+        self.assertEqual(player.team_name, "Alpha FC")
+        self.assertEqual(player.ca, 105)
+        self.assertNotEqual(player.wage, old_wage)
+
+        alpha = self.db.query(Team).filter(Team.name == "Alpha FC").one()
+        sea = self.db.query(Team).filter(Team.name == SEA_TEAM_NAME).one()
+        self.assertEqual(alpha.team_size, 2)
+        self.assertEqual(sea.team_size, 0)
+        self.assertEqual(alpha.stats_cache_refresh_mode, league_service.TEAM_CACHE_REFRESH_MODE_WRITE_INCREMENTAL)
+        self.assertEqual(sea.level, "\u9690\u85cf")
+
+        log = self.db.query(TransferLog).filter(TransferLog.player_uid == 1003).one()
+        self.assertEqual(log.operation, "\u6d77\u635e")
+        self.assertEqual(log.from_team, SEA_TEAM_NAME)
+        self.assertEqual(log.to_team, "Alpha FC")
+        self.assertEqual(log.ca_change, -13)
+
+    def test_fish_sea_player_rejects_non_sea_player_and_hidden_target(self):
+        with self.assertRaises(HTTPException) as non_sea_error:
+            transfer_service.fish_sea_player(
+                self.db,
+                "HEIGO01",
+                SimpleNamespace(player_uid=1001, to_team="Beta FC", notes=""),
+                lambda *_args: None,
+            )
+        self.assertEqual(non_sea_error.exception.detail, transfer_service.PLAYER_NOT_IN_SEA)
+
+        with self.assertRaises(HTTPException) as hidden_target_error:
+            transfer_service.fish_sea_player(
+                self.db,
+                "HEIGO01",
+                SimpleNamespace(player_uid=1003, to_team=SEA_TEAM_NAME, notes=""),
+                lambda *_args: None,
+            )
+        self.assertEqual(hidden_target_error.exception.detail, transfer_service.INVALID_FISH_TARGET)
+
+    def test_fish_sea_player_accepts_any_player_outside_three_league_levels(self):
+        result = transfer_service.fish_sea_player(
+            self.db,
+            "HEIGO01",
+            SimpleNamespace(player_uid=1004, to_team="Beta FC", notes="outside league"),
+            lambda *_args: None,
+        )
+
+        self.assertTrue(result["success"])
+        player = self.db.query(Player).filter(Player.uid == 1004).one()
+        self.assertEqual(player.team_name, "Beta FC")
+        self.assertEqual(player.ca, player.initial_ca)
+        log = self.db.query(TransferLog).filter(TransferLog.player_uid == 1004).one()
+        self.assertEqual(log.from_team, SEA_TEAM_NAME)
+
+    def test_fish_sea_player_can_create_roster_player_from_attribute_database(self):
+        result = transfer_service.fish_sea_player(
+            self.db,
+            "HEIGO01",
+            SimpleNamespace(player_uid=72048200, to_team="Alpha FC", notes=""),
+            lambda *_args: None,
+        )
+
+        self.assertTrue(result["success"])
+        player = self.db.query(Player).filter(Player.uid == 72048200).one()
+        self.assertEqual(player.name, "Miles Robinson")
+        self.assertEqual(player.team_name, "Alpha FC")
+        self.assertEqual(player.initial_ca, 134)
+        self.assertEqual(player.ca, 134)
+        self.assertEqual(player.pa, 137)
+        self.assertGreater(player.wage, 0)
+        log = self.db.query(TransferLog).filter(TransferLog.player_uid == 72048200).one()
+        self.assertEqual(log.from_team, SEA_TEAM_NAME)
+        self.assertEqual(log.notes, "从球员数据库海捞")
+
+    def test_undo_sea_fish_returns_player_to_sea_and_restores_ca(self):
+        transfer_service.fish_sea_player(
+            self.db,
+            "HEIGO01",
+            SimpleNamespace(player_uid=1003, to_team="Alpha FC", notes="undo me"),
+            lambda *_args: None,
+        )
+        log = self.db.query(TransferLog).filter(TransferLog.player_uid == 1003).one()
+
+        result = transfer_service.undo_operation(self.db, "HEIGO01", log.id, lambda *_args: None)
+
+        self.assertTrue(result["success"])
+        player = self.db.query(Player).filter(Player.uid == 1003).one()
+        self.assertEqual(player.team_name, SEA_TEAM_NAME)
+        self.assertEqual(player.ca, 118)
+        self.assertIsNone(self.db.query(TransferLog).filter(TransferLog.id == log.id).first())
+
+    def test_undo_legacy_fish_still_deletes_created_player(self):
+        transfer_service.fish_player(
+            self.db,
+            "HEIGO01",
+            SimpleNamespace(
+                uid=2001,
+                name="Created One",
+                age=20,
+                ca=101,
+                pa=125,
+                position="ST",
+                nationality="FRA",
+                team_name="Alpha FC",
+                notes="legacy fish",
+            ),
+            lambda *_args: None,
+        )
+        log = self.db.query(TransferLog).filter(TransferLog.player_uid == 2001).one()
+
+        transfer_service.undo_operation(self.db, "HEIGO01", log.id, lambda *_args: None)
+
+        self.assertIsNone(self.db.query(Player).filter(Player.uid == 2001).first())
 
 
 if __name__ == "__main__":

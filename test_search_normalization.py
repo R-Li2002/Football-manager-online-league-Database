@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import Player, PlayerAttribute, PlayerAttributeVersion
+from models import Player, PlayerAttribute, PlayerAttributeVersion, Team
 from repositories.attribute_repository import (
     AttributeRangeFilter,
     PositionScoreFilter,
@@ -57,6 +57,9 @@ class SearchRepositoryTests(unittest.TestCase):
         self.db.query(PlayerAttributeVersion).delete()
         self.db.query(PlayerAttribute).delete()
         self.db.query(Player).delete()
+        self.db.query(Team).delete()
+        self.db.add(Team(name="Test", manager="Coach", level="超级", wage=0))
+        self.db.flush()
         self.db.add_all(
             [
                 Player(uid=1, name="İlkay Gündoğan", age=34, initial_ca=150, ca=150, pa=150, position="MC", nationality="DE", team_name="Test", wage=1.0, slot_type=""),

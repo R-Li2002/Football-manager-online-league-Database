@@ -3,6 +3,7 @@ from services.admin_write_service import (
     batch_release,
     batch_transfer,
     consume_player,
+    fish_sea_player,
     fish_player,
     recalculate_wages,
     release_player,
@@ -17,6 +18,7 @@ from services.admin_write_service import (
 __all__ = [
     "transfer_player",
     "fish_player",
+    "fish_sea_player",
     "release_player",
     "consume_player",
     "rejuvenate_player",

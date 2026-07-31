@@ -107,13 +107,14 @@ class SuspensionServiceTest(unittest.TestCase):
             self.db,
             "editor",
             note_key,
-            SiteNoteUpdateRequest(text="更新至第 8 轮赛后"),
+            SiteNoteUpdateRequest(text="更新至第 8 轮赛后", round_no=8),
             lambda *_args: None,
         )
 
         self.assertEqual(site_note_service.get_suspension_note_level(self.db, note_key), "超级")
-        notes = {item.key: item.text for item in site_note_service.list_site_notes(self.db)}
-        self.assertEqual(notes[note_key], "更新至第 8 轮赛后")
+        notes = {item.key: item for item in site_note_service.list_site_notes(self.db)}
+        self.assertEqual(notes[note_key].text, "更新至第 8 轮赛后")
+        self.assertEqual(notes[note_key].round_no, 8)
 
         output, filename = export_service.build_suspensions_excel(self.db, "超级")
         self.assertTrue(filename.endswith(".xlsx"))
@@ -145,6 +146,29 @@ class SuspensionServiceTest(unittest.TestCase):
                 SiteNoteUpdateRequest(text="不允许"),
                 lambda *_args: None,
             )
+
+    def test_note_round_accepts_boundaries_and_rejects_out_of_range(self):
+        note_key = site_note_service.build_suspension_note_key("超级")
+        for round_no in (0, 34):
+            site_note_service.update_site_note(
+                self.db,
+                "editor",
+                note_key,
+                SiteNoteUpdateRequest(text=f"第 {round_no} 轮", round_no=round_no),
+                lambda *_args: None,
+            )
+            note = next(item for item in site_note_service.list_site_notes(self.db) if item.key == note_key)
+            self.assertEqual(note.round_no, round_no)
+
+        for round_no in (-1, 35):
+            with self.assertRaises(HTTPException):
+                site_note_service.update_site_note(
+                    self.db,
+                    "editor",
+                    note_key,
+                    SiteNoteUpdateRequest(text="越界", round_no=round_no),
+                    lambda *_args: None,
+                )
 
 
 if __name__ == "__main__":

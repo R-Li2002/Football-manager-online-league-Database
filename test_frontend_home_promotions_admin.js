@@ -22,6 +22,15 @@ assert.match(adminCode, /toggleWorkspacePromotion/);
 assert.match(adminCode, /deleteWorkspacePromotion/);
 assert.match(adminCode, /starts_at/);
 assert.match(adminCode, /ends_at/);
+assert.match(adminCode, /competition:playerRankings/);
+assert.match(adminCode, /完整联赛名单/);
+assert.match(adminCode, /球队中心/);
+assert.match(adminCode, /getWorkspacePromotionTargetOptions/);
+assert.match(adminCode, /workspacePromotionDisplayMode/);
+assert.match(adminCode, /访问弹窗/);
+assert.match(homeCode, /showPendingHomePromotionModal/);
+assert.match(homeCode, /homePromotionModalShownThisVisit/);
+assert.match(html, /id="homePromotionModalLayer"/);
 
 assert.match(homeCode, /\/api\/home-promotions/);
 assert.match(homeCode, /openHomePromotionAction/);

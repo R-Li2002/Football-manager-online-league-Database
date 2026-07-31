@@ -23,7 +23,8 @@ from repositories.player_reaction_repository import list_player_reaction_leaderb
 from repositories.player_repository import (
     get_player_by_uid,
     get_players_by_team_name,
-    list_players_excluding_team,
+    list_league_players,
+    list_sea_players,
     map_player_uid_to_team_name,
     search_players_by_name,
 )
@@ -58,7 +59,7 @@ from weighted_power import calculate_weighted_power
 
 LEVEL_ORDER = {"超级": 1, "甲级": 2, "乙级": 3}
 VISIBLE_LEVEL = "隐藏"
-SEA_TEAM_NAME = "85大海"
+SEA_TEAM_NAME = "大海"
 ATTRIBUTE_FALLBACK_TEAM = "大海"
 ADVANCED_SEARCH_FIELD_LABELS = {
     "age": "年龄",
@@ -184,7 +185,7 @@ def _build_player_responses(db: Session, players) -> list[PlayerResponse]:
 
 
 def get_all_players(db: Session) -> list[PlayerResponse]:
-    return _build_player_responses(db, list_players_excluding_team(db, SEA_TEAM_NAME))
+    return _build_player_responses(db, list_league_players(db))
 
 
 def get_players_by_team(db: Session, team_name: str) -> list[PlayerResponse]:
@@ -517,7 +518,7 @@ def get_player_reaction_leaderboard(
 
 
 def get_sea_players(db: Session):
-    return _build_player_responses(db, get_players_by_team_name(db, SEA_TEAM_NAME))
+    return _build_player_responses(db, list_sea_players(db))
 
 
 def get_team_info(db: Session, team_name: str) -> TeamInfoResponse:

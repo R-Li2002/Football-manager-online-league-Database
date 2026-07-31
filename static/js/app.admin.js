@@ -6,6 +6,13 @@ let workspaceSessionData = null;
 let workspaceDashboardData = null;
 let workspaceAccountsData = [];
 let workspacePromotionsData = [];
+let workspaceLogoMatcherData = null;
+let workspaceLogoSelectedTeamId = null;
+let workspaceLogoCandidates = [];
+let workspaceLogoSelectedCandidateIndex = -1;
+let workspaceLogoSourceMode = 'fclogo';
+let workspaceLogoLocalFile = null;
+let workspaceLogoLocalPreviewUrl = '';
 let workspaceAdminOperationsLoaded = false;
 
 const WORKSPACE_CAPABILITY_LABELS = {
@@ -128,7 +135,7 @@ async function openWorkspace(options = {}) {
 }
 
 function showWorkspaceView(viewName, scrollTarget = '') {
-    const normalized = ['home', 'accounts', 'imports', 'promotions', 'operations'].includes(viewName) ? viewName : 'home';
+    const normalized = ['home', 'accounts', 'imports', 'promotions', 'logos', 'operations'].includes(viewName) ? viewName : 'home';
     document.querySelectorAll('.workspace-view').forEach(view => view.classList.remove('active'));
     document.getElementById(`workspace${normalized[0].toUpperCase()}${normalized.slice(1)}View`)?.classList.add('active');
     document.querySelectorAll('[data-workspace-view]').forEach(button => {
@@ -136,10 +143,267 @@ function showWorkspaceView(viewName, scrollTarget = '') {
     });
     if (normalized === 'accounts') loadWorkspaceAccounts();
     if (normalized === 'promotions') loadWorkspacePromotions();
+    if (normalized === 'logos') loadWorkspaceLogoMatcher();
     if (normalized === 'imports') loadWorkspaceAdminOperations();
     if (normalized === 'operations') loadWorkspaceAdminOperations();
     if (scrollTarget) {
         window.setTimeout(() => document.getElementById(scrollTarget)?.scrollIntoView({behavior: 'smooth', block: 'start'}), 80);
+    }
+}
+
+function workspaceLogoLevelRank(level) {
+    return {'超级': 0, '甲级': 1, '乙级': 2}[level] ?? 9;
+}
+
+function workspaceLogoImage(path, teamName, className = '') {
+    const safeName = escapeHtml(teamName || '球队');
+    return path
+        ? `<img class="${className}" src="${escapeHtml(path)}" alt="${safeName}队徽" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="workspace-logo-fallback" hidden>${safeName.slice(0, 1)}</span>`
+        : `<span class="workspace-logo-fallback">${safeName.slice(0, 1)}</span>`;
+}
+
+async function loadWorkspaceLogoMatcher(options = {}) {
+    if (workspaceLogoMatcherData && options.force !== true) {
+        renderWorkspaceLogoTeams();
+        return workspaceLogoMatcherData;
+    }
+    const list = document.getElementById('workspaceLogoTeamList');
+    if (list) list.innerHTML = '<div class="loading">读取联赛球队...</div>';
+    const response = await fetch('/api/admin/team-logo-match/overview', {credentials: 'same-origin'});
+    if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        if (list) list.innerHTML = `<div class="workspace-logo-empty">${escapeHtml(payload.detail || '球队读取失败')}</div>`;
+        return null;
+    }
+    workspaceLogoMatcherData = await response.json();
+    const teams = workspaceLogoMatcherData.teams || [];
+    if (!workspaceLogoSelectedTeamId && teams.length) workspaceLogoSelectedTeamId = teams[0].id;
+    renderWorkspaceLogoTeams();
+    const selected = teams.find(team => team.id === workspaceLogoSelectedTeamId);
+    const input = document.getElementById('workspaceLogoSearchInput');
+    if (selected && input && !input.value) input.value = selected.name;
+    renderWorkspaceLogoReview();
+    return workspaceLogoMatcherData;
+}
+
+function renderWorkspaceLogoTeams() {
+    const list = document.getElementById('workspaceLogoTeamList');
+    if (!list || !workspaceLogoMatcherData) return;
+    const filter = (document.getElementById('workspaceLogoTeamFilter')?.value || '').trim().toLowerCase();
+    const teams = [...(workspaceLogoMatcherData.teams || [])]
+        .filter(team => !filter || `${team.name} ${team.level}`.toLowerCase().includes(filter))
+        .sort((a, b) => workspaceLogoLevelRank(a.level) - workspaceLogoLevelRank(b.level) || a.name.localeCompare(b.name, 'zh-CN'));
+    document.getElementById('workspaceLogoTeamCount').textContent = `${teams.length} CLUBS`;
+    list.innerHTML = teams.length ? teams.map(team => `
+        <button class="workspace-logo-team ${team.id === workspaceLogoSelectedTeamId ? 'active' : ''}" type="button" onclick="selectWorkspaceLogoTeam(${Number(team.id)})">
+            <span class="workspace-logo-team-crest">${workspaceLogoImage(team.logo_path, team.name)}</span>
+            <span class="workspace-logo-team-copy"><strong>${escapeHtml(team.name)}</strong><small>${team.latest_source ? `${team.latest_source.provider === 'local_upload' ? '本地上传' : 'FCLOGO'} · ${escapeHtml(team.latest_source.source_version || team.latest_source.source_variant || '已采用')}` : '尚无匹配记录'}</small></span>
+            <em class="workspace-logo-level level-${workspaceLogoLevelRank(team.level)}">${escapeHtml(team.level)}</em>
+        </button>
+    `).join('') : '<div class="workspace-logo-empty">没有符合条件的球队。</div>';
+}
+
+function selectWorkspaceLogoTeam(teamId) {
+    workspaceLogoSelectedTeamId = Number(teamId);
+    workspaceLogoCandidates = [];
+    workspaceLogoSelectedCandidateIndex = -1;
+    clearWorkspaceLogoLocalFile();
+    renderWorkspaceLogoTeams();
+    const team = (workspaceLogoMatcherData?.teams || []).find(item => item.id === workspaceLogoSelectedTeamId);
+    const input = document.getElementById('workspaceLogoSearchInput');
+    if (input && team) {
+        input.value = team.name;
+        input.focus();
+        input.select();
+    }
+    const candidates = document.getElementById('workspaceLogoCandidateList');
+    if (candidates) candidates.innerHTML = '<div class="workspace-logo-empty">搜索该球队在 FCLOGO 中的候选队徽。</div>';
+    renderWorkspaceLogoReview();
+}
+
+function setWorkspaceLogoSource(mode) {
+    workspaceLogoSourceMode = mode === 'upload' ? 'upload' : 'fclogo';
+    document.getElementById('workspaceLogoFclogoTab')?.classList.toggle('active', workspaceLogoSourceMode === 'fclogo');
+    document.getElementById('workspaceLogoUploadTab')?.classList.toggle('active', workspaceLogoSourceMode === 'upload');
+    document.getElementById('workspaceLogoFclogoPane')?.classList.toggle('active', workspaceLogoSourceMode === 'fclogo');
+    document.getElementById('workspaceLogoUploadPane')?.classList.toggle('active', workspaceLogoSourceMode === 'upload');
+    workspaceLogoSelectedCandidateIndex = -1;
+    if (workspaceLogoSourceMode === 'upload' && workspaceLogoLocalFile) {
+        setWorkspaceLogoLocalCandidate();
+    } else {
+        renderWorkspaceLogoReview();
+    }
+}
+
+function clearWorkspaceLogoLocalFile() {
+    if (workspaceLogoLocalPreviewUrl) URL.revokeObjectURL(workspaceLogoLocalPreviewUrl);
+    workspaceLogoLocalFile = null;
+    workspaceLogoLocalPreviewUrl = '';
+    const input = document.getElementById('workspaceLogoUploadInput');
+    if (input) input.value = '';
+    const preview = document.getElementById('workspaceLogoUploadPreview');
+    if (preview) preview.innerHTML = '<div class="workspace-logo-empty">文件只在确认后上传，选择文件不会立即替换队徽。</div>';
+}
+
+function handleWorkspaceLogoUpload(file) {
+    if (!workspaceLogoSelectedTeamId) {
+        clearWorkspaceLogoLocalFile();
+        return showModal('提示', '请先选择球队');
+    }
+    if (!file) return clearWorkspaceLogoLocalFile();
+    const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
+    const maxBytes = isSvg ? 5 * 1024 * 1024 : 2 * 1024 * 1024;
+    if (file.size > maxBytes) {
+        clearWorkspaceLogoLocalFile();
+        return showModal('错误', `该文件超过${isSvg ? '5MB' : '2MB'}上限`);
+    }
+    if (workspaceLogoLocalPreviewUrl) URL.revokeObjectURL(workspaceLogoLocalPreviewUrl);
+    workspaceLogoLocalFile = file;
+    workspaceLogoLocalPreviewUrl = URL.createObjectURL(file);
+    setWorkspaceLogoLocalCandidate();
+}
+
+function setWorkspaceLogoLocalCandidate() {
+    const team = (workspaceLogoMatcherData?.teams || []).find(item => item.id === workspaceLogoSelectedTeamId);
+    if (!workspaceLogoLocalFile || !team) return;
+    const extension = workspaceLogoLocalFile.name.split('.').pop()?.toUpperCase() || 'FILE';
+    workspaceLogoCandidates = [{
+        source_kind: 'local',
+        preview_url: workspaceLogoLocalPreviewUrl,
+        name: workspaceLogoLocalFile.name,
+        full_name: team.name,
+        version: `${(workspaceLogoLocalFile.size / 1024).toFixed(0)} KB`,
+        variant: extension,
+        variant_zh: extension,
+        confidence: null,
+        detail_url: '',
+    }];
+    workspaceLogoSelectedCandidateIndex = 0;
+    const preview = document.getElementById('workspaceLogoUploadPreview');
+    if (preview) preview.innerHTML = `
+        <div class="workspace-logo-upload-file">
+            <img src="${escapeHtml(workspaceLogoLocalPreviewUrl)}" alt="本地队徽预览">
+            <span><strong>${escapeHtml(workspaceLogoLocalFile.name)}</strong><small>${escapeHtml(extension)} · ${(workspaceLogoLocalFile.size / 1024).toFixed(0)} KB</small></span>
+            <button type="button" onclick="clearWorkspaceLogoLocalFile(); workspaceLogoCandidates=[]; workspaceLogoSelectedCandidateIndex=-1; renderWorkspaceLogoReview();">移除</button>
+        </div>`;
+    renderWorkspaceLogoReview();
+}
+
+async function searchWorkspaceLogoCandidates() {
+    const query = (document.getElementById('workspaceLogoSearchInput')?.value || '').trim();
+    if (!workspaceLogoSelectedTeamId) return showModal('提示', '请先选择球队');
+    if (!query) return showModal('提示', '请输入球队搜索词');
+    const button = document.getElementById('workspaceLogoSearchButton');
+    const list = document.getElementById('workspaceLogoCandidateList');
+    if (button) { button.disabled = true; button.textContent = '检索中...'; }
+    if (list) list.innerHTML = '<div class="loading">正在连接 FCLOGO...</div>';
+    try {
+        const response = await fetch(`/api/admin/team-logo-match/search?team_id=${encodeURIComponent(workspaceLogoSelectedTeamId)}&q=${encodeURIComponent(query)}`, {credentials: 'same-origin'});
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.detail || '搜索失败');
+        workspaceLogoCandidates = payload.candidates || [];
+        workspaceLogoSelectedCandidateIndex = -1;
+        renderWorkspaceLogoCandidates();
+        renderWorkspaceLogoReview();
+    } catch (error) {
+        workspaceLogoCandidates = [];
+        if (list) list.innerHTML = `<div class="workspace-logo-empty is-error">${escapeHtml(error.message || '搜索失败')}</div>`;
+    } finally {
+        if (button) { button.disabled = false; button.textContent = '搜索 FCLOGO'; }
+    }
+}
+
+function renderWorkspaceLogoCandidates() {
+    const list = document.getElementById('workspaceLogoCandidateList');
+    if (!list) return;
+    list.innerHTML = workspaceLogoCandidates.length ? workspaceLogoCandidates.map((candidate, index) => `
+        <button class="workspace-logo-candidate ${index === workspaceLogoSelectedCandidateIndex ? 'active' : ''}" type="button" onclick="selectWorkspaceLogoCandidate(${index})">
+            <span class="workspace-logo-candidate-image"><img src="${escapeHtml(candidate.preview_url || '')}" alt="${escapeHtml(candidate.name || '候选队徽')}" loading="lazy"></span>
+            <span class="workspace-logo-candidate-copy"><strong>${escapeHtml(candidate.name || candidate.full_name || '未命名')}</strong><small>${escapeHtml(candidate.full_name || candidate.local_name || '')}</small><span><em>${escapeHtml(candidate.variant_zh || candidate.variant || '版本')}</em><em>${escapeHtml(candidate.version || '年份未知')}</em></span></span>
+            <b>${Number(candidate.confidence || 0).toFixed(0)}<small>%</small></b>
+        </button>
+    `).join('') : '<div class="workspace-logo-empty">没有找到候选。可调整为英文全名、当地名称或常用简称后重试。</div>';
+}
+
+function selectWorkspaceLogoCandidate(index) {
+    workspaceLogoSelectedCandidateIndex = Number(index);
+    renderWorkspaceLogoCandidates();
+    renderWorkspaceLogoReview();
+}
+
+function renderWorkspaceLogoReview() {
+    const host = document.getElementById('workspaceLogoReview');
+    if (!host) return;
+    const team = (workspaceLogoMatcherData?.teams || []).find(item => item.id === workspaceLogoSelectedTeamId);
+    const candidate = workspaceLogoCandidates[workspaceLogoSelectedCandidateIndex];
+    if (!team || !candidate) {
+        host.innerHTML = '<div class="workspace-logo-empty">选择候选后，这里会显示新旧队徽对照。</div>';
+        return;
+    }
+    const isLocal = candidate.source_kind === 'local';
+    host.innerHTML = `
+        <div class="workspace-logo-versus">
+            <div><span>当前</span><div class="workspace-logo-review-crest">${workspaceLogoImage(team.logo_path, team.name)}</div><strong>${escapeHtml(team.name)}</strong></div>
+            <i aria-hidden="true">${uiIconSvg('arrow-right', 'ui-icon is-small')}</i>
+            <div class="is-candidate"><span>候选</span><div class="workspace-logo-review-crest"><img src="${escapeHtml(candidate.preview_url || '')}" alt="候选队徽"></div><strong>${escapeHtml(candidate.name || candidate.full_name || '')}</strong></div>
+        </div>
+        <dl class="workspace-logo-metadata">
+            <div><dt>${isLocal ? '文件大小' : '版本'}</dt><dd>${escapeHtml(candidate.version || '未知')}</dd></div>
+            <div><dt>类型</dt><dd>${escapeHtml(candidate.variant_zh || candidate.variant || '未知')}</dd></div>
+            <div><dt>匹配度</dt><dd>${isLocal ? '人工确认' : `${Number(candidate.confidence || 0).toFixed(0)}%`}</dd></div>
+            <div><dt>来源</dt><dd>${isLocal ? '本地上传' : `<a href="${escapeHtml(candidate.detail_url)}" target="_blank" rel="noopener noreferrer">FCLOGO ↗</a>`}</dd></div>
+        </dl>
+        <label class="workspace-logo-confirm"><input id="workspaceLogoConfirm" type="checkbox"><span><strong>我已人工核对队徽与球队</strong><small>确认后才会替换网站当前队徽，并保留来源记录。</small></span></label>
+        <button class="btn btn-primary workspace-logo-apply" id="workspaceLogoApplyButton" type="button" onclick="applyWorkspaceLogoCandidate()">${isLocal ? '上传并采用此队徽' : '确认采用此队徽'}</button>
+    `;
+}
+
+async function applyWorkspaceLogoCandidate() {
+    const team = (workspaceLogoMatcherData?.teams || []).find(item => item.id === workspaceLogoSelectedTeamId);
+    const candidate = workspaceLogoCandidates[workspaceLogoSelectedCandidateIndex];
+    if (!team || !candidate) return showModal('提示', '请先选择候选队徽');
+    if (!document.getElementById('workspaceLogoConfirm')?.checked) return showModal('提示', '请先完成并勾选人工核对');
+    const isLocal = candidate.source_kind === 'local';
+    if (isLocal && !workspaceLogoLocalFile) return showModal('提示', '请重新选择本地队徽文件');
+    if (!window.confirm(`确认将 ${team.name} 的当前队徽替换为所选${isLocal ? '本地文件' : ' FCLOGO 候选'}？`)) return;
+    const button = document.getElementById('workspaceLogoApplyButton');
+    if (button) { button.disabled = true; button.textContent = '清洗并保存中...'; }
+    try {
+        let response;
+        if (isLocal) {
+            const formData = new FormData();
+            formData.append('team_id', String(team.id));
+            formData.append('confirmed', 'true');
+            formData.append('logo', workspaceLogoLocalFile, workspaceLogoLocalFile.name);
+            response = await fetch('/api/admin/team-logo-match/upload', {method: 'POST', credentials: 'same-origin', body: formData});
+        } else {
+            response = await fetch('/api/admin/team-logo-match/apply', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    team_id: team.id,
+                    slug: candidate.slug,
+                    matched_query: (document.getElementById('workspaceLogoSearchInput')?.value || team.name).trim(),
+                    source_name: candidate.full_name || candidate.name || '',
+                    source_version: candidate.version || null,
+                    source_variant: candidate.variant || null,
+                    matched_score: Number(candidate.confidence || 0),
+                    confirmed: true,
+                }),
+            });
+        }
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.detail || '队徽保存失败');
+        showModal('成功', payload.message || '队徽已更新');
+        workspaceLogoMatcherData = null;
+        workspaceLogoCandidates = [];
+        workspaceLogoSelectedCandidateIndex = -1;
+        clearWorkspaceLogoLocalFile();
+        await loadWorkspaceLogoMatcher({force: true});
+    } catch (error) {
+        showModal('错误', error.message || '队徽保存失败，原队徽未改变');
+        if (button) { button.disabled = false; button.textContent = isLocal ? '上传并采用此队徽' : '确认采用此队徽'; }
     }
 }
 
@@ -203,6 +467,24 @@ function renderWorkspaceTasks() {
     `).join('')}</div>`;
 }
 
+function renderWorkspaceDataStatuses() {
+    const container = document.getElementById('workspaceDataStatusList');
+    if (!container) return;
+    const items = workspaceDashboardData?.data_statuses || [];
+    if (!items.length) {
+        container.innerHTML = '<div class="workspace-empty">当前数据状态正常，没有需要跟进的提醒。</div>';
+        return;
+    }
+    container.innerHTML = `<div class="workspace-data-status-list">${items.map(item => `
+        <button class="workspace-data-status-row is-${escapeHtml(item.status || 'unknown')}" type="button" onclick="openDataStatusItem(${dataStatusJsString(item.key)}, ${dataStatusJsString(item.scope || 'all')})">
+            <span class="workspace-data-status-icon">${dataStatusIconSvg(item.status)}</span>
+            <span class="workspace-data-status-copy"><strong>${escapeHtml(item.scope === 'all' ? item.label : `${item.scope}${item.label}`)}</strong><em>${escapeHtml(item.message || '')}</em></span>
+            <span class="workspace-data-status-state">${escapeHtml(item.status_label || '状态未知')}</span>
+            <span class="workspace-data-status-count">${Number(item.issue_count || 0) > 0 ? `${Number(item.issue_count)} 项` : '查看'}</span>
+        </button>
+    `).join('')}</div>`;
+}
+
 async function openWorkspaceCompetitionTask(level, roundStart, subtab = 'schedule') {
     await showTab('competition', null, {syncHistory: false});
     currentCompetitionLevel = level;
@@ -257,20 +539,23 @@ async function loadWorkspaceDashboard(options = {}) {
     if (workspaceDashboardData && options.force !== true) {
         renderWorkspaceMetrics();
         renderWorkspaceTasks();
+        renderWorkspaceDataStatuses();
         renderWorkspaceRecentActions();
         return;
     }
     const response = await fetch('/api/workspace/dashboard', {credentials: 'same-origin'});
     if (!response.ok) {
-        workspaceDashboardData = {metrics: [], tasks: [], recent_actions: []};
+        workspaceDashboardData = {metrics: [], tasks: [], data_statuses: [], recent_actions: []};
         renderWorkspaceMetrics();
         renderWorkspaceTasks();
+        renderWorkspaceDataStatuses();
         renderWorkspaceRecentActions();
         return;
     }
     workspaceDashboardData = await response.json();
     renderWorkspaceMetrics();
     renderWorkspaceTasks();
+    renderWorkspaceDataStatuses();
     renderWorkspaceRecentActions();
 }
 
@@ -352,7 +637,7 @@ function showWorkspaceAccountEditor(coachUid) {
                 <div class="workspace-editor-section-title"><span>球队关联</span><small>教练 → 球队</small></div>
                 <div class="workspace-team-link-control">
                     <span class="workspace-team-link-coach">${escapeHtml(item.display_name)}</span>
-                    <span class="workspace-team-link-arrow" aria-hidden="true">→</span>
+                    <span class="workspace-team-link-arrow" aria-hidden="true">${uiIconSvg('arrow-right', 'ui-icon is-small')}</span>
                     <select id="workspaceEditTeam"><option value="">未关联球队</option>${teamOptions}</select>
                     <button class="btn btn-secondary" type="button" onclick="saveWorkspaceCoachTeam(${htmlJsString(coachUid)})">保存关联</button>
                 </div>
@@ -526,6 +811,7 @@ function workspacePromotionRequestPayload(item, overrides = {}) {
         action_label: source.action_label || null,
         action_kind: source.action_kind || 'none',
         action_target: source.action_target || null,
+        display_mode: source.display_mode || 'board',
         is_active: Boolean(source.is_active),
         is_pinned: Boolean(source.is_pinned),
         is_dismissible: source.is_dismissible !== false,
@@ -549,7 +835,7 @@ function renderWorkspacePromotions() {
             <article class="workspace-promotion-row is-${escapeHtml(item.theme)}">
                 <div class="workspace-promotion-rank"><span>${String(Number(item.sort_order || 0)).padStart(2, '0')}</span>${item.is_pinned ? '<strong>置顶</strong>' : ''}</div>
                 <div class="workspace-promotion-summary">
-                    <div class="workspace-promotion-meta"><span>${escapeHtml(getWorkspacePromotionTypeLabel(item.content_type))}</span><span>${escapeHtml(getWorkspacePromotionThemeLabel(item.theme))}</span><span>${escapeHtml(item.source_type === 'cup_champion' ? '杯赛冠军' : item.source_type === 'league_champion' ? '联赛冠军' : item.source_type === 'legacy' ? '历史迁移' : '自定义')}</span></div>
+                    <div class="workspace-promotion-meta"><span>${escapeHtml(getWorkspacePromotionTypeLabel(item.content_type))}</span><span>${escapeHtml(getWorkspacePromotionThemeLabel(item.theme))}</span><span>${escapeHtml({board: '主页卡片', modal: '访问弹窗', both: '卡片 + 弹窗'}[item.display_mode] || '主页卡片')}</span><span>${escapeHtml(item.source_type === 'cup_champion' ? '杯赛冠军' : item.source_type === 'league_champion' ? '联赛冠军' : item.source_type === 'site_intro' ? '网站介绍' : item.source_type === 'legacy' ? '历史迁移' : '自定义')}</span></div>
                     <strong>${escapeHtml(item.title)}</strong>
                     <p>${escapeHtml(item.body || '未填写宣传正文')}</p>
                     <small>${escapeHtml(schedule)}</small>
@@ -593,8 +879,32 @@ function syncWorkspacePromotionActionFields() {
     const kind = document.getElementById('workspacePromotionActionKind')?.value || 'none';
     const fields = document.getElementById('workspacePromotionActionFields');
     if (fields) fields.hidden = kind === 'none';
-    const target = document.getElementById('workspacePromotionActionTarget');
-    if (target) target.placeholder = kind === 'url' ? 'https://... 或 /updates' : '选择或输入站内目标';
+    const tabTarget = document.getElementById('workspacePromotionActionTargetTab');
+    const urlTarget = document.getElementById('workspacePromotionActionTargetUrl');
+    if (tabTarget) tabTarget.hidden = kind !== 'tab';
+    if (urlTarget) urlTarget.hidden = kind !== 'url';
+}
+
+function getWorkspacePromotionTargetOptions(selectedTarget = '') {
+    const groups = [
+        ['主要页面', [
+            ['home', '首页'], ['overview', '联赛概览'], ['players', '完整联赛名单'], ['team', '球队中心'], ['coaches', '教练主页'],
+        ]],
+        ['数据统计', [
+            ['competition:standings', '积分榜'], ['competition:schedule', '赛程'], ['competition:playerRankings', '球员榜'], ['competition:suspensions', '伤停'],
+            ['competition:standings:超级', '超级 · 积分榜'], ['competition:schedule:超级', '超级 · 赛程'], ['competition:playerRankings:超级', '超级 · 球员榜'], ['competition:suspensions:超级', '超级 · 伤停'],
+            ['competition:standings:甲级', '甲级 · 积分榜'], ['competition:schedule:甲级', '甲级 · 赛程'], ['competition:playerRankings:甲级', '甲级 · 球员榜'], ['competition:suspensions:甲级', '甲级 · 伤停'],
+            ['competition:standings:乙级', '乙级 · 积分榜'], ['competition:schedule:乙级', '乙级 · 赛程'], ['competition:playerRankings:乙级', '乙级 · 球员榜'], ['competition:suspensions:乙级', '乙级 · 伤停'],
+            ['competition:standings:冠军杯', '冠军杯 · 积分榜/阶段'], ['competition:schedule:冠军杯', '冠军杯 · 赛程'],
+            ['competition:standings:联盟杯', '联盟杯 · 积分榜/阶段'], ['competition:schedule:联盟杯', '联盟杯 · 赛程'],
+            ['competition:standings:无铭剑杯', '无铭剑杯 · 积分榜/阶段'], ['competition:schedule:无铭剑杯', '无铭剑杯 · 赛程'],
+        ]],
+        ['球员库', [
+            ['database:search', '球员搜索'], ['database:candidates', '候选名单'], ['database:power', '战力排行榜'], ['database:tactics', '自定义战术板'], ['database:leaderboard', '互动排行榜'],
+        ]],
+    ];
+    const normalizedSelected = selectedTarget === 'competition:rankings' ? 'competition:playerRankings' : selectedTarget;
+    return groups.map(([label, options]) => `<optgroup label="${label}">${options.map(([value, text]) => `<option value="${value}" ${normalizedSelected === value ? 'selected' : ''}>${text}</option>`).join('')}</optgroup>`).join('');
 }
 
 function updateWorkspacePromotionImagePreview() {
@@ -652,7 +962,7 @@ async function uploadWorkspacePromotionImage(input) {
 function showWorkspacePromotionEditor(promotionId = 0) {
     const item = workspacePromotionsData.find(entry => Number(entry.id) === Number(promotionId)) || {
         content_type: 'announcement', theme: 'violet', icon: 'megaphone', eyebrow: 'HEIGO Broadcast', title: '', body: '',
-        action_kind: 'none', action_target: '', action_label: '', is_active: true, is_pinned: false, is_dismissible: true, sort_order: 100,
+        action_kind: 'none', action_target: '', action_label: '', display_mode: 'board', is_active: true, is_pinned: false, is_dismissible: true, sort_order: 100,
     };
     showModal(promotionId ? '编辑主页宣传' : '新增主页宣传', `
         <form class="workspace-promotion-editor" onsubmit="event.preventDefault(); saveWorkspacePromotion(${Number(promotionId)});">
@@ -667,11 +977,14 @@ function showWorkspacePromotionEditor(promotionId = 0) {
                 <label class="form-group"><span>识别图标</span><select id="workspacePromotionIcon">
                     ${[['megaphone','播报'],['trophy','奖杯'],['list','名单'],['star','焦点'],['whistle','赛事'],['info','信息']].map(([value,label]) => `<option value="${value}" ${item.icon === value ? 'selected' : ''}>${label}</option>`).join('')}
                 </select></label>
+                <label class="form-group"><span>展示方式</span><select id="workspacePromotionDisplayMode">
+                    ${[['board','主页卡片'],['modal','访问弹窗'],['both','主页卡片 + 访问弹窗']].map(([value,label]) => `<option value="${value}" ${(item.display_mode || 'board') === value ? 'selected' : ''}>${label}</option>`).join('')}
+                </select></label>
                 <label class="form-group"><span>排序值（小在前）</span><input id="workspacePromotionOrder" type="number" min="0" max="9999" value="${Number(item.sort_order || 0)}"></label>
             </div>
             <label class="form-group"><span>眉题</span><input id="workspacePromotionEyebrow" maxlength="60" value="${escapeHtml(item.eyebrow || '')}" placeholder="例如 HEIGO HONORS"></label>
             <label class="form-group"><span>宣传标题</span><input id="workspacePromotionTitle" maxlength="120" value="${escapeHtml(item.title || '')}" required placeholder="一句话说清最重要的信息"></label>
-            <label class="form-group"><span>宣传正文</span><textarea id="workspacePromotionBody" maxlength="600" rows="4" placeholder="补充时间、范围或重要说明">${escapeHtml(item.body || '')}</textarea></label>
+            <label class="form-group"><span>宣传正文</span><textarea id="workspacePromotionBody" maxlength="600" rows="5" placeholder="补充时间、范围或重要说明；弹窗模式下可每行填写一个功能要点">${escapeHtml(item.body || '')}</textarea></label>
             <div class="workspace-promotion-image-field">
                 <div class="workspace-promotion-image-preview ${item.image_url ? 'has-image' : ''}" id="workspacePromotionImagePreview">${item.image_url ? `<img src="${escapeHtml(item.image_url)}" alt="宣传图片预览">` : '<span>IMAGE</span><small>可选宣传配图</small>'}</div>
                 <div class="workspace-promotion-image-control">
@@ -693,9 +1006,7 @@ function showWorkspacePromotionEditor(promotionId = 0) {
             </select></label>
             <div id="workspacePromotionActionFields" class="workspace-promotion-editor-grid" ${item.action_kind === 'none' ? 'hidden' : ''}>
                 <label class="form-group"><span>按钮文字</span><input id="workspacePromotionActionLabel" maxlength="40" value="${escapeHtml(item.action_label || '')}" placeholder="例如 查看名单"></label>
-                <label class="form-group"><span>按钮目标</span><input id="workspacePromotionActionTarget" list="workspacePromotionTargets" maxlength="300" value="${escapeHtml(item.action_target || '')}" placeholder="选择或输入站内目标"><datalist id="workspacePromotionTargets">
-                    <option value="database:candidates">候选名单</option><option value="competition:standings">积分榜</option><option value="competition:schedule">赛程</option><option value="competition:suspensions">伤停</option><option value="competition:standings:超级">超级联赛积分榜</option><option value="competition:standings:甲级">甲级联赛积分榜</option><option value="competition:standings:乙级">乙级联赛积分榜</option><option value="competition:standings:冠军杯">冠军杯</option><option value="competition:standings:联盟杯">联盟杯</option><option value="competition:standings:无铭剑杯">无铭剑杯</option><option value="coaches">教练主页</option><option value="overview">联赛概览</option>
-                </datalist></label>
+                <label class="form-group"><span>按钮目标</span><select id="workspacePromotionActionTargetTab" ${item.action_kind === 'tab' ? '' : 'hidden'}>${getWorkspacePromotionTargetOptions(item.action_target || '')}</select><input id="workspacePromotionActionTargetUrl" type="text" maxlength="300" value="${item.action_kind === 'url' ? escapeHtml(item.action_target || '') : ''}" placeholder="https://... 或站内 /path" ${item.action_kind === 'url' ? '' : 'hidden'}></label>
             </div>
             <div class="workspace-promotion-switches">
                 <label><input id="workspacePromotionActive" type="checkbox" ${item.is_active ? 'checked' : ''}>立即启用</label>
@@ -709,11 +1020,14 @@ function showWorkspacePromotionEditor(promotionId = 0) {
 
 function readWorkspacePromotionEditor() {
     const value = id => document.getElementById(id)?.value || '';
+    const actionKind = value('workspacePromotionActionKind');
     return {
         content_type: value('workspacePromotionType'), theme: value('workspacePromotionTheme'), icon: value('workspacePromotionIcon'),
         eyebrow: value('workspacePromotionEyebrow'), title: value('workspacePromotionTitle'), body: value('workspacePromotionBody'),
-        image_url: value('workspacePromotionImage') || null, action_kind: value('workspacePromotionActionKind'),
-        action_label: value('workspacePromotionActionLabel') || null, action_target: value('workspacePromotionActionTarget') || null,
+        image_url: value('workspacePromotionImage') || null, action_kind: actionKind,
+        display_mode: value('workspacePromotionDisplayMode') || 'board',
+        action_label: value('workspacePromotionActionLabel') || null,
+        action_target: (actionKind === 'tab' ? value('workspacePromotionActionTargetTab') : value('workspacePromotionActionTargetUrl')) || null,
         is_active: Boolean(document.getElementById('workspacePromotionActive')?.checked),
         is_pinned: Boolean(document.getElementById('workspacePromotionPinned')?.checked),
         is_dismissible: Boolean(document.getElementById('workspacePromotionDismissible')?.checked),
@@ -758,8 +1072,12 @@ async function toggleWorkspacePromotion(promotionId) {
 function previewWorkspacePromotion(promotionId) {
     const item = workspacePromotionsData.find(entry => Number(entry.id) === Number(promotionId));
     if (!item) return;
-    const symbol = {megaphone: '◖', trophy: '♛', list: '≡', star: '✦', whistle: '◉', info: 'i'}[item.icon] || '◖';
-    showModal('主页展示预览', `<article class="home-promotion-card is-${escapeHtml(item.theme)} is-featured is-admin-preview"><span class="home-promotion-media ${item.image_url ? '' : 'is-symbol'}">${item.image_url ? `<img src="${escapeHtml(item.image_url)}" alt="">` : escapeHtml(symbol)}</span><div class="home-promotion-copy"><span>${escapeHtml(item.eyebrow)}</span><h2>${escapeHtml(item.title)}</h2>${item.body ? `<p>${escapeHtml(item.body)}</p>` : ''}</div>${item.action_label ? `<div class="home-promotion-actions"><span class="btn home-promotion-action">${escapeHtml(item.action_label)}</span></div>` : ''}</article>`);
+    const symbol = typeof homePromotionIconSvg === 'function' ? homePromotionIconSvg(item.icon) : '';
+    if (['modal', 'both'].includes(item.display_mode) && typeof showHomePromotionModal === 'function') {
+        showHomePromotionModal(item, {preview: true});
+        return;
+    }
+    showModal('主页展示预览', `<article class="home-promotion-card is-${escapeHtml(item.theme)} is-featured is-admin-preview"><span class="home-promotion-media ${item.image_url ? '' : 'is-symbol'}">${item.image_url ? `<img src="${escapeHtml(item.image_url)}" alt="">` : symbol}</span><div class="home-promotion-copy"><span>${escapeHtml(item.eyebrow)}</span><h2>${escapeHtml(item.title)}</h2>${item.body ? `<p>${escapeHtml(item.body)}</p>` : ''}</div>${item.action_label ? `<div class="home-promotion-actions"><span class="btn home-promotion-action">${escapeHtml(item.action_label)}</span></div>` : ''}</article>`);
 }
 
 function confirmDeleteWorkspacePromotion(promotionId) {
@@ -1225,6 +1543,7 @@ function getOperationAuditStatusMeta(status) {
 function getOperationAuditCategoryLabel(category, action) {
     if (category === 'transfer' && action === 'transfer_player') return '球员交易';
     if (category === 'transfer' && action === 'fish_player') return '海捞球员';
+    if (category === 'transfer' && action === 'fish_sea_player') return '大海海捞';
     if (category === 'transfer' && action === 'release_player') return '球员解约';
     if (category === 'roster' && action === 'consume_player') return '球员消费';
     if (category === 'roster' && action === 'rejuvenate_player') return '球员返老';
@@ -1394,12 +1713,15 @@ async function adminLogout() {
 }
 
 function populateAdminSelects() {
-    const selects = ['transferTeam'];
-    selects.forEach(id => {
+    const selects = [
+        {id: 'transferTeam', leagueOnly: false},
+        {id: 'seaFishTeam', leagueOnly: true},
+    ];
+    selects.forEach(({id, leagueOnly}) => {
         const select = document.getElementById(id);
         if (!select) return;
         select.innerHTML = '<option value="">选择球队</option>';
-        teams.forEach(t => {
+        teams.filter(t => !leagueOnly || ['超级', '甲级', '乙级'].includes(t.level)).forEach(t => {
             const option = document.createElement('option');
             option.value = t.name;
             option.textContent = `${t.name} (${t.level})`;
@@ -1416,8 +1738,17 @@ async function loadSeaPlayers() {
         document.getElementById('seaPlayersTable').innerHTML = '<div class="no-data">大海中没有球员</div>';
         return;
     }
-    const html = `<table><thead><tr><th>UID</th><th>姓名</th><th>年龄</th><th>CA</th><th>PA</th><th>位置</th><th>国籍</th></tr></thead><tbody>${players.map(p => `<tr><td>${p.uid}</td><td>${p.name}</td><td>${p.age}</td><td>${p.ca}</td><td>${p.pa}</td><td>${p.position}</td><td title="${escapeHtml(p.nationality || '-')}">${escapeHtml(formatCompactNationality(p.nationality, {maxLength: 16}))}</td></tr>`).join('')}</tbody></table>`;
+    const html = `<table><thead><tr><th>UID</th><th>姓名</th><th>年龄</th><th>初始 CA</th><th>当前 CA</th><th>PA</th><th>位置</th><th>国籍</th><th>操作</th></tr></thead><tbody>${players.map(p => `<tr><td>${p.uid}</td><td>${escapeHtml(p.name || '-')}</td><td>${p.age}</td><td>${p.initial_ca}</td><td>${p.ca}</td><td>${p.pa}</td><td>${escapeHtml(p.position || '-')}</td><td title="${escapeHtml(p.nationality || '-')}">${escapeHtml(formatCompactNationality(p.nationality, {maxLength: 16}))}</td><td><button class="btn btn-secondary sea-fish-table-action" onclick="prepareSeaFish(${p.uid})">海捞</button></td></tr>`).join('')}</tbody></table>`;
     document.getElementById('seaPlayersTable').innerHTML = html;
+}
+
+function prepareSeaFish(uid) {
+    const uidInput = document.getElementById('seaFishUid');
+    const card = document.getElementById('seaFishCard');
+    if (!uidInput || !card) return;
+    uidInput.value = uid;
+    card.scrollIntoView({behavior: 'smooth', block: 'center'});
+    window.setTimeout(() => document.getElementById('seaFishTeam')?.focus(), 350);
 }
 
 async function loadTransferLogs() {
@@ -1503,12 +1834,36 @@ async function transferPlayer() {
     }
 }
 
+async function seaFishPlayer() {
+    const uid = parseInt(document.getElementById('seaFishUid').value);
+    const team = document.getElementById('seaFishTeam').value;
+    const notes = document.getElementById('seaFishNotes').value;
+    if (!uid || !team) { showModal('错误', '请选择大海球员和目标球队'); return; }
+    try {
+        const result = await adminJsonRequest('/api/admin/sea-fish', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({player_uid: uid, to_team: team, notes}),
+        });
+        if (!result) return;
+        const {response, data} = result;
+        showModal(response.ok && data.success ? '成功' : '错误', data.message || data.detail || '海捞失败');
+        if (response.ok && data.success) {
+            document.getElementById('seaFishUid').value = '';
+            document.getElementById('seaFishNotes').value = '';
+            await refreshAdminAfterMutation();
+        }
+    } catch (e) {
+        showModal('错误', '海捞请求失败');
+    }
+}
+
 async function releasePlayer() {
     const uid = parseInt(document.getElementById('releaseUid').value);
     const notes = document.getElementById('releaseNotes').value;
     if (!uid) { showModal('错误', '请填写球员UID'); return; }
     try {
-        const result = await adminJsonRequest('/api/admin/release', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({player_uid: uid, to_team: '85大海', notes})});
+        const result = await adminJsonRequest('/api/admin/release', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({player_uid: uid, to_team: '大海', notes})});
         if (!result) return;
         const {data} = result;
         showModal(data.success ? '成功' : '错误', data.message || data.detail);

@@ -1,6 +1,7 @@
 import unittest
 import io
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -42,6 +43,7 @@ class HomePromotionServiceTests(unittest.TestCase):
             HomePromotionUpsertRequest(title="联赛公告", body="正文", theme="blue"),
         )
         self.assertEqual(created.title, "联赛公告")
+        self.assertEqual(created.display_mode, "board")
         self.assertEqual(len(home_promotion_service.list_public_promotions(self.db)), 1)
 
         future = datetime.now() + timedelta(days=1)
@@ -57,6 +59,45 @@ class HomePromotionServiceTests(unittest.TestCase):
         result = home_promotion_service.delete_promotion(self.db, self.identity, created.id)
         self.assertTrue(result["success"])
         self.assertEqual(self.db.query(HomePromotion).count(), 0)
+
+    def test_public_schedule_uses_shanghai_league_time(self):
+        league_now = datetime.now(ZoneInfo("Asia/Shanghai")).replace(tzinfo=None)
+        home_promotion_service.create_promotion(
+            self.db,
+            self.identity,
+            HomePromotionUpsertRequest(
+                title="北京时间公告",
+                starts_at=league_now - timedelta(minutes=1),
+                ends_at=league_now + timedelta(minutes=1),
+            ),
+        )
+        rows = home_promotion_service.list_public_promotions(self.db)
+        self.assertEqual([item.title for item in rows], ["北京时间公告"])
+
+    def test_tab_targets_cover_main_site_sections(self):
+        targets = [
+            "team", "players", "competition:standings", "competition:schedule:甲级",
+            "competition:playerRankings:乙级", "database:tactics",
+        ]
+        for index, target in enumerate(targets):
+            created = home_promotion_service.create_promotion(
+                self.db,
+                self.identity,
+                HomePromotionUpsertRequest(
+                    title=f"站内目标 {index}", action_kind="tab", action_label="查看", action_target=target,
+                ),
+            )
+            self.assertEqual(created.action_target, target)
+
+    def test_modal_promotion_delivery_mode_is_preserved(self):
+        created = home_promotion_service.create_promotion(
+            self.db,
+            self.identity,
+            HomePromotionUpsertRequest(title="教练欢迎", display_mode="modal"),
+        )
+        self.assertEqual(created.display_mode, "modal")
+        public = home_promotion_service.list_public_promotions(self.db)
+        self.assertEqual(public[0].display_mode, "modal")
 
     def test_sync_cup_champion_creates_editable_promotion(self):
         self.db.add(Team(id=7, name="R. Madrid", manager="HEIGO", level="超级", logo_path="/rm.png"))

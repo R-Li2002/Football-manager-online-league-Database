@@ -4,6 +4,7 @@ from services.admin_write_actions import (
     batch_release,
     batch_transfer,
     consume_player,
+    fish_sea_player,
     fish_player,
     initialize_cup_bracket,
     import_latest_schedule,
@@ -28,6 +29,7 @@ from services.admin_write_actions import (
 __all__ = [
     "transfer_player",
     "fish_player",
+    "fish_sea_player",
     "initialize_cup_bracket",
     "import_latest_schedule",
     "release_player",

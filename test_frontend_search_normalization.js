@@ -20,6 +20,7 @@ const context = {
     },
     window: {},
     document: {
+        addEventListener() {},
         getElementById() {
             return null;
         },

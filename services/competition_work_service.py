@@ -212,7 +212,7 @@ def _event_totals(events: list[MatchPlayerEvent]) -> tuple[int, int, int]:
     return goals, assists, mvps
 
 
-def _evaluate_match(match: Match, events: list[MatchPlayerEvent]) -> tuple[bool, bool, list[str], list[str]]:
+def evaluate_match_readiness(match: Match, events: list[MatchPlayerEvent]) -> tuple[bool, bool, list[str], list[str]]:
     issue_codes: list[str] = []
     issue_messages: list[str] = []
     status = str(match.status or "scheduled")
@@ -296,7 +296,7 @@ def _build_pair_summary(
     tasks: list[CompetitionWorkTaskResponse] = []
 
     for match in matches:
-        result_ready, event_ready, issue_codes, issue_messages = _evaluate_match(
+        result_ready, event_ready, issue_codes, issue_messages = evaluate_match_readiness(
             match,
             events_by_match.get(match.id, []),
         )

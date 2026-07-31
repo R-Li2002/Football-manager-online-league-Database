@@ -1,7 +1,7 @@
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Cookie, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from models import Match
@@ -52,10 +52,11 @@ from schemas_write import (
     SuspensionRecordUpdateRequest,
     TeamUpdateRequest,
     TeamLineupUpdateRequest,
+    TeamLogoMatchApplyRequest,
     TransferRequest,
     UpdateUidRequest,
 )
-from services import admin_write_service, auth_service, candidate_list_service, coach_service, competition_work_service, import_upload_service, suspension_service, team_lineup_service, team_logo_service
+from services import admin_write_service, auth_service, candidate_list_service, coach_service, competition_work_service, import_upload_service, suspension_service, team_lineup_service, team_logo_match_service, team_logo_service
 
 COACH_SESSION_COOKIE_NAME = "coach_session_token"
 ADMIN_SESSION_COOKIE_NAME = "session_token"
@@ -120,6 +121,10 @@ def build_admin_write_router(
     @router.post("/api/admin/fish", response_model=AdminActionResponse)
     def fish_player(request: FishPlayerRequest, db: Session = Depends(get_db), admin: str = Depends(verify_admin)):
         return admin_write_service.fish_player(db, admin, request, write_to_log)
+
+    @router.post("/api/admin/sea-fish", response_model=AdminActionResponse)
+    def fish_sea_player(request: TransferRequest, db: Session = Depends(get_db), admin: str = Depends(verify_admin)):
+        return admin_write_service.fish_sea_player(db, admin, request, write_to_log)
 
     @router.post("/api/admin/release", response_model=AdminActionResponse)
     def release_player(request: TransferRequest, db: Session = Depends(get_db), admin: str = Depends(verify_admin)):
@@ -242,6 +247,40 @@ def build_admin_write_router(
         admin: str = Depends(verify_schedule_editor),
     ):
         return team_logo_service.save_team_logo(db, admin, team_id, logo, write_to_log)
+
+    @router.get("/api/admin/team-logo-match/overview")
+    def get_team_logo_match_overview(
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_admin),
+    ):
+        return team_logo_match_service.get_match_overview(db, admin)
+
+    @router.get("/api/admin/team-logo-match/search")
+    def search_team_logo_candidates(
+        q: str,
+        team_id: int,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_admin),
+    ):
+        return team_logo_match_service.search_fclogo(db, admin, team_id, q)
+
+    @router.post("/api/admin/team-logo-match/apply")
+    def apply_team_logo_candidate(
+        request: TeamLogoMatchApplyRequest,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_admin),
+    ):
+        return team_logo_match_service.apply_fclogo_candidate(db, admin, request, write_to_log)
+
+    @router.post("/api/admin/team-logo-match/upload")
+    def upload_team_logo_candidate(
+        team_id: int = Form(...),
+        confirmed: bool = Form(False),
+        logo: UploadFile = File(...),
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_admin),
+    ):
+        return team_logo_match_service.upload_local_team_logo(db, admin, team_id, logo, write_to_log, confirmed=confirmed)
 
     @router.patch("/api/teams/{team_id}/lineup", response_model=TeamLineupResponse)
     def save_team_lineup(

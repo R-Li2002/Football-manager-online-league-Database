@@ -4,18 +4,23 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from models import Player, PlayerSuspensionRecord, Team
+from repositories.attribute_repository import get_player_attribute_by_uid
 from repositories.player_repository import get_player_by_uid
+from repositories.player_repository import player_is_in_league
 from repositories.team_repository import get_team_by_id, get_team_by_name
 from repositories.transfer_log_repository import get_transfer_log_by_id
 from services.admin_action_runner import AdminMutationResult, run_admin_mutation
 from services.admin_common import LogWriter
 from services.league_service import PERSISTED_TEAM_STAT_SCOPES, refresh_player_financials
 from services.roster_service import undo_roster_operation
-from team_links import assign_player_team, assign_player_team_by_name, get_sea_team
+from team_links import LEGACY_SEA_TEAM_NAME, SEA_TEAM_NAME, assign_player_team, assign_player_team_by_name, get_sea_team
 
 PLAYER_NOT_FOUND = "\u7403\u5458\u4e0d\u5b58\u5728"
 TARGET_TEAM_NOT_FOUND = "\u76ee\u6807\u7403\u961f\u4e0d\u5b58\u5728"
 SEA_TEAM_NOT_FOUND = "\u5927\u6d77\u7403\u961f\u4e0d\u5b58\u5728"
+PLAYER_NOT_IN_SEA = "\u8be5\u7403\u5458\u5f53\u524d\u5c5e\u4e8e\u8d85\u7ea7\u3001\u7532\u7ea7\u6216\u4e59\u7ea7\u7403\u961f\uff0c\u4e0d\u80fd\u6d77\u635e"
+INVALID_FISH_TARGET = "\u6d77\u635e\u76ee\u6807\u53ea\u80fd\u662f\u8d85\u7ea7\u3001\u7532\u7ea7\u6216\u4e59\u7ea7\u7403\u961f"
+INITIAL_CA_MISSING = "\u7403\u5458\u7f3a\u5c11\u6709\u6548\u521d\u59cb CA"
 UID_EXISTS = "UID already exists"
 LOG_NOT_FOUND = "\u64cd\u4f5c\u8bb0\u5f55\u4e0d\u5b58\u5728"
 UNSUPPORTED_UNDO = "\u4e0d\u652f\u6301\u64a4\u9500\u8be5\u7c7b\u578b\u64cd\u4f5c"
@@ -159,6 +164,94 @@ def fish_player(db: Session, admin: str | None, request: Any, write_to_log: LogW
                     "to_team_id": team.id,
                     "operation": FISH_LABEL,
                     "notes": request.notes or "",
+                }
+            ],
+        )
+
+    return run_admin_mutation(db, admin, write_to_log, mutator=mutate)
+
+
+def fish_sea_player(db: Session, admin: str | None, request: Any, write_to_log: LogWriter):
+    def mutate(_operator: str) -> AdminMutationResult:
+        player = get_player_by_uid(db, request.player_uid)
+        sea_team = get_sea_team(db)
+        if not sea_team:
+            raise HTTPException(status_code=404, detail=SEA_TEAM_NOT_FOUND)
+        if player and player_is_in_league(db, player):
+            raise HTTPException(status_code=400, detail=PLAYER_NOT_IN_SEA)
+
+        created_from_database = False
+        if not player:
+            attribute = get_player_attribute_by_uid(db, request.player_uid)
+            if not attribute:
+                raise HTTPException(status_code=404, detail=PLAYER_NOT_FOUND)
+            player = Player(
+                uid=attribute.uid,
+                name=attribute.name,
+                age=attribute.age,
+                initial_ca=attribute.ca,
+                ca=attribute.ca,
+                pa=attribute.pa,
+                position=attribute.position or "",
+                nationality=attribute.nationality or "",
+                team_id=sea_team.id,
+                team_name=sea_team.name,
+                wage=0,
+                slot_type="",
+            )
+            db.add(player)
+            created_from_database = True
+
+        target_team = get_team_by_name(db, request.to_team)
+        if not target_team:
+            raise HTTPException(status_code=404, detail=TARGET_TEAM_NOT_FOUND)
+        if target_team.id == sea_team.id or target_team.level not in LEAGUE_LEVELS:
+            raise HTTPException(status_code=400, detail=INVALID_FISH_TARGET)
+        if player.initial_ca is None or player.initial_ca <= 0:
+            raise HTTPException(status_code=400, detail=INITIAL_CA_MISSING)
+
+        old_ca = player.ca if player.ca is not None else player.initial_ca
+        assign_player_team(player, target_team)
+        player.ca = player.initial_ca
+        refresh_player_financials(player, db)
+        suspension_detail = _sync_suspension_after_team_change(
+            db,
+            player,
+            from_team_id=sea_team.id,
+            from_team_name=sea_team.name,
+            to_team=target_team,
+            force_clear=True,
+        )
+        log_detail = (
+            f"player {player.uid} fished from {sea_team.name} into {target_team.name}; "
+            f"CA {old_ca}->{player.ca}"
+        )
+        if created_from_database:
+            log_detail = f"{log_detail}; roster row created from player database"
+        if suspension_detail:
+            log_detail = f"{log_detail}; {suspension_detail}"
+        message_suffix = f"\uff1b{suspension_detail}" if suspension_detail else ""
+        return AdminMutationResult(
+            message=(
+                f"{player.name} \u5df2\u4ece {sea_team.name} \u6d77\u635e\u81f3 {target_team.name}\uff0c"
+                f"\u5f53\u524d CA \u5df2\u91cd\u7f6e\u4e3a\u521d\u59cb CA {player.initial_ca}"
+                f"{message_suffix}"
+            ),
+            log_action=FISH_LABEL,
+            log_detail=log_detail,
+            affected_team_ids={sea_team.id, target_team.id},
+            stat_scopes=PERSISTED_TEAM_STAT_SCOPES,
+            transfer_logs=[
+                {
+                    "player_uid": player.uid,
+                    "player_name": player.name,
+                    "from_team": sea_team.name,
+                    "to_team": target_team.name,
+                    "from_team_id": sea_team.id,
+                    "to_team_id": target_team.id,
+                    "operation": FISH_LABEL,
+                    "ca_change": player.initial_ca - old_ca,
+                    "notes": request.notes or ("从球员数据库海捞" if created_from_database else ""),
                 }
             ],
         )
@@ -388,10 +481,33 @@ def undo_operation(db: Session, admin: str | None, log_id: int, write_to_log: Lo
         elif log.operation == FISH_LABEL:
             stat_scopes = set(PERSISTED_TEAM_STAT_SCOPES)
             current_team_id = player.team_id if player else None
-            target_team_id = None
-            if player:
-                db.delete(player)
-            undo_details.append("player removed")
+            if log.from_team_id and log.from_team in {SEA_TEAM_NAME, LEGACY_SEA_TEAM_NAME}:
+                if not player:
+                    raise HTTPException(status_code=404, detail=PLAYER_NOT_FOUND)
+                from_team = get_team_by_id(db, log.from_team_id)
+                if not from_team:
+                    raise HTTPException(status_code=404, detail=SEA_TEAM_NOT_FOUND)
+                current_team = player.team_name
+                assign_player_team(player, from_team)
+                player.ca = (player.ca or 0) - (log.ca_change or 0)
+                refresh_player_financials(player, db)
+                suspension_detail = _sync_suspension_after_team_change(
+                    db,
+                    player,
+                    from_team_id=current_team_id,
+                    from_team_name=current_team,
+                    to_team=from_team,
+                    force_clear=True,
+                )
+                target_team_id = from_team.id
+                undo_details.append(f"team {current_team}->{from_team.name}; CA restored to {player.ca}")
+                if suspension_detail:
+                    undo_details.append(suspension_detail)
+            else:
+                target_team_id = None
+                if player:
+                    db.delete(player)
+                undo_details.append("player removed")
         else:
             handled, detail, stat_scopes = undo_roster_operation(db, log, player)
             if not handled:

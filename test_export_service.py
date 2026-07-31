@@ -20,6 +20,21 @@ class ExportServiceTemplateTests(unittest.TestCase):
             overview.append(["届数", 86, None, "序号", "级别", "球队名", "主教", "球队人数", "门将人数", "工资", "额外工资", "税后", "最终工资", "8M", "7M", "伪名", "总身价", "平均身价", "平均CA", "平均PA", "成长总计", "备注"])
             overview.append(["成长年龄上限", 24, None, "序号", "级别", "球队名", "主教", "球队人数", "门将人数", "工资", "额外工资", "税后", "最终工资", "8M", "7M", "伪名", "总身价", "平均身价", "平均CA", "平均PA", "成长总计", "备注"])
             overview.append([None, None, "Old FC", 1, "超级", "=C3", "Old Coach"])
+            overview["H3"] = '=COUNTIF(联赛名单!O:O,信息总览!F3)'
+            overview["I3"] = '=COUNTIFS(联赛名单!O:O,信息总览!F3,联赛名单!M:M,"GK")'
+            overview["J3"] = '=SUMIF(联赛名单!O:O,信息总览!F3,联赛名单!X:X)'
+            overview["L3"] = '=IF(J3+K3-$B$5>0.3,"拍卖",J3+K3)'
+            overview["M3"] = '=IF(L3<8,8,L3)'
+            overview["N3"] = '=COUNTIFS(联赛名单!O:O,信息总览!F3,联赛名单!Z:Z,"8M")'
+            overview["O3"] = '=COUNTIFS(联赛名单!O:O,信息总览!F3,联赛名单!Z:Z,"7M")'
+            overview["P3"] = '=COUNTIFS(联赛名单!O:O,信息总览!F3,联赛名单!Z:Z,"伪名")'
+            overview["Q3"] = '=SUMIF(联赛名单!O:O,信息总览!F3,联赛名单!V:V)'
+            overview["R3"] = '=Q3/H3'
+            overview["S3"] = '=SUMIF(联赛名单!O:O,信息总览!F3,联赛名单!H:H)/H3'
+            overview["T3"] = '=SUMIF(联赛名单!O:O,信息总览!F3,联赛名单!J:J)/H3'
+            overview["U3"] = '=SUMIF(联赛名单!O:O,信息总览!F3,联赛名单!H:H)-SUMIF(联赛名单!O:O,信息总览!F3,联赛名单!G:G)'
+            overview["A8"] = "总工资"
+            overview["B8"] = "=SUM(M3:M3)"
             overview["F3"].fill = PatternFill("solid", fgColor="DDEEFF")
 
             players = workbook.create_sheet("联赛名单")
@@ -41,7 +56,7 @@ class ExportServiceTemplateTests(unittest.TestCase):
                 position="MC", nationality="China", team_name="New FC", wage=7.5, slot_type="7M",
             )
             db = MagicMock()
-            db.query.return_value.all.return_value = []
+            db.query.return_value.all.return_value = [SimpleNamespace(key="总工资", value=9999)]
 
             with (
                 patch.object(export_service, "resolve_import_root", return_value=Path(temp_dir)),
@@ -59,11 +74,34 @@ class ExportServiceTemplateTests(unittest.TestCase):
             self.assertEqual(exported["信息总览"]["F3"].fill.fgColor.rgb, "00DDEEFF")
             self.assertEqual(exported["信息总览"]["W2"].value, "工资帽")
             self.assertEqual(exported["信息总览"]["W3"].value, 10.25)
+            self.assertTrue(exported["信息总览"]["H3"].value.startswith("=COUNTIF"))
+            self.assertEqual(exported["信息总览"]["K3"].value, "=ROUND(0.2,3)")
+            self.assertIn("W3", exported["信息总览"]["L3"].value)
+            self.assertIn("ROUND", exported["信息总览"]["L3"].value)
+            self.assertNotIn("-0.1", exported["信息总览"]["L3"].value)
+            self.assertIn('L3="拍卖"', exported["信息总览"]["M3"].value)
+            self.assertTrue(exported["信息总览"]["N3"].value.startswith("=COUNTIFS"))
+            self.assertTrue(exported["信息总览"]["Q3"].value.startswith("=SUMIF"))
+            self.assertEqual(exported["信息总览"]["B8"].value, "=SUM(M3:M3)")
             self.assertEqual(exported["联赛名单"]["D2"].value, "Current Player")
             self.assertEqual(exported["联赛名单"]["O2"].value, "New FC")
             self.assertEqual(exported["联赛名单"]["P2"].value, "New FC")
             self.assertEqual(exported["联赛名单"]["C2"].value, '=IF(B2="","",1)')
+            self.assertEqual(exported["联赛名单"]["S2"].value, '=IF(G2<115,1,INT((G2-95)/10))')
+            self.assertIn("'信息总览'!$B$4", exported["联赛名单"]["V2"].value)
+            self.assertIn("UPPER(TRIM(M2))", exported["联赛名单"]["W2"].value)
+            self.assertIn("Y2=1", exported["联赛名单"]["W2"].value)
+            self.assertIn("(Y2+T2)/2=1", exported["联赛名单"]["W2"].value)
+            self.assertEqual(exported["联赛名单"]["X2"].value, "=ROUND(V2*W2,3)")
+            self.assertIn("伪名", exported["联赛名单"]["Z2"].value)
             self.assertEqual(exported["联赛名单"]["D2"].fill.fgColor.rgb, "00CCFFCC")
+            self.assertEqual(exported.calculation.calcMode, "auto")
+            self.assertTrue(exported.calculation.fullCalcOnLoad)
+            self.assertTrue(exported.calculation.forceFullCalc)
+            self.assertTrue(exported.calculation.calcOnSave)
+            self.assertFalse(exported.calculation.calcCompleted)
+            self.assertTrue(exported.calculation.fullPrecision)
+            self.assertEqual(exported.calculation.calcId, 0)
             self.assertTrue(filename.endswith(".xlsx"))
 
 

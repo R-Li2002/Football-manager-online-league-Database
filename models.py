@@ -60,6 +60,7 @@ class SiteNote(Base):
     id = Column(Integer, primary_key=True)
     key = Column(String, unique=True, index=True, nullable=False)
     text = Column(Text, nullable=False, default="")
+    round_no = Column(Integer)
     updated_by = Column(String)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -81,6 +82,7 @@ class HomePromotion(Base):
     action_label = Column(String)
     action_kind = Column(String, nullable=False, default="none")
     action_target = Column(String)
+    display_mode = Column(String, nullable=False, default="board", server_default="board")
     is_active = Column(Integer, index=True, nullable=False, default=1)
     is_pinned = Column(Integer, index=True, nullable=False, default=0)
     is_dismissible = Column(Integer, nullable=False, default=1)
@@ -129,6 +131,25 @@ class Team(Base):
     stats_cache_refresh_scopes = Column(String, default="")
     stats_cache_refresh_at = Column(DateTime)
     notes = Column(String)
+
+
+class TeamLogoSource(Base):
+    __tablename__ = "team_logo_sources"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), index=True, nullable=False)
+    provider = Column(String, index=True, nullable=False, default="fclogo")
+    source_url = Column(String, nullable=False)
+    source_name = Column(String)
+    source_version = Column(String)
+    source_variant = Column(String)
+    svg_path = Column(String, nullable=False)
+    webp_path = Column(String, nullable=False)
+    sha256 = Column(String, index=True, nullable=False)
+    matched_query = Column(String)
+    matched_score = Column(Float)
+    imported_by = Column(String)
+    imported_at = Column(DateTime, index=True, default=datetime.now)
 
 
 class TeamLineup(Base):

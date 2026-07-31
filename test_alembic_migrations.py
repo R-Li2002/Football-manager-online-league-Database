@@ -8,7 +8,7 @@ from sqlalchemy.pool import NullPool
 
 from database import init_database, run_manual_runtime_fallback, run_schema_migrations
 
-LATEST_REVISION = "20260728_000033"
+LATEST_REVISION = "20260730_000040"
 
 
 class AlembicMigrationTests(unittest.TestCase):
@@ -40,6 +40,7 @@ class AlembicMigrationTests(unittest.TestCase):
             "competition_round_work_logs",
             "competition_responsibility_assignments",
             "league_info",
+            "team_logo_sources",
             "alembic_version",
         ]:
             self.assertTrue(inspector.has_table(table_name), table_name)
@@ -47,6 +48,7 @@ class AlembicMigrationTests(unittest.TestCase):
         with self.engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
         self.assertEqual(version, LATEST_REVISION)
+        self.assertIn("round_no", {column["name"] for column in inspector.get_columns("site_notes")})
 
     def test_run_schema_migrations_upgrades_legacy_schema(self):
         with self.engine.begin() as conn:

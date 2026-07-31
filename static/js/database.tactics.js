@@ -47,8 +47,14 @@ var databaseTacticsState = {
     loadBusy: false,
     activePoint: null,
     status: '',
+    statusState: 'idle',
 };
 var databaseTacticsDragState = null;
+
+function setDatabaseTacticsStatus(message = '', state = 'info') {
+    databaseTacticsState.status = message;
+    databaseTacticsState.statusState = message ? state : 'idle';
+}
 
 function getDatabaseTacticsSlots(formation = databaseTacticsState.formation) {
     return (DB_TACTICS_FORMATIONS[formation] || DB_TACTICS_FORMATIONS['4-3-3'])
@@ -193,7 +199,7 @@ function buildDatabaseTacticsPlayerCard(slotKey, player, pick) {
                 <span>${escapeHtml(growthLabel)}</span>
                 <select onchange="setDatabaseTacticsGrowth(${htmlJsString(slotKey)}, this.value)">${renderDatabaseTacticsGrowthOptions(player, growthStep)}</select>
             </label>
-            <button class="db-tactics-remove" type="button" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation(); removeDatabaseTacticsPlayer(${htmlJsString(slotKey)})" aria-label="移除 ${escapeHtml(player.name || '')}">×</button>
+            <button class="db-tactics-remove" type="button" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation(); removeDatabaseTacticsPlayer(${htmlJsString(slotKey)})" aria-label="移除 ${escapeHtml(player.name || '')}">${uiIconSvg('close', 'ui-icon is-small')}</button>
         </div>
     `;
 }
@@ -211,7 +217,7 @@ function renderDatabaseTacticsPitch() {
                 <div class="formation-pitch-line formation-pitch-center"></div><div class="formation-pitch-box formation-pitch-box-top"></div><div class="formation-pitch-box formation-pitch-box-bottom"></div>
                 <div class="formation-goal-box formation-goal-box-top"></div><div class="formation-goal-box formation-goal-box-bottom"></div>
                 <span class="formation-corner corner-tl"></span><span class="formation-corner corner-tr"></span><span class="formation-corner corner-bl"></span><span class="formation-corner corner-br"></span>
-                ${target ? `<span class="db-tactics-drop-target" style="left:${target.x}%;top:${target.y}%;"><b>＋</b><small>下一位</small></span>` : ''}
+                ${target ? `<span class="db-tactics-drop-target" style="left:${target.x}%;top:${target.y}%;"><b><svg class="ui-icon is-small" viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></b><small>下一位</small></span>` : ''}
                 ${entries.map(([slotKey, pick]) => {
                     const player = getDatabaseTacticsPlayer(slotKey);
                     if (!player) return '';
@@ -261,7 +267,7 @@ function renderDatabaseTacticsBoard() {
             <label><span>数据库版本</span><select onchange="changeDatabaseTacticsVersion(this.value)">${versions.map(version => `<option value="${escapeHtml(version)}" ${version === databaseTacticsState.version ? 'selected' : ''}>${escapeHtml(version)}</option>`).join('')}</select></label>
             <div class="db-tactics-toolbar-actions"><button class="btn btn-secondary" type="button" onclick="resetDatabaseTacticsToFormation()">按阵型重排</button><button class="btn btn-secondary" type="button" onclick="clearDatabaseTacticsBoard()">清空战术板</button></div>
         </div>
-        ${databaseTacticsState.status ? `<div class="db-tactics-status" role="status">${escapeHtml(databaseTacticsState.status)}</div>` : ''}
+        ${databaseTacticsState.status ? `<div class="db-tactics-status is-${escapeHtml(databaseTacticsState.statusState || 'info')}" role="${databaseTacticsState.statusState === 'error' ? 'alert' : 'status'}" aria-live="${databaseTacticsState.statusState === 'error' ? 'assertive' : 'polite'}">${escapeHtml(databaseTacticsState.status)}</div>` : ''}
         <div class="db-tactics-workspace">
             <div class="db-tactics-pitch-column">${renderDatabaseTacticsPitch()}</div>
             <aside class="db-tactics-picker surface-card">
@@ -303,12 +309,12 @@ async function searchDatabaseTacticsPlayers() {
     const query = String(input?.value || '').trim();
     if (!query) {
         databaseTacticsState.searchResults = [];
-        databaseTacticsState.status = '请输入球员姓名或 UID。';
+        setDatabaseTacticsStatus('请输入球员姓名或 UID。', 'warning');
         renderDatabaseTacticsBoard();
         return;
     }
     databaseTacticsState.searchBusy = true;
-    databaseTacticsState.status = '';
+    setDatabaseTacticsStatus();
     renderDatabaseTacticsBoard();
     try {
         let results;
@@ -324,10 +330,10 @@ async function searchDatabaseTacticsPlayers() {
             results = Array.isArray(payload) ? payload : [];
         }
         databaseTacticsState.searchResults = results;
-        databaseTacticsState.status = results.length ? `找到 ${results.length} 名球员` : '没有找到匹配球员，请尝试完整姓名或 UID。';
+        setDatabaseTacticsStatus(results.length ? `找到 ${results.length} 名球员` : '没有找到匹配球员，请尝试完整姓名或 UID。', results.length ? 'success' : 'warning');
     } catch (error) {
         databaseTacticsState.searchResults = [];
-        databaseTacticsState.status = `搜索失败：${error.message || '请稍后重试'}`;
+        setDatabaseTacticsStatus(`搜索失败：${error.message || '请稍后重试'}`, 'error');
     } finally {
         databaseTacticsState.searchBusy = false;
         renderDatabaseTacticsBoard();
@@ -344,7 +350,7 @@ async function addDatabaseTacticsPlayer(uid) {
     const slots = getDatabaseTacticsSlots();
     const existingSlotKey = Object.keys(databaseTacticsState.picks || {}).find(slotKey => Number(databaseTacticsState.picks[slotKey]?.uid) === numericUid);
     if (!existingSlotKey && Object.keys(databaseTacticsState.picks || {}).length >= 11) {
-        databaseTacticsState.status = '场上已经有 11 人，请先移除一名球员。';
+        setDatabaseTacticsStatus('场上已经有 11 人，请先移除一名球员。', 'warning');
         renderDatabaseTacticsBoard();
         return;
     }
@@ -362,11 +368,11 @@ async function addDatabaseTacticsPlayer(uid) {
             y: Number(databaseTacticsState.activePoint?.y ?? previous.y ?? reference?.y ?? 50),
         };
         databaseTacticsState.activePoint = null;
-        databaseTacticsState.status = existingSlotKey ? `${player.name || numericUid} 已移动到新落点` : `${player.name || numericUid} 已加入战术板，可直接拖动调整位置`;
+        setDatabaseTacticsStatus(existingSlotKey ? `${player.name || numericUid} 已移动到新落点` : `${player.name || numericUid} 已加入战术板，可直接拖动调整位置`, 'success');
         persistDatabaseTacticsState();
         renderDatabaseTacticsBoard();
     } catch (error) {
-        databaseTacticsState.status = `添加失败：${error.message || '请稍后重试'}`;
+        setDatabaseTacticsStatus(`添加失败：${error.message || '请稍后重试'}`, 'error');
         renderDatabaseTacticsBoard();
     }
 }
@@ -384,7 +390,7 @@ function getDatabaseTacticsPoint(event, pitch, card = null) {
 function setDatabaseTacticsDropPoint(event) {
     if (event.target?.closest?.('.db-tactics-player-card')) return;
     databaseTacticsState.activePoint = getDatabaseTacticsPoint(event, event.currentTarget);
-    databaseTacticsState.status = '已设置下一名球员的落点';
+    setDatabaseTacticsStatus('已设置下一名球员的落点', 'info');
     renderDatabaseTacticsBoard();
 }
 
@@ -428,7 +434,7 @@ function finishDatabaseTacticsDrag(event) {
     databaseTacticsDragState = null;
     if (drag.moved) {
         databaseTacticsState.activePoint = null;
-        databaseTacticsState.status = '球员位置已保存';
+        setDatabaseTacticsStatus('球员位置已保存', 'success');
         persistDatabaseTacticsState();
         renderDatabaseTacticsBoard();
     }
@@ -442,7 +448,7 @@ function handleDatabaseTacticsCardKeydown(event, slotKey) {
     event.preventDefault();
     pick.x = Math.max(5, Math.min(95, Number(pick.x || 50) + delta[0]));
     pick.y = Math.max(6, Math.min(94, Number(pick.y || 50) + delta[1]));
-    databaseTacticsState.status = '球员位置已微调';
+    setDatabaseTacticsStatus('球员位置已微调', 'success');
     persistDatabaseTacticsState();
     renderDatabaseTacticsBoard();
 }
@@ -453,7 +459,7 @@ function setDatabaseTacticsGrowth(slotKey, value) {
     const step = Number(value || 0);
     if (!pick || !player || !getDatabaseTacticsEligibleSteps(player).includes(step)) return;
     pick.growth_step = step;
-    databaseTacticsState.status = `${player.name || '球员'} 已切换为${step ? ` +${step}` : '当前'}状态`;
+    setDatabaseTacticsStatus(`${player.name || '球员'} 已切换为${step ? ` +${step}` : '当前'}状态`, 'success');
     persistDatabaseTacticsState();
     renderDatabaseTacticsBoard();
 }
@@ -461,7 +467,7 @@ function setDatabaseTacticsGrowth(slotKey, value) {
 function removeDatabaseTacticsPlayer(slotKey) {
     const player = getDatabaseTacticsPlayer(slotKey);
     delete databaseTacticsState.picks[slotKey];
-    databaseTacticsState.status = player ? `${player.name} 已移出战术板` : '';
+    setDatabaseTacticsStatus(player ? `${player.name} 已移出战术板` : '', 'info');
     persistDatabaseTacticsState();
     renderDatabaseTacticsBoard();
 }
@@ -470,7 +476,7 @@ function changeDatabaseTacticsFormation(formation) {
     if (!DB_TACTICS_FORMATIONS[formation] || formation === databaseTacticsState.formation) return;
     databaseTacticsState.formation = formation;
     resetDatabaseTacticsToFormation({render: false});
-    databaseTacticsState.status = `已切换为 ${formation} 并按参考阵型重排，之后仍可自由拖动`;
+    setDatabaseTacticsStatus(`已切换为 ${formation} 并按参考阵型重排，之后仍可自由拖动`, 'info');
     persistDatabaseTacticsState();
     renderDatabaseTacticsBoard();
 }
@@ -487,7 +493,7 @@ function resetDatabaseTacticsToFormation(options = {}) {
     databaseTacticsState.picks = nextPicks;
     databaseTacticsState.activePoint = null;
     if (options.render !== false) {
-        databaseTacticsState.status = `已按 ${databaseTacticsState.formation} 参考阵型重新排列`;
+        setDatabaseTacticsStatus(`已按 ${databaseTacticsState.formation} 参考阵型重新排列`, 'success');
         persistDatabaseTacticsState();
         renderDatabaseTacticsBoard();
     }
@@ -499,12 +505,12 @@ async function changeDatabaseTacticsVersion(version) {
     databaseTacticsState.version = setCurrentAttributeVersion(normalized);
     databaseTacticsState.players = {};
     databaseTacticsState.searchResults = [];
-    databaseTacticsState.status = `正在切换到 ${normalized} 版本...`;
+    setDatabaseTacticsStatus(`正在切换到 ${normalized} 版本...`, 'saving');
     persistDatabaseTacticsState();
     renderDatabaseTacticsBoard();
     await loadHeigoPowerCalibration(normalized);
     await hydrateDatabaseTacticsPlayers();
-    databaseTacticsState.status = `已切换到 ${normalized} 版本`;
+    setDatabaseTacticsStatus(`已切换到 ${normalized} 版本`, 'success');
     renderDatabaseTacticsBoard();
     if (typeof syncAppHistory === 'function') syncAppHistory('replace');
 }
@@ -521,7 +527,7 @@ function clearDatabaseTacticsBoard() {
     databaseTacticsState.picks = {};
     databaseTacticsState.players = {};
     databaseTacticsState.activePoint = null;
-    databaseTacticsState.status = '战术板已清空';
+    setDatabaseTacticsStatus('战术板已清空', 'info');
     persistDatabaseTacticsState();
     renderDatabaseTacticsBoard();
 }

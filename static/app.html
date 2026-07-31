@@ -6,6 +6,7 @@
     <title>HEIGO 联赛数据台</title>
     <link rel="icon" href="/favicon.ico">
     <link rel="stylesheet" href="/static/app.css?v=__STATIC_ASSET_VERSION__">
+    <link rel="stylesheet" href="/static/css/ui-foundation.css?v=__STATIC_ASSET_VERSION__">
 </head>
 <body class="light-mode">
     <div class="container">
@@ -20,10 +21,10 @@
                     </div>
                 </div>
                 <div class="shell-actions">
-                    <button class="shell-utility-button" type="button" onclick="showJoinHeigoModal()"><span class="shell-utility-mark" aria-hidden="true">＋</span><span>加入 HEIGO</span></button>
-                    <button class="shell-utility-button" id="homeRosterExportButton" type="button" onclick="exportData()"><span class="shell-utility-mark" aria-hidden="true">⇩</span><span>导出 Excel</span></button>
+                    <button class="shell-utility-button" type="button" onclick="showJoinHeigoModal()"><span class="shell-utility-mark" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 5v14M5 12h14"/></svg></span><span>加入 HEIGO</span></button>
+                    <button class="shell-utility-button" id="homeRosterExportButton" type="button" onclick="exportData()"><span class="shell-utility-mark" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg></span><span>导出 Excel</span></button>
                     <button class="shell-utility-button theme-toggle" type="button" onclick="toggleTheme()">
-                        <span id="themeIcon" class="shell-utility-mark" aria-hidden="true">☾</span>
+                        <span id="themeIcon" class="shell-utility-mark theme-control-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="theme-moon-path" d="M20 15.3A8.2 8.2 0 0 1 8.7 4a8.4 8.4 0 1 0 11.3 11.3Z"/><g class="theme-sun-path"><circle cx="12" cy="12" r="3.5"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M18.7 5.3l-1.4 1.4M6.7 17.3l-1.4 1.4"/></g></svg></span>
                         <span id="themeText">切换夜间</span>
                     </button>
                     <div id="globalCoachAccount" class="global-coach-account" aria-live="polite"></div>
@@ -32,18 +33,18 @@
         </header>
 
         <div class="nav-tabs glass-card">
-            <button class="nav-tab active" data-tab="home" onclick="showTab('home', this)"><span class="nav-tab-icon" aria-hidden="true">⌂</span><span>首页</span></button>
-            <button class="nav-tab" data-tab="overview" onclick="showTab('overview', this)"><span class="nav-tab-icon" aria-hidden="true">◫</span><span>联赛概览</span></button>
+            <button class="nav-tab active" data-tab="home" onclick="showTab('home', this)"><span class="nav-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="m4 10 8-6 8 6v9H9v-6h6v6"/></svg></span><span>首页</span></button>
+            <button class="nav-tab" data-tab="overview" onclick="showTab('overview', this)"><span class="nav-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg></span><span>联赛概览</span></button>
             <button class="nav-tab" data-tab="team" onclick="openTeamCenter({triggerElement: this})"><span class="nav-tab-icon team-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="team-nav-shirt" d="M8.1 4.4 5.2 5.6 2.8 9.4 6 11.2l1.3-1.7V20h9.4V9.5l1.3 1.7 3.2-1.8-2.4-3.8-2.9-1.2C15.3 6.1 14 7 12 7s-3.3-.9-3.9-2.6Z"/><path class="team-nav-stripe" d="M12 7.3v12.2"/></svg></span><span>球队中心</span></button>
-            <button class="nav-tab" data-tab="competition" onclick="showTab('competition', this)"><span class="nav-tab-icon nav-stat-icon" aria-hidden="true"><i></i><i></i><i></i></span><span>数据统计</span></button>
-            <button class="nav-tab" data-tab="coaches" onclick="showTab('coaches', this)"><span class="nav-tab-icon coach-nav-icon" aria-hidden="true">◉</span><span>教练主页</span></button>
-            <button class="nav-tab" data-tab="database" onclick="showTab('database', this)"><span class="nav-tab-icon" aria-hidden="true">⌕</span><span>球员库</span></button>
-            <button class="nav-tab hidden-tab" id="adminTab" data-tab="admin" onclick="showTab('admin', this)"><span class="nav-tab-icon" aria-hidden="true">⚙</span><span>联赛工作台</span></button>
+            <button class="nav-tab" data-tab="competition" onclick="showTab('competition', this)"><span class="nav-tab-icon nav-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M5 19v-8h3v8M10.5 19V5h3v14M16 19v-6h3v6M4 19.5h16"/></svg></span><span>数据统计</span></button>
+            <button class="nav-tab" data-tab="coaches" onclick="showTab('coaches', this)"><span class="nav-tab-icon coach-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.5-4 2.7-6 6.5-6s6 2 6.5 6"/></svg></span><span>教练主页</span></button>
+            <button class="nav-tab" data-tab="database" onclick="showTab('database', this)"><span class="nav-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4.5 4.5"/></svg></span><span>球员库</span></button>
+            <button class="nav-tab hidden-tab" id="adminTab" data-tab="admin" onclick="showTab('admin', this)"><span class="nav-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h10M18 7h2M4 12h2M10 12h10M4 17h7M15 17h5"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="17" r="2"/></svg></span><span>联赛工作台</span></button>
         </div>
 
         <nav class="mobile-bottom-nav" aria-label="移动端主导航">
             <button class="mobile-bottom-nav-item active" type="button" data-mobile-tab="home" onclick="showTab('home')">
-                <span class="mobile-bottom-nav-icon" aria-hidden="true">⌂</span>
+                <span class="mobile-bottom-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="m4 10 8-6 8 6v9H9v-6h6v6"/></svg></span>
                 <span>首页</span>
             </button>
             <button class="mobile-bottom-nav-item" type="button" data-mobile-tab="team" onclick="openTeamCenter()">
@@ -51,30 +52,45 @@
                 <span>球队</span>
             </button>
             <button class="mobile-bottom-nav-item" type="button" data-mobile-tab="competition" onclick="showTab('competition')">
-                <span class="mobile-bottom-nav-icon mobile-stat-icon" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="mobile-bottom-nav-icon mobile-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M5 19v-8h3v8M10.5 19V5h3v14M16 19v-6h3v6M4 19.5h16"/></svg></span>
                 <span>数据</span>
             </button>
             <button class="mobile-bottom-nav-item" type="button" data-mobile-tab="database" onclick="showTab('database')">
-                <span class="mobile-bottom-nav-icon" aria-hidden="true">⌕</span>
+                <span class="mobile-bottom-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4.5 4.5"/></svg></span>
                 <span>球员库</span>
             </button>
             <button class="mobile-bottom-nav-item" type="button" data-mobile-more-toggle aria-expanded="false" aria-controls="mobileMoreMenu" onclick="toggleMobileMoreMenu()">
-                <span class="mobile-bottom-nav-icon" aria-hidden="true">⋯</span>
+                <span class="mobile-bottom-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg></span>
                 <span>更多</span>
             </button>
         </nav>
-        <div class="mobile-more-menu" id="mobileMoreMenu" hidden>
+        <div class="mobile-more-menu" id="mobileMoreMenu" aria-label="更多导航与站点工具" hidden>
+            <div class="mobile-more-menu-label">更多页面</div>
             <button class="mobile-more-menu-item" type="button" data-mobile-tab="overview" onclick="showTab('overview')">
-                <span aria-hidden="true">◫</span>
+                <span aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg></span>
                 <span>联赛概览</span>
             </button>
             <button class="mobile-more-menu-item" type="button" data-mobile-tab="coaches" onclick="showTab('coaches')">
-                <span aria-hidden="true">◉</span>
+                <span aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.5-4 2.7-6 6.5-6s6 2 6.5 6"/></svg></span>
                 <span>教练主页</span>
             </button>
             <button class="mobile-more-menu-item hidden-tab" id="mobileAdminTab" type="button" data-mobile-tab="admin" onclick="showTab('admin')">
-                <span aria-hidden="true">⚙</span>
+                <span aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h10M18 7h2M4 12h2M10 12h10M4 17h7M15 17h5"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="17" r="2"/></svg></span>
                 <span>联赛工作台</span>
+            </button>
+            <div class="mobile-more-menu-divider" aria-hidden="true"></div>
+            <div class="mobile-more-menu-label">站点工具</div>
+            <button class="mobile-more-menu-item mobile-more-utility" type="button" onclick="showJoinHeigoModal(); closeMobileMoreMenu()">
+                <span aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 5v14M5 12h14"/></svg></span>
+                <span>加入 HEIGO</span>
+            </button>
+            <button class="mobile-more-menu-item mobile-more-utility" type="button" onclick="exportData(); closeMobileMoreMenu()">
+                <span aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg></span>
+                <span>导出 Excel</span>
+            </button>
+            <button class="mobile-more-menu-item mobile-more-utility" type="button" onclick="toggleTheme(); closeMobileMoreMenu()">
+                <span aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M20 15.3A8.2 8.2 0 0 1 8.7 4a8.4 8.4 0 1 0 11.3 11.3Z"/></svg></span>
+                <span>切换明暗主题</span>
             </button>
         </div>
 
@@ -87,7 +103,7 @@
                     <div class="home-hero-copy">
                         <span class="hero-kicker">HEIGO Search</span>
                         <h2>HEIGO搜索</h2>
-                        <p>统一搜索球队、联赛球员、教练主页和球员库数据，快速跳转到你要查看的内容。</p>
+                        <p>一个入口查球队、球员、教练与 UID，直接进入对应数据页。</p>
                     </div>
                     <div class="home-search-shell">
                         <label class="home-search-label" for="heroPlayerSearch">搜索球队、球员、教练或 UID</label>
@@ -106,28 +122,15 @@
                     </div>
                 </div>
 
-                <div class="home-shortcuts">
-                    <button class="home-shortcut-card surface-card" onclick="showTab('overview')">
-                        <span class="panel-kicker">League Overview</span>
-                        <h3>联赛概览 / 球队列表</h3>
-                        <p>查看联赛规则、球队总览、工资合规性和最近一次数据状态。</p>
-                    </button>
-                    <button class="home-shortcut-card surface-card" onclick="openTeamCenter()">
-                        <span class="panel-kicker">Team Center</span>
-                        <h3>球队中心</h3>
-                        <p>查看球队阵容、战力、赛程与纪律状态。</p>
-                    </button>
-                    <button class="home-shortcut-card surface-card" onclick="showTab('competition')">
-                        <span class="panel-kicker">Data Center</span>
-                        <h3>数据统计</h3>
-                        <p>进入积分榜、赛程、球员榜、伤停和杯赛对阵图。</p>
-                    </button>
-                    <button class="home-shortcut-card surface-card" onclick="showTab('coaches')">
-                        <span class="panel-kicker">Coach Profiles</span>
-                        <h3>教练主页</h3>
-                        <p>查看各级别教练资料、头像、荣誉和鲜花鸡蛋互动。</p>
-                    </button>
-                </div>
+                <section class="home-dashboard" id="homeDashboard" aria-label="联赛动态仪表盘" aria-busy="true">
+                    <div class="home-dashboard-head">
+                        <div><span class="panel-kicker">League Today</span><h2>今日联赛</h2></div>
+                        <span class="home-dashboard-update">正在读取最新数据…</span>
+                    </div>
+                    <div class="home-dashboard-skeleton" aria-hidden="true">
+                        <span></span><span></span><span></span><span></span>
+                    </div>
+                </section>
             </section>
         </div>
 
@@ -235,6 +238,7 @@
                 </aside>
 
                 <section class="player-results-panel">
+                    <div id="rosterDataStatus" class="data-status-host" aria-live="polite"><div class="data-status-skeleton">读取名单状态...</div></div>
                     <div class="query-status-bar surface-card">
                         <div class="roster-team-badge-slot" id="playerRosterTeamBadge"></div>
                         <div class="query-status-copy">
@@ -274,6 +278,7 @@
                 <button class="database-subtab" id="dbSubtabTactics" type="button" onclick="showDatabaseSubtab('tactics')" role="tab" aria-selected="false">战术板</button>
                 <button class="database-subtab" id="dbSubtabLeaderboard" type="button" onclick="showDatabaseSubtab('leaderboard')" role="tab" aria-selected="false">互动排行榜</button>
             </div>
+            <div id="databaseDataStatus" class="data-status-host" aria-live="polite"><div class="data-status-skeleton">读取球员库状态...</div></div>
 
             <div class="list-view active" id="dbListView">
                 <div class="search-section">
@@ -298,7 +303,7 @@
                             aria-expanded="false"
                             aria-controls="dbAdvancedSearchPanel"
                         >
-                            <span class="database-advanced-trigger-icon" aria-hidden="true">⌕</span>
+                            <span class="database-advanced-trigger-icon" aria-hidden="true"><svg class="ui-icon is-small" viewBox="0 0 24 24" focusable="false"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4.5 4.5"/></svg></span>
                             <span class="database-advanced-trigger-text">高级搜索</span>
                             <span class="database-advanced-trigger-count" id="dbAdvancedSearchCount" hidden>0</span>
                         </button>
@@ -464,23 +469,42 @@
 
         <div id="competition" class="tab-content">
             <div class="competition-shell">
-                <div class="database-subtabs surface-card" role="tablist" aria-label="积分榜功能切换">
-                    <button class="database-subtab active" id="competitionSubtabStandings" type="button" onclick="showCompetitionSubtab('standings')" role="tab" aria-selected="true">积分榜</button>
-                    <button class="database-subtab" id="competitionSubtabSchedule" type="button" onclick="showCompetitionSubtab('schedule')" role="tab" aria-selected="false">赛程</button>
-                    <button class="database-subtab" id="competitionSubtabPlayerRankings" type="button" onclick="showCompetitionSubtab('playerRankings')" role="tab" aria-selected="false">球员榜</button>
-                    <button class="database-subtab" id="competitionSubtabSuspensions" type="button" onclick="showCompetitionSubtab('suspensions')" role="tab" aria-selected="false">伤停</button>
+                <div class="database-subtabs competition-primary-tabs surface-card" role="tablist" aria-label="数据统计功能切换">
+                    <button class="database-subtab active" id="competitionSubtabStandings" type="button" onclick="showCompetitionSubtab('standings')" role="tab" aria-selected="true" aria-controls="competitionStandingsView"><span class="competition-subtab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 19v-7h3v7M10.5 19V5h3v14M16 19v-10h3v10M4 19.5h16"/></svg></span><span>积分榜</span></button>
+                    <button class="database-subtab" id="competitionSubtabSchedule" type="button" onclick="showCompetitionSubtab('schedule')" role="tab" aria-selected="false" aria-controls="competitionScheduleView"><span class="competition-subtab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 4v3M18 4v3M4 9h16M5 6h14v14H5zM8 13h3M13 13h3M8 16h3"/></svg></span><span>赛程</span></button>
+                    <button class="database-subtab" id="competitionSubtabPlayerRankings" type="button" onclick="showCompetitionSubtab('playerRankings')" role="tab" aria-selected="false" aria-controls="competitionPlayerRankingsView"><span class="competition-subtab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5h8v4a4 4 0 0 1-8 0V5ZM8 7H5v1a4 4 0 0 0 4 4M16 7h3v1a4 4 0 0 1-4 4M12 13v4M8 20h8M9 17h6"/></svg></span><span>球员榜</span></button>
+                    <button class="database-subtab" id="competitionSubtabSuspensions" type="button" onclick="showCompetitionSubtab('suspensions')" role="tab" aria-selected="false" aria-controls="competitionSuspensionsView"><span class="competition-subtab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM12 9v6M9 12h6"/></svg></span><span>伤停</span></button>
                 </div>
                 <div class="competition-actions competition-actions-inline" id="competitionAdminActions"></div>
                 <section class="competition-work-panel" id="competitionWorkPanel" hidden></section>
 
-                <div class="competition-level-tabs surface-card" role="tablist" aria-label="联赛级别切换">
-                    <button class="competition-level-tab active" id="competitionLevelSuper" type="button" onclick="setCompetitionLevel('超级')">超级</button>
-                    <button class="competition-level-tab" id="competitionLevelFirst" type="button" onclick="setCompetitionLevel('甲级')">甲级</button>
-                    <button class="competition-level-tab" id="competitionLevelSecond" type="button" onclick="setCompetitionLevel('乙级')">乙级</button>
-                    <button class="competition-level-tab cup-tab champion-tab" id="competitionLevelChampionsCup" type="button" onclick="setCompetitionLevel('冠军杯')">冠军杯</button>
-                    <button class="competition-level-tab cup-tab league-tab" id="competitionLevelLeagueCup" type="button" onclick="setCompetitionLevel('联盟杯')">联盟杯</button>
-                    <button class="competition-level-tab cup-tab wumingjian-tab" id="competitionLevelWumingjianCup" type="button" onclick="setCompetitionLevel('无铭剑杯')">无铭剑杯</button>
-                </div>
+                <section class="competition-selector surface-card is-at-start" id="competitionSelector" aria-label="赛事范围">
+                    <div class="competition-selector-head">
+                        <strong>赛事范围</strong>
+                        <span id="competitionSelectorHint">联赛与杯赛</span>
+                    </div>
+                    <div class="competition-selector-viewport" id="competitionSelectorViewport" tabindex="0" aria-label="赛事选择，可横向滚动">
+                        <div class="competition-level-tabs" id="competitionLevelTabs" role="tablist" aria-label="赛事切换">
+                            <div class="competition-level-group competition-league-group" role="presentation">
+                                <span class="competition-level-group-label">三级联赛</span>
+                                <div class="competition-level-options" role="presentation">
+                                    <button class="competition-level-tab active" id="competitionLevelSuper" type="button" onclick="setCompetitionLevel('超级')" role="tab" aria-selected="true">超级</button>
+                                    <button class="competition-level-tab" id="competitionLevelFirst" type="button" onclick="setCompetitionLevel('甲级')" role="tab" aria-selected="false">甲级</button>
+                                    <button class="competition-level-tab" id="competitionLevelSecond" type="button" onclick="setCompetitionLevel('乙级')" role="tab" aria-selected="false">乙级</button>
+                                </div>
+                            </div>
+                            <div class="competition-level-group competition-cup-group" id="competitionCupGroup" role="presentation">
+                                <span class="competition-level-group-label">杯赛</span>
+                                <div class="competition-level-options" role="presentation">
+                                    <button class="competition-level-tab cup-tab champion-tab" id="competitionLevelChampionsCup" type="button" onclick="setCompetitionLevel('冠军杯')" role="tab" aria-selected="false">冠军杯</button>
+                                    <button class="competition-level-tab cup-tab league-tab" id="competitionLevelLeagueCup" type="button" onclick="setCompetitionLevel('联盟杯')" role="tab" aria-selected="false">联盟杯</button>
+                                    <button class="competition-level-tab cup-tab wumingjian-tab" id="competitionLevelWumingjianCup" type="button" onclick="setCompetitionLevel('无铭剑杯')" role="tab" aria-selected="false">无铭剑杯</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                <div id="competitionDataStatus" class="data-status-host" aria-live="polite"><div class="data-status-skeleton">读取联赛数据状态...</div></div>
 
                 <div class="cup-phase-switch surface-card" id="cupPhaseTabs" role="tablist" aria-label="杯赛阶段切换" hidden>
                     <button class="cup-phase-tab" id="cupPhaseGroupTab" type="button" onclick="setCupPhase('group')" role="tab" aria-selected="false">
@@ -564,6 +588,7 @@
                             <button class="workspace-nav-item" type="button" data-workspace-capability="candidate_lists.write" onclick="openWorkspaceTask('database', 'candidates')">候选名单</button>
                             <button class="workspace-nav-item" type="button" data-workspace-imports data-workspace-view="imports" onclick="showWorkspaceView('imports')">数据导入</button>
                             <button class="workspace-nav-item" type="button" data-workspace-admin-only data-workspace-view="promotions" onclick="showWorkspaceView('promotions')">主页宣传</button>
+                            <button class="workspace-nav-item" type="button" data-workspace-admin-only data-workspace-view="logos" onclick="showWorkspaceView('logos')">队徽匹配</button>
                             <button class="workspace-nav-item" type="button" data-workspace-admin-only onclick="showWorkspaceView('accounts')">人员与权限</button>
                             <button class="workspace-nav-item" type="button" data-workspace-admin-only onclick="showWorkspaceView('operations')">数据与系统</button>
                             <button class="workspace-nav-item" type="button" data-workspace-admin-only onclick="showWorkspaceView('operations', 'operationsAuditCard')">操作记录</button>
@@ -580,6 +605,10 @@
                             <section class="workspace-task-panel">
                                 <div class="workspace-section-head"><h3>我的任务</h3><span id="workspaceTaskScopeLabel">按当前身份分配</span></div>
                                 <div id="workspaceTaskList"><div class="loading">加载任务...</div></div>
+                            </section>
+                            <section class="workspace-data-status-panel">
+                                <div class="workspace-section-head"><h3>数据状态</h3><span>缺失、异常与更新提醒</span></div>
+                                <div id="workspaceDataStatusList"><div class="loading">检查数据状态...</div></div>
                             </section>
                             <section class="workspace-recent-panel">
                                 <div class="workspace-section-head"><h3>最近操作</h3><span>当前工作身份</span></div>
@@ -620,6 +649,52 @@
                                 <div><strong>可随时回收</strong><span>下线保留配置，删除永久移除</span></div>
                             </div>
                             <div id="workspacePromotionsList"><div class="loading">加载主页宣传...</div></div>
+                        </section>
+
+                        <section class="workspace-view" id="workspaceLogosView">
+                            <div class="workspace-page-head">
+                                <div><span class="panel-kicker">Crest Scout</span><h2>队徽匹配中心</h2><p>从已授权的 FCLOGO 检索矢量队徽，对照确认后再更新网站展示。</p></div>
+                                <button class="btn btn-secondary" type="button" onclick="loadWorkspaceLogoMatcher({force:true})">刷新球队</button>
+                            </div>
+                            <div class="workspace-logo-source-note">
+                                <span class="workspace-logo-source-mark">SRC</span>
+                                <div><strong>多来源队徽工作流</strong><small>可从 FCLOGO 检索，也可上传本地文件；两种来源都需人工核对并保留来源记录。</small></div>
+                                <a href="https://fclogo.top/" target="_blank" rel="noopener noreferrer">FCLOGO 来源站</a>
+                            </div>
+                            <div class="workspace-logo-scout">
+                                <aside class="workspace-logo-team-panel">
+                                    <div class="workspace-logo-panel-head"><div><span>01</span><strong>选择球队</strong></div><small id="workspaceLogoTeamCount">54 CLUBS</small></div>
+                                    <input id="workspaceLogoTeamFilter" class="workspace-logo-filter" type="search" placeholder="筛选球队" oninput="renderWorkspaceLogoTeams()">
+                                    <div id="workspaceLogoTeamList" class="workspace-logo-team-list"><div class="loading">读取联赛球队...</div></div>
+                                </aside>
+                                <section class="workspace-logo-candidate-panel">
+                                    <div class="workspace-logo-panel-head"><div><span>02</span><strong>选择来源</strong></div><small>MULTI SOURCE</small></div>
+                                    <div class="workspace-logo-source-tabs" role="tablist" aria-label="队徽来源">
+                                        <button class="active" id="workspaceLogoFclogoTab" type="button" onclick="setWorkspaceLogoSource('fclogo')">FCLOGO 检索</button>
+                                        <button id="workspaceLogoUploadTab" type="button" onclick="setWorkspaceLogoSource('upload')">本地上传</button>
+                                    </div>
+                                    <div class="workspace-logo-source-pane active" id="workspaceLogoFclogoPane">
+                                        <form class="workspace-logo-search" onsubmit="event.preventDefault(); searchWorkspaceLogoCandidates();">
+                                            <input id="workspaceLogoSearchInput" type="search" maxlength="80" placeholder="输入英文、中文或当地球队名">
+                                            <button class="btn btn-primary" id="workspaceLogoSearchButton" type="submit">搜索 FCLOGO</button>
+                                        </form>
+                                        <div id="workspaceLogoCandidateList" class="workspace-logo-candidate-list"><div class="workspace-logo-empty">先从左侧选择一支球队，再搜索候选队徽。</div></div>
+                                    </div>
+                                    <div class="workspace-logo-source-pane" id="workspaceLogoUploadPane">
+                                        <label class="workspace-logo-upload-drop" for="workspaceLogoUploadInput">
+                                            <span class="workspace-logo-upload-icon" aria-hidden="true"><svg class="ui-icon is-large" viewBox="0 0 24 24" focusable="false"><path d="M12 5v14M5 12h14"/></svg></span>
+                                            <strong>选择本地队徽文件</strong>
+                                            <small>JPG / PNG / WEBP 最大 2MB，SVG 最大 5MB</small>
+                                            <input id="workspaceLogoUploadInput" type="file" accept=".jpg,.jpeg,.png,.webp,.svg,image/jpeg,image/png,image/webp,image/svg+xml" onchange="handleWorkspaceLogoUpload(this.files?.[0])">
+                                        </label>
+                                        <div id="workspaceLogoUploadPreview" class="workspace-logo-upload-preview"><div class="workspace-logo-empty">文件只在确认后上传，选择文件不会立即替换队徽。</div></div>
+                                    </div>
+                                </section>
+                                <aside class="workspace-logo-review-panel">
+                                    <div class="workspace-logo-panel-head"><div><span>03</span><strong>对照确认</strong></div><small>MANUAL REVIEW</small></div>
+                                    <div id="workspaceLogoReview"><div class="workspace-logo-empty">选择候选后，这里会显示新旧队徽对照。</div></div>
+                                </aside>
+                            </div>
                         </section>
 
                         <section class="workspace-view" id="workspaceImportsView">
@@ -695,7 +770,7 @@
                     <div class="admin-cluster admin-section">
                         <div class="admin-cluster-head">
                             <h3>单人操作</h3>
-                            <p>处理球员交易、解约和 CA/PA 消费，适合日常小批量维护。</p>
+                            <p>处理球员交易、海捞、解约和 CA/PA 消费，适合日常小批量维护。</p>
                         </div>
                         <div class="admin-cluster-grid">
                             <div class="admin-action-card">
@@ -713,6 +788,24 @@
                                     <input type="text" id="transferNotes" placeholder="可选备注">
                                 </div>
                                 <button class="btn btn-primary" onclick="transferPlayer()">执行交易</button>
+                            </div>
+
+                            <div class="admin-action-card sea-fish-card" id="seaFishCard">
+                                <h4>大海海捞</h4>
+                                <div class="form-group">
+                                    <label>大海球员 UID</label>
+                                    <input type="number" id="seaFishUid" placeholder="输入球员库 UID，或从下方列表选择">
+                                </div>
+                                <div class="form-group">
+                                    <label>加入球队</label>
+                                    <select id="seaFishTeam"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>备注</label>
+                                    <input type="text" id="seaFishNotes" placeholder="可选备注">
+                                </div>
+                                <p class="admin-action-note">支持球员数据库及所有非三级联赛球员；完成后当前 CA 自动重置为初始 CA。</p>
+                                <button class="btn btn-primary" onclick="seaFishPlayer()">海捞到球队</button>
                             </div>
 
                             <div class="admin-action-card">
@@ -906,20 +999,27 @@
         </footer>
     </div>
     
-    <div class="modal" id="resultModal">
-        <div class="modal-content">
+    <div class="modal" id="resultModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true">
+        <div class="modal-content" tabindex="-1">
             <div class="modal-header">
                 <h3 id="modalTitle"></h3>
-                <button class="modal-close" onclick="closeModal()">&times;</button>
+                <button class="modal-close" type="button" onclick="closeModal()" aria-label="关闭弹窗"><svg class="ui-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
             </div>
             <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <div class="home-promotion-modal-layer" id="homePromotionModalLayer" hidden aria-hidden="true">
+        <div class="home-promotion-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="homePromotionModalTitle">
+            <button class="home-promotion-modal-close" id="homePromotionModalClose" type="button" onclick="closeHomePromotionModal()" aria-label="关闭宣传弹窗"><svg class="ui-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
+            <div id="homePromotionModalContent"></div>
         </div>
     </div>
 
     <aside id="compareDock" class="compare-dock" aria-label="球员对比夹"></aside>
     <aside id="candidateDock" class="candidate-dock" aria-label="候选名单夹"></aside>
     <button id="workspaceReturnButton" class="workspace-return-button" type="button" aria-label="返回联赛工作台" onclick="showTab('admin')" hidden>
-        <span class="workspace-return-icon" aria-hidden="true">↩</span>
+        <span class="workspace-return-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" focusable="false"><path d="m9 7-5 5 5 5M5 12h9a5 5 0 0 1 5 5v2"/></svg></span>
         <span class="workspace-return-label">工作台</span>
     </button>
 

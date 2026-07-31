@@ -1,9 +1,20 @@
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from models import Player, Team
 from repositories.team_repository import get_team_by_name
 from search_normalization import build_search_normalized_keys
+
+LEAGUE_LEVELS = ("超级", "甲级", "乙级")
+
+
+def league_player_membership_filter():
+    league_team_ids = select(Team.id).where(Team.level.in_(LEAGUE_LEVELS))
+    league_team_names = select(Team.name).where(Team.level.in_(LEAGUE_LEVELS))
+    return or_(
+        and_(Player.team_id.is_not(None), Player.team_id.in_(league_team_ids)),
+        and_(Player.team_name.is_not(None), Player.team_name.in_(league_team_names)),
+    )
 
 
 def get_player_by_uid(db: Session, uid: int) -> Player | None:
@@ -12,6 +23,22 @@ def get_player_by_uid(db: Session, uid: int) -> Player | None:
 
 def list_all_players(db: Session) -> list[Player]:
     return db.query(Player).all()
+
+
+def list_league_players(db: Session) -> list[Player]:
+    return db.query(Player).filter(league_player_membership_filter()).order_by(Player.team_name, Player.name).all()
+
+
+def count_league_players(db: Session) -> int:
+    return db.query(Player).filter(league_player_membership_filter()).count()
+
+
+def list_sea_players(db: Session) -> list[Player]:
+    return db.query(Player).filter(~league_player_membership_filter()).order_by(Player.name).all()
+
+
+def player_is_in_league(db: Session, player: Player) -> bool:
+    return db.query(Player.uid).filter(Player.uid == player.uid, league_player_membership_filter()).first() is not None
 
 
 def list_players_excluding_team(db: Session, excluded_team_name: str | None = None) -> list[Player]:
@@ -42,7 +69,14 @@ def search_players_by_name(db: Session, player_name: str) -> list[Player]:
 
 
 def map_player_uid_to_team_name(db: Session) -> dict[int, str]:
-    return {uid: team_name for uid, team_name in db.query(Player.uid, Player.team_name).all()}
+    league_players = {
+        uid: team_name
+        for uid, team_name in db.query(Player.uid, Player.team_name).filter(league_player_membership_filter()).all()
+    }
+    return {
+        uid: league_players.get(uid, "大海")
+        for (uid,) in db.query(Player.uid).all()
+    }
 
 
 def team_player_filter(team: Team):

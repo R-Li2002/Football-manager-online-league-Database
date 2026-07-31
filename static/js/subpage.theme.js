@@ -3,9 +3,7 @@ function updateSubpageThemeToggle() {
     const icon = document.getElementById('themeIcon');
     const text = document.getElementById('themeText');
 
-    if (icon) {
-        icon.textContent = mode === 'dark' ? '☀️' : '🌙';
-    }
+    if (icon) icon.classList.toggle('is-dark-mode', mode === 'dark');
 
     if (text) {
         text.textContent = mode === 'dark' ? '切换白天' : '切换夜间';

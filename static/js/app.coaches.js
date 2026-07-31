@@ -241,10 +241,11 @@ function showCoachLoginPanel(options = {}) {
     coachLoginSuccessContext = String(options.context || '');
     showModal('教练登录', `
         <form class="coach-login-form" onsubmit="event.preventDefault(); coachLogin();">
-            <input id="coachLoginUsername" type="text" autocomplete="username" placeholder="QQ号 / 旧账号">
-            <input id="coachLoginPassword" type="password" autocomplete="current-password" placeholder="密码">
+            <label class="ui-form-field" for="coachLoginUsername"><span>QQ号 / 旧账号</span><input id="coachLoginUsername" type="text" autocomplete="username" placeholder="输入已绑定 QQ 或旧账号"></label>
+            <label class="ui-form-field" for="coachLoginPassword"><span>密码</span><input id="coachLoginPassword" type="password" autocomplete="current-password" placeholder="输入密码"></label>
             <span class="coach-login-hint">已绑定 QQ 的教练优先使用 QQ 号登录。</span>
-            <button class="btn btn-primary" type="submit">登录</button>
+            <div id="coachLoginFeedback" class="ui-inline-feedback" hidden></div>
+            <button class="btn btn-primary" id="coachLoginSubmit" type="submit">登录</button>
         </form>
     `);
 }
@@ -266,24 +267,45 @@ async function finalizeCoachLogin(data, successContext = '') {
 }
 
 async function coachLogin() {
-    const username = document.getElementById('coachLoginUsername')?.value || '';
-    const password = document.getElementById('coachLoginPassword')?.value || '';
-    const response = await fetch('/api/coach/login', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({username, password}),
-    });
-    const data = await response.json();
-    if (!response.ok || !data.authenticated) {
-        showModal('登录失败', escapeHtml(data.detail || '账号或密码错误'));
+    const usernameInput = document.getElementById('coachLoginUsername');
+    const passwordInput = document.getElementById('coachLoginPassword');
+    const submitButton = document.getElementById('coachLoginSubmit');
+    const username = usernameInput?.value.trim() || '';
+    const password = passwordInput?.value || '';
+    setUiFieldError(usernameInput);
+    setUiFieldError(passwordInput);
+    setUiInlineFeedback('coachLoginFeedback');
+    if (!username || !password) {
+        if (!username) setUiFieldError(usernameInput, '请输入 QQ 号或旧账号');
+        if (!password) setUiFieldError(passwordInput, '请输入密码');
+        (username ? passwordInput : usernameInput)?.focus();
         return;
     }
-    currentCoachAccount = data;
-    syncWorkPermissionsFromCoachAccount();
-    const successContext = coachLoginSuccessContext;
-    coachLoginSuccessContext = '';
-    beginCoachSecuritySetup(() => finalizeCoachLogin(currentCoachAccount, successContext));
+    setUiButtonBusy(submitButton, true, '正在登录');
+    try {
+        const response = await fetch('/api/coach/login', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username, password}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.authenticated) {
+            setUiInlineFeedback('coachLoginFeedback', data.detail || '账号或密码错误，请检查后重试。', 'danger');
+            passwordInput?.focus();
+            passwordInput?.select();
+            return;
+        }
+        currentCoachAccount = data;
+        syncWorkPermissionsFromCoachAccount();
+        const successContext = coachLoginSuccessContext;
+        coachLoginSuccessContext = '';
+        beginCoachSecuritySetup(() => finalizeCoachLogin(currentCoachAccount, successContext));
+    } catch (error) {
+        setUiInlineFeedback('coachLoginFeedback', '网络连接失败，请稍后重试。', 'danger');
+    } finally {
+        if (document.getElementById('coachLoginSubmit')) setUiButtonBusy(submitButton, false);
+    }
 }
 
 async function openCoachWorkspace() {
@@ -323,7 +345,7 @@ async function loadCoaches(options = {}) {
         await openPendingCoachDetail();
     } catch (error) {
         console.error('Failed to load coaches:', error);
-        board.innerHTML = '<div class="no-data">教练主页加载失败，请稍后重试。</div>';
+        board.innerHTML = renderUiState({tone: 'danger', title: '教练主页加载失败', message: '网络或服务暂时不可用，请稍后重试。', actionLabel: '重新加载', actionOnclick: 'loadCoaches({force:true})', compact: true});
     }
 }
 
@@ -364,7 +386,7 @@ function renderCoachDirectory() {
                                     <span>蛋 ${Number(coach.reaction_summary?.eggs || 0)}</span>
                                 </span>
                             </button>
-                        `).join('') : '<div class="no-data">暂无教练</div>'}
+                        `).join('') : renderUiState({tone: 'empty', title: '暂无教练主页', message: '同步教练资料后会显示在这里。', compact: true})}
                     </div>
                 </section>
             `).join('')}
@@ -579,7 +601,7 @@ function showCoachForcedPasswordModal(onComplete = null, errorMessage = '') {
     coachForcedPasswordPromptOpen = true;
     showModal('首次登录 · 修改默认密码', `
         <div class="coach-security-gate">
-            <div class="coach-security-gate-mark" aria-hidden="true">✓</div>
+            <div class="coach-security-gate-mark" aria-hidden="true">${uiIconSvg('check')}</div>
             <div><strong>先设置你自己的密码</strong><p>管理员提供的密码仅用于首次进入。修改完成前，球队中心、个人资料和工作台操作都会保持锁定。</p></div>
             ${errorMessage ? `<div class="coach-security-error">${escapeHtml(errorMessage)}</div>` : ''}
             <input id="coachCurrentPassword" type="password" autocomplete="current-password" placeholder="当前默认密码">

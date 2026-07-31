@@ -22,6 +22,43 @@ class HomeSummaryResponse(BaseModel):
     default_attribute_version: str = ""
 
 
+class HomeDashboardMatchResponse(BaseModel):
+    id: int
+    level: str
+    round_no: int
+    home_team_id: Optional[int] = None
+    home_team_name: str
+    away_team_id: Optional[int] = None
+    away_team_name: str
+    home_score: Optional[int] = None
+    away_score: Optional[int] = None
+    status: str
+    match_date: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class HomeDashboardLeaderResponse(BaseModel):
+    level: str
+    rank: int = 1
+    team_id: Optional[int] = None
+    team_name: str
+    manager: Optional[str] = None
+    logo_path: Optional[str] = None
+    played: int = 0
+    points: int = 0
+    goal_difference: int = 0
+
+
+class HomeDashboardTeamResponse(BaseModel):
+    team_id: int
+    team_name: str
+    manager: str = ""
+    level: str
+    logo_path: Optional[str] = None
+    next_match: Optional[HomeDashboardMatchResponse] = None
+    recent_result: Optional[HomeDashboardMatchResponse] = None
+
+
 class HomePromotionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -36,6 +73,7 @@ class HomePromotionResponse(BaseModel):
     action_label: Optional[str] = None
     action_kind: Literal["none", "tab", "url"] = "none"
     action_target: Optional[str] = None
+    display_mode: Literal["board", "modal", "both"] = "board"
     is_active: bool = True
     is_pinned: bool = False
     is_dismissible: bool = True
@@ -111,10 +149,44 @@ class WorkspaceTaskResponse(BaseModel):
     target_subtab: str = "schedule"
 
 
+class DataStatusItemResponse(BaseModel):
+    key: str
+    label: str
+    scope: str = "all"
+    status: Literal["normal", "pending", "stale", "error", "unknown"] = "unknown"
+    status_label: str = "状态未知"
+    updated_round: Optional[int] = None
+    latest_round: Optional[int] = None
+    completed_count: int = 0
+    total_count: int = 0
+    issue_count: int = 0
+    data_version: Optional[str] = None
+    source: Optional[str] = None
+    updated_at: Optional[datetime] = None
+    message: str = ""
+    target_tab: str
+    target_subtab: Optional[str] = None
+    target_level: Optional[str] = None
+
+
+class DataStatusResponse(BaseModel):
+    generated_at: datetime
+    items: list[DataStatusItemResponse] = Field(default_factory=list)
+
+
+class HomeDashboardResponse(BaseModel):
+    generated_at: datetime
+    league_statuses: list[DataStatusItemResponse] = Field(default_factory=list)
+    recent_results: list[HomeDashboardMatchResponse] = Field(default_factory=list)
+    leaders: list[HomeDashboardLeaderResponse] = Field(default_factory=list)
+    team: Optional[HomeDashboardTeamResponse] = None
+
+
 class WorkspaceDashboardResponse(BaseModel):
     identity: WorkspaceIdentityResponse
     metrics: list[WorkspaceMetricResponse] = Field(default_factory=list)
     tasks: list[WorkspaceTaskResponse] = Field(default_factory=list)
+    data_statuses: list[DataStatusItemResponse] = Field(default_factory=list)
     recent_actions: list[WorkspaceRecentActionResponse] = Field(default_factory=list)
 
 
@@ -1004,6 +1076,7 @@ class SiteNoteResponse(BaseModel):
 
     key: str
     text: str = ""
+    round_no: Optional[int] = None
     updated_by: Optional[str] = None
     updated_at: Optional[datetime] = None
 

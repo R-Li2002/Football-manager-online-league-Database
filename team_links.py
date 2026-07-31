@@ -3,11 +3,12 @@ from sqlalchemy.orm import Session
 from models import Player, Team
 from repositories.team_repository import get_team_by_name
 
-SEA_TEAM_NAME = "85\u5927\u6d77"
+SEA_TEAM_NAME = "\u5927\u6d77"
+LEGACY_SEA_TEAM_NAME = "85\u5927\u6d77"
 
 
 def get_sea_team(db: Session) -> Team | None:
-    return get_team_by_name(db, SEA_TEAM_NAME)
+    return get_team_by_name(db, SEA_TEAM_NAME) or get_team_by_name(db, LEGACY_SEA_TEAM_NAME)
 
 
 def assign_player_team(player: Player, team: Team) -> None:

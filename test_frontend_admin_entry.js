@@ -56,6 +56,11 @@ function createElement(id = '', initialClasses = []) {
         appendChild() {},
         removeChild() {},
         addEventListener() {},
+        removeEventListener() {},
+        setAttribute() {},
+        querySelector() {
+            return null;
+        },
         focus() {
             this.focused = true;
         },
@@ -103,6 +108,7 @@ body.dataset.activeTab = 'home';
 
 const document = {
     body,
+    addEventListener() {},
     getElementById(id) {
         return elements.get(id) || null;
     },
@@ -150,8 +156,13 @@ const localStorage = {
 const context = {
     console: {...console},
     document,
+    HTMLElement: Object,
     history,
     localStorage,
+    requestAnimationFrame(callback) {
+        callback();
+        return 1;
+    },
     URLSearchParams,
     window: {
         document,

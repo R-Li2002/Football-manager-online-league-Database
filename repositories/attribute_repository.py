@@ -5,7 +5,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from attribute_versions import DEFAULT_ATTRIBUTE_DATA_VERSION, normalize_attribute_data_version, pick_default_attribute_version, sort_attribute_versions
-from models import Player, PlayerAttribute, PlayerAttributeVersion
+from models import Player, PlayerAttribute, PlayerAttributeVersion, Team
 from search_normalization import build_search_normalized_keys
 from weighted_power import build_weighted_power_sql_expression
 
@@ -279,7 +279,7 @@ def search_player_attributes_advanced(
     range_filters: Iterable[AttributeRangeFilter] = (),
     position_filters: Iterable[PositionScoreFilter] = (),
     sea_status: str | None = None,
-    sea_team_name: str = "85大海",
+    sea_team_name: str = "大海",
     uid_filter: Iterable[int] | None = None,
     limit: int = 200,
     data_version: str | None = None,
@@ -296,9 +296,10 @@ def search_player_attributes_advanced(
     query = _apply_range_filters(query, attribute_model, range_filters)
     query = _apply_position_filters(query, attribute_model, position_filters)
     if sea_status in {"in_sea", "not_in_sea"}:
+        league_team_ids = db.query(Team.id).filter(Team.level.in_(["超级", "甲级", "乙级"]))
+        league_team_names = db.query(Team.name).filter(Team.level.in_(["超级", "甲级", "乙级"]))
         non_sea_player_uids = db.query(Player.uid).filter(
-            Player.team_name.is_not(None),
-            Player.team_name.notin_([sea_team_name, "大海"]),
+            or_(Player.team_id.in_(league_team_ids), Player.team_name.in_(league_team_names))
         )
         if sea_status == "in_sea":
             query = query.filter(~attribute_model.uid.in_(non_sea_player_uids))

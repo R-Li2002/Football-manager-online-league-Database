@@ -1,0 +1,38 @@
+const fs = require('fs');
+const assert = require('assert');
+
+const html = fs.readFileSync('static/app.html', 'utf8');
+const css = fs.readFileSync('static/app.css', 'utf8');
+const homeJs = fs.readFileSync('static/js/app.home.js', 'utf8');
+const appJs = fs.readFileSync('static/app.js', 'utf8');
+
+assert.match(html, /id="homeDashboard"/);
+assert.doesNotMatch(html, /<div class="home-shortcuts">/);
+assert.match(homeJs, /fetch\(`\/api\/home\/dashboard\$\{query\}`/);
+assert.match(homeJs, /currentCoachAccount/);
+assert.match(homeJs, /account\.team_id/);
+assert.match(homeJs, /data\.league_statuses/);
+assert.match(homeJs, /data\.recent_results/);
+assert.match(homeJs, /data\.leaders/);
+assert.match(homeJs, /教练登录/);
+assert.match(homeJs, /进入我的球队/);
+assert.match(homeJs, /team\?\.logo_path/);
+assert.match(homeJs, /队徽/);
+assert.match(homeJs, /今日联赛/);
+assert.match(homeJs, /争冠形势/);
+assert.doesNotMatch(homeJs, /今日联赛台/);
+assert.doesNotMatch(homeJs, /当前领跑/);
+assert.match(homeJs, /homeDashboardLevelLabel\(row\.level\)/);
+assert.match(homeJs, /重新读取/);
+assert.match(appJs, /syncHomeDashboardAccount/);
+assert.match(css, /\.home-dashboard-grid/);
+assert.match(css, /@media \(max-width: 780px\)[\s\S]*?\.home-dashboard-grid/);
+assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.home-dashboard-skeleton/);
+assert.match(css, /Phase 2 home hierarchy/, 'Phase 2 homepage hierarchy overrides should stay grouped');
+assert.match(css, /#home \.home-promotion-card\s*\{[^}]*border-radius:\s*10px/, 'announcement cards should use an inset radius concentric with the outer board');
+assert.match(css, /\.home-promotion-board-head\s*\{[\s\S]*?display:\s*none/, 'mobile ordinary announcements should collapse into a compact broadcast rail');
+assert.match(css, /\.home-search-bar\s*>\s*input\s*\{[\s\S]*?grid-column:\s*1\s*\/\s*-1/, 'mobile search input should occupy a clear first row');
+assert.match(css, /\.hero-mode-badge\s*\{[\s\S]*?display:\s*none/, 'secondary mode metadata should not consume mobile first-screen space');
+assert.match(homeJs, /登录后查看你的球队/, 'guest MY CLUB should use concise Phase 2 copy');
+
+console.log('home dashboard frontend checks passed');

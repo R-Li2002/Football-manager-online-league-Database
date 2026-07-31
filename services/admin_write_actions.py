@@ -86,6 +86,24 @@ def fish_player(
     )
 
 
+def fish_sea_player(
+    db: Session,
+    admin: str | None,
+    request: TransferRequest,
+    write_to_log,
+) -> AdminActionResponse:
+    return execute_admin_action(
+        db,
+        category="transfer",
+        action="fish_sea_player",
+        operation_label=FISH_LABEL,
+        operator=admin,
+        request_payload=to_payload(request),
+        executor=lambda: transfer_service.fish_sea_player(db, admin, request, write_to_log),
+        response_model=AdminActionResponse,
+    )
+
+
 def release_player(
     db: Session,
     admin: str | None,

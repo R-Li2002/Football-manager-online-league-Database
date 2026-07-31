@@ -17,11 +17,10 @@ from imports_runtime.constants import SUPPORTED_INFO_KEY_ALIASES, WORKBOOK_SHEET
 from imports_runtime.validators import normalize_header
 from models import LeagueInfo, Team
 from repositories.match_repository import list_matches
-from repositories.player_repository import list_players_excluding_team
+from repositories.player_repository import list_league_players
 from repositories.team_repository import list_visible_teams
 from schemas_read import PlayerExportRow, TeamExportRow
 from services.import_service import resolve_import_root
-from team_links import SEA_TEAM_NAME
 from league_settings import get_league_wage_caps
 from services.league_service import REALTIME_TEAM_STAT_SCOPES, collect_team_stat_overlays, get_team_effective_wage_cap
 from services import site_note_service, suspension_service
@@ -39,6 +38,75 @@ SCHEDULE_STATUS_LABELS = {
     "double_forfeit": "双方判负",
 }
 
+OVERVIEW_TEAM_FORMULA_LABELS = {
+    "球队人数",
+    "门将人数",
+    "工资",
+    "额外工资",
+    "税后",
+    "最终工资",
+    "8M",
+    "7M",
+    "伪名",
+    "总身价",
+    "平均身价",
+    "平均CA",
+    "平均PA",
+    "成长总计",
+}
+
+OVERVIEW_SUMMARY_FORMULA_KEYS = {
+    "总工资",
+    "总平均工资",
+    "总身价",
+    "总平均身价",
+    "身价极差",
+    "总平均CA",
+    "CA极差",
+    "总平均PA",
+    "PA极差",
+    "总平均成长",
+}
+
+OVERVIEW_TEAM_FORMULA_HEADERS = {normalize_header(label) for label in OVERVIEW_TEAM_FORMULA_LABELS}
+
+
+def _overview_range_arguments(column: str, used_rows_by_level: dict[str, list[int]]) -> str:
+    ranges = []
+    for level in LEVEL_ORDER:
+        rows = used_rows_by_level.get(level, [])
+        if rows:
+            ranges.append(f"{column}{rows[0]}:{column}{rows[-1]}")
+    return ",".join(ranges)
+
+
+def _set_overview_summary_formulas(sheet, used_rows_by_level: dict[str, list[int]]) -> None:
+    team_name_ranges = _overview_range_arguments("F", used_rows_by_level)
+    wage_ranges = _overview_range_arguments("M", used_rows_by_level)
+    value_ranges = _overview_range_arguments("Q", used_rows_by_level)
+    avg_value_ranges = _overview_range_arguments("R", used_rows_by_level)
+    avg_ca_ranges = _overview_range_arguments("S", used_rows_by_level)
+    avg_pa_ranges = _overview_range_arguments("T", used_rows_by_level)
+    growth_ranges = _overview_range_arguments("U", used_rows_by_level)
+    if not team_name_ranges:
+        return
+    formulas = {
+        "总工资": f"=SUM({wage_ranges})",
+        "总平均工资": f"=IFERROR(SUM({wage_ranges})/COUNTA({team_name_ranges}),0)",
+        "总身价": f"=SUM({value_ranges})",
+        "总平均身价": f"=SUM({avg_value_ranges})",
+        "身价极差": f"=MAX({value_ranges})-MIN({value_ranges})",
+        "总平均CA": f"=SUM({avg_ca_ranges})",
+        "CA极差": f"=MAX({avg_ca_ranges})-MIN({avg_ca_ranges})",
+        "总平均PA": f"=SUM({avg_pa_ranges})",
+        "PA极差": f"=MAX({avg_pa_ranges})-MIN({avg_pa_ranges})",
+        "总平均成长": f"=IFERROR(SUM({growth_ranges})/COUNTA({team_name_ranges}),0)",
+    }
+    for row_no in range(1, sheet.max_row + 1):
+        key = str(sheet.cell(row_no, 1).value or "").strip()
+        if key in formulas:
+            sheet.cell(row_no, 2).value = formulas[key]
+
 
 def _get_export_teams(db: Session) -> list[Team]:
     teams = list_visible_teams(db, VISIBLE_LEVEL)
@@ -46,7 +114,7 @@ def _get_export_teams(db: Session) -> list[Team]:
 
 
 def _get_export_players(db: Session):
-    return list_players_excluding_team(db, SEA_TEAM_NAME)
+    return list_league_players(db)
 
 
 def _find_latest_roster_template() -> Path | None:
@@ -104,6 +172,168 @@ def _copy_template_row(sheet, source_row: int, target_row: int) -> None:
                 target.value = source.value
         else:
             target.value = source.value
+
+
+def _mark_workbook_for_full_recalculation(workbook) -> None:
+    """Make Excel/WPS discard template caches and rebuild every formula chain."""
+    try:
+        calculation = workbook.calculation
+        calculation.calcMode = "auto"
+        calculation.fullCalcOnLoad = True
+        calculation.forceFullCalc = True
+        calculation.calcOnSave = True
+        calculation.calcCompleted = False
+        calculation.fullPrecision = True
+        # A copied template can carry a recent calculation-engine id. Some WPS
+        # versions then trust stale cached results even when formulas changed.
+        calculation.calcId = 0
+    except AttributeError:
+        pass
+
+
+def _find_header_column(sheet, row_no: int, labels: tuple[str, ...], *, prefer_last: bool = False) -> int | None:
+    normalized_labels = {normalize_header(label) for label in labels}
+    matches = [
+        column_no
+        for column_no in range(1, sheet.max_column + 1)
+        if normalize_header(sheet.cell(row_no, column_no).value) in normalized_labels
+    ]
+    if not matches:
+        return None
+    return matches[-1] if prefer_last else matches[0]
+
+
+def _set_player_financial_formulas(sheet, row_no: int, headers: dict[str, int]) -> None:
+    required = {
+        "age": _find_header_column(sheet, 1, ("年龄",)),
+        "initial_ca": _find_header_column(sheet, 1, ("初始CA",)),
+        "current_ca": _find_header_column(sheet, 1, ("当前CA",)),
+        "pa": _find_header_column(sheet, 1, ("PA",)),
+        "position": _find_header_column(sheet, 1, ("位置",)),
+        "initial_value": _find_header_column(sheet, 1, ("初始身价",)),
+        "current_value": _find_header_column(sheet, 1, ("当前身价",)),
+        "potential_value": _find_header_column(sheet, 1, ("潜力身价",)),
+        "final_value": _find_header_column(sheet, 1, ("身价",)),
+        "coefficient": _find_header_column(sheet, 1, ("系数",)),
+        "wage": _find_header_column(sheet, 1, ("工资",)),
+        "initial_field": _find_header_column(sheet, 1, ("初始",)),
+        "slot": _find_header_column(sheet, 1, ("名额",), prefer_last=True),
+    }
+    if any(column_no is None for column_no in required.values()):
+        return
+
+    refs = {key: f"{get_column_letter(column_no)}{row_no}" for key, column_no in required.items()}
+    growth_limit = f"'{WORKBOOK_SHEET_OVERVIEW}'!$B$4"
+    initial_value_formula = f'=IF({refs["initial_ca"]}<115,1,INT(({refs["initial_ca"]}-95)/10))'
+    current_value_formula = f'=IF({refs["current_ca"]}<115,1,INT(({refs["current_ca"]}-95)/10))'
+    potential_value_formula = f'=IF({refs["pa"]}<115,1,INT(({refs["pa"]}-95)/10))'
+    final_value_formula = (
+        f'=IF(OR({refs["age"]}>{growth_limit},{refs["pa"]}<140),'
+        f'{refs["current_value"]},({refs["current_value"]}+{refs["potential_value"]})/2)'
+    )
+    initial_field_formula = (
+        f'=IF({refs["age"]}>25,{refs["initial_value"]},'
+        f'({refs["initial_value"]}+{refs["potential_value"]})/2)'
+    )
+    slot_formula = (
+        f'=IF({refs["initial_field"]}>=8,"8M",IF({refs["initial_field"]}>=7,"7M",'
+        f'IF(OR(AND({refs["age"]}<={growth_limit},{refs["pa"]}>164),'
+        f'AND({refs["age"]}>{growth_limit},{refs["age"]}<26,{refs["current_ca"]}>164)),"伪名","")))'
+    )
+    coefficient_formula = (
+        f'=IF(AND(UPPER(TRIM({refs["position"]}))="GK",{refs["slot"]}<>""),0.1,'
+        f'IF({refs["final_value"]}=1,0.1,IF({refs["initial_field"]}=1,0.1,'
+        f'IF(({refs["initial_field"]}+{refs["current_value"]})/2=1,0.1,'
+        f'IF({refs["slot"]}="8M",0.15,IF({refs["slot"]}="7M",0.13,'
+        f'IF({refs["slot"]}="伪名",0.11,IF({refs["age"]}>{growth_limit},'
+        f'IF(INT(({refs["current_ca"]}-95)/10)>5,0.09,0.07),'
+        f'IF(INT(({refs["pa"]}-95)/10)>5,0.09,0.07)))))))))'
+    )
+
+    sheet.cell(row_no, required["initial_value"]).value = initial_value_formula
+    sheet.cell(row_no, required["current_value"]).value = current_value_formula
+    sheet.cell(row_no, required["potential_value"]).value = potential_value_formula
+    sheet.cell(row_no, required["final_value"]).value = final_value_formula
+    sheet.cell(row_no, required["initial_field"]).value = initial_field_formula
+    sheet.cell(row_no, required["slot"]).value = slot_formula
+    sheet.cell(row_no, required["coefficient"]).value = coefficient_formula
+    sheet.cell(row_no, required["wage"]).value = f'=ROUND({refs["final_value"]}*{refs["coefficient"]},3)'
+
+    first_slot_column = _find_header_column(sheet, 1, ("名额",))
+    if first_slot_column and first_slot_column != required["slot"]:
+        sheet.cell(row_no, first_slot_column).value = f'={refs["slot"]}'
+
+
+def _set_overview_team_formulas(workbook, sheet, row_no: int, level: str, headers: dict[str, int], extra_wage: float) -> None:
+    player_sheet = workbook[WORKBOOK_SHEET_LEAGUE_PLAYERS]
+    player_team_column = _find_header_column(player_sheet, 1, ("联赛球队", "俱乐部", "更新俱乐部"))
+    player_position_column = _find_header_column(player_sheet, 1, ("位置",))
+    player_wage_column = _find_header_column(player_sheet, 1, ("工资",))
+    player_slot_column = _find_header_column(player_sheet, 1, ("名额",), prefer_last=True)
+    player_value_column = _find_header_column(player_sheet, 1, ("身价",))
+    player_ca_column = _find_header_column(player_sheet, 1, ("当前CA",))
+    player_pa_column = _find_header_column(player_sheet, 1, ("PA",))
+    player_initial_ca_column = _find_header_column(player_sheet, 1, ("初始CA",))
+    required_player_columns = (
+        player_team_column,
+        player_position_column,
+        player_wage_column,
+        player_slot_column,
+        player_value_column,
+        player_ca_column,
+        player_pa_column,
+        player_initial_ca_column,
+    )
+    if any(column_no is None for column_no in required_player_columns):
+        return
+
+    def overview_ref(label: str) -> str | None:
+        column_no = headers.get(normalize_header(label))
+        return f"{get_column_letter(column_no)}{row_no}" if column_no else None
+
+    refs = {label: overview_ref(label) for label in OVERVIEW_TEAM_FORMULA_LABELS | {"球队名", "工资帽"}}
+    if any(refs.get(label) is None for label in OVERVIEW_TEAM_FORMULA_LABELS | {"球队名", "工资帽"}):
+        return
+
+    team_column = get_column_letter(player_team_column)
+    position_column = get_column_letter(player_position_column)
+    wage_column = get_column_letter(player_wage_column)
+    slot_column = get_column_letter(player_slot_column)
+    value_column = get_column_letter(player_value_column)
+    ca_column = get_column_letter(player_ca_column)
+    pa_column = get_column_letter(player_pa_column)
+    initial_ca_column = get_column_letter(player_initial_ca_column)
+    player_sheet_ref = f"'{WORKBOOK_SHEET_LEAGUE_PLAYERS}'"
+    team_ref = refs["球队名"]
+    min_wage = {"超级": 8.0, "甲级": 7.5, "乙级": 6.5}.get(level, 8.0)
+
+    formulas = {
+        "球队人数": f'=COUNTIF({player_sheet_ref}!{team_column}:{team_column},{team_ref})',
+        "门将人数": f'=COUNTIFS({player_sheet_ref}!{team_column}:{team_column},{team_ref},{player_sheet_ref}!{position_column}:{position_column},"*GK*")',
+        "工资": f'=ROUND(SUMIF({player_sheet_ref}!{team_column}:{team_column},{team_ref},{player_sheet_ref}!{wage_column}:{wage_column}),3)',
+        "额外工资": f'=ROUND({float(extra_wage or 0):g},3)',
+        "8M": f'=COUNTIFS({player_sheet_ref}!{team_column}:{team_column},{team_ref},{player_sheet_ref}!{slot_column}:{slot_column},"8M")',
+        "7M": f'=COUNTIFS({player_sheet_ref}!{team_column}:{team_column},{team_ref},{player_sheet_ref}!{slot_column}:{slot_column},"7M")',
+        "伪名": f'=COUNTIFS({player_sheet_ref}!{team_column}:{team_column},{team_ref},{player_sheet_ref}!{slot_column}:{slot_column},"伪名")',
+        "总身价": f'=SUMIF({player_sheet_ref}!{team_column}:{team_column},{team_ref},{player_sheet_ref}!{value_column}:{value_column})',
+        "平均身价": f'=IFERROR({refs["总身价"]}/{refs["球队人数"]},0)',
+        "平均CA": f'=IFERROR(SUMIF({player_sheet_ref}!{team_column}:{team_column},{team_ref},{player_sheet_ref}!{ca_column}:{ca_column})/{refs["球队人数"]},0)',
+        "平均PA": f'=IFERROR(SUMIF({player_sheet_ref}!{team_column}:{team_column},{team_ref},{player_sheet_ref}!{pa_column}:{pa_column})/{refs["球队人数"]},0)',
+        "成长总计": (
+            f'=SUMIF({player_sheet_ref}!{team_column}:{team_column},{team_ref},{player_sheet_ref}!{ca_column}:{ca_column})-'
+            f'SUMIF({player_sheet_ref}!{team_column}:{team_column},{team_ref},{player_sheet_ref}!{initial_ca_column}:{initial_ca_column})'
+        ),
+    }
+    total_wage = f'ROUND({refs["工资"]}+{refs["额外工资"]},3)'
+    overflow = f'ROUND({total_wage}-{refs["工资帽"]},3)'
+    formulas["税后"] = (
+        f'=IF({overflow}>0.3,"拍卖",IF({total_wage}>{refs["工资帽"]},'
+        f'MAX({total_wage},ROUND({overflow}*10+{refs["工资"]},3)),{total_wage}))'
+    )
+    formulas["最终工资"] = f'=IF({refs["税后"]}="拍卖","拍卖",MAX({min_wage:g},{refs["税后"]}))'
+
+    for label, formula in formulas.items():
+        sheet[refs[label]].value = formula
 
 
 def _update_template_overview(workbook, db: Session, export_teams: list[Team], realtime_overlays: dict) -> None:
@@ -187,9 +417,16 @@ def _update_template_overview(workbook, db: Session, export_teams: list[Team], r
         for row_no in slot_rows:
             if linked_team_name_column:
                 sheet.cell(row_no, linked_team_name_column).value = None
-            for column_no in headers.values():
+            for normalized_label, column_no in headers.items():
                 if column_no >= 4:
-                    sheet.cell(row_no, column_no).value = None
+                    cell = sheet.cell(row_no, column_no)
+                    if (
+                        normalized_label in OVERVIEW_TEAM_FORMULA_HEADERS
+                        and isinstance(cell.value, str)
+                        and cell.value.startswith("=")
+                    ):
+                        continue
+                    cell.value = None
 
     for level in LEVEL_ORDER:
         for level_index, (row_offset, values) in enumerate(zip(slot_rows_by_level[level], teams_by_level[level]), start=1):
@@ -198,14 +435,41 @@ def _update_template_overview(workbook, db: Session, export_teams: list[Team], r
             for label, value in values.items():
                 column_no = headers.get(normalize_header(label))
                 if column_no:
-                    sheet.cell(row_offset, column_no).value = level_index if label == "序号" else value
+                    cell = sheet.cell(row_offset, column_no)
+                    if label in OVERVIEW_TEAM_FORMULA_LABELS:
+                        if label == "额外工资":
+                            cell.value = f"={float(value or 0):g}"
+                        elif isinstance(cell.value, str) and cell.value.startswith("="):
+                            continue
+                        else:
+                            cell.value = value
+                    else:
+                        cell.value = level_index if label == "序号" else value
+
+            _set_overview_team_formulas(
+                workbook,
+                sheet,
+                row_offset,
+                values["级别"],
+                headers,
+                values["额外工资"],
+            )
+
+    used_rows_by_level = {
+        level: slot_rows_by_level[level][:len(teams_by_level[level])]
+        for level in LEVEL_ORDER
+    }
+    _set_overview_summary_formulas(sheet, used_rows_by_level)
 
     league_info = {record.key: record.value for record in db.query(LeagueInfo).all()}
     for row_no in range(1, sheet.max_row + 1):
         raw_key = sheet.cell(row_no, 1).value
         normalized_key = SUPPORTED_INFO_KEY_ALIASES.get(str(raw_key or "").strip(), str(raw_key or "").strip())
         if normalized_key in league_info:
-            sheet.cell(row_no, 2).value = league_info[normalized_key]
+            value_cell = sheet.cell(row_no, 2)
+            if normalized_key in OVERVIEW_SUMMARY_FORMULA_KEYS and isinstance(value_cell.value, str) and value_cell.value.startswith("="):
+                continue
+            value_cell.value = league_info[normalized_key]
 
 
 def _parse_uid(value) -> int | None:
@@ -264,6 +528,7 @@ def _update_template_players(workbook, players) -> None:
             column_no = headers.get(normalize_header(label))
             if column_no:
                 sheet.cell(row_no, column_no).value = player.team_name
+        _set_player_financial_formulas(sheet, row_no, headers)
 
 
 def _build_template_export(db: Session, template_path: Path, export_teams: list[Team], players, realtime_overlays: dict):
@@ -271,12 +536,7 @@ def _build_template_export(db: Session, template_path: Path, export_teams: list[
     workbook = load_workbook(template_path, data_only=False, keep_vba=keep_vba, keep_links=True)
     _update_template_overview(workbook, db, export_teams, realtime_overlays)
     _update_template_players(workbook, players)
-    try:
-        workbook.calculation.fullCalcOnLoad = True
-        workbook.calculation.forceFullCalc = True
-        workbook.calculation.calcMode = "auto"
-    except AttributeError:
-        pass
+    _mark_workbook_for_full_recalculation(workbook)
     output = io.BytesIO()
     workbook.save(output)
     output.seek(0)
@@ -665,12 +925,7 @@ def build_standings_excel(db: Session, level: str):
         CellIsRule(operator="equal", formula=['"取消"'], fill=PatternFill("solid", fgColor=pale_red)),
     )
 
-    try:
-        workbook.calculation.fullCalcOnLoad = True
-        workbook.calculation.forceFullCalc = True
-        workbook.calculation.calcMode = "auto"
-    except AttributeError:
-        pass
+    _mark_workbook_for_full_recalculation(workbook)
 
     output = io.BytesIO()
     workbook.save(output)

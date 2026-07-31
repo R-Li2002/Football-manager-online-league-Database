@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 import os
 import shutil
@@ -21,12 +22,14 @@ from routers.frontend_routes import build_frontend_router
 from routers.public_routes import build_public_router
 from routers.workspace_routes import build_workspace_router
 from services import auth_service
+from services.share_cache_cleanup_service import run_share_cache_cleanup_loop
 
 INTERNAL_SHARE_TOKEN = os.environ.get("INTERNAL_SHARE_TOKEN", "").strip()
 INTERNAL_SHARE_HEADER_NAME = "X-Internal-Share-Token"
 INTERNAL_RENDER_SIGNING_KEY = os.environ.get("INTERNAL_RENDER_SIGNING_KEY", "").strip()
 SHARE_CACHE_ROOT = os.environ.get("HEIGO_SHARE_CACHE_ROOT", "data/share-cache").strip() or "data/share-cache"
 SHARE_TEMPLATE_VERSION = int(os.environ.get("HEIGO_SHARE_TEMPLATE_VERSION", "6"))
+SHARE_CACHE_RETENTION_DAYS = int(os.environ.get("HEIGO_SHARE_CACHE_RETENTION_DAYS", "30"))
 COACH_SESSION_COOKIE_NAME = "coach_session_token"
 
 
@@ -220,9 +223,20 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         initialize_app_state()
+        share_cache_cleanup_task = asyncio.create_task(
+            run_share_cache_cleanup_loop(
+                SHARE_CACHE_ROOT,
+                retention_days=SHARE_CACHE_RETENTION_DAYS,
+            )
+        )
         try:
             yield
         finally:
+            share_cache_cleanup_task.cancel()
+            try:
+                await share_cache_cleanup_task
+            except asyncio.CancelledError:
+                pass
             shutdown_app_state()
 
     app = FastAPI(title="HEIGO联机联赛数据库", lifespan=lifespan)

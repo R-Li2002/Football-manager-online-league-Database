@@ -28,6 +28,9 @@ const context = {
     window: {document},
     history: {back() {}},
     escapeHtml,
+    uiIconSvg(name, className = '') {
+        return `<svg class="${className}" data-icon="${name}"></svg>`;
+    },
     setTimeout,
     clearTimeout,
 };

@@ -28,6 +28,17 @@ class AdminActionResponse(BaseModel):
     message: str
 
 
+class TeamLogoMatchApplyRequest(BaseModel):
+    team_id: int
+    slug: str
+    matched_query: str
+    source_name: str
+    source_version: Optional[str] = None
+    source_variant: Optional[str] = None
+    matched_score: Optional[float] = None
+    confirmed: bool = False
+
+
 class HomePromotionUpsertRequest(BaseModel):
     content_type: Literal["announcement", "honor", "update", "event"] = "announcement"
     theme: Literal["violet", "blue", "green", "gold", "rose", "neutral"] = "violet"
@@ -39,6 +50,7 @@ class HomePromotionUpsertRequest(BaseModel):
     action_label: Optional[str] = None
     action_kind: Literal["none", "tab", "url"] = "none"
     action_target: Optional[str] = None
+    display_mode: Literal["board", "modal", "both"] = "board"
     is_active: bool = True
     is_pinned: bool = False
     is_dismissible: bool = True
@@ -136,6 +148,7 @@ class SuspensionRecordUpdateRequest(BaseModel):
 
 class SiteNoteUpdateRequest(BaseModel):
     text: str = ""
+    round_no: Optional[int] = None
 
 
 class TeamLineupUpdateRequest(BaseModel):

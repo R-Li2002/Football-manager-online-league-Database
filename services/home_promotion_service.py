@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy import or_
@@ -13,12 +14,11 @@ from schemas_write import HomePromotionUpsertRequest
 from services.cup_service import CUP_DEFINITIONS
 
 
-VALID_TAB_TARGETS = {
-    "home", "overview", "team", "coaches", "database", "database:candidates",
-    "competition:standings", "competition:schedule", "competition:rankings", "competition:suspensions",
-    "competition:standings:冠军杯", "competition:standings:联盟杯", "competition:standings:无铭剑杯",
-    "competition:standings:超级", "competition:standings:甲级", "competition:standings:乙级",
-}
+BUSINESS_TIMEZONE = ZoneInfo("Asia/Shanghai")
+VALID_ROOT_TAB_TARGETS = {"home", "overview", "players", "team", "coaches", "database", "competition"}
+VALID_DATABASE_SUBTABS = {"search", "candidates", "power", "tactics", "leaderboard"}
+VALID_COMPETITION_SUBTABS = {"standings", "schedule", "playerRankings", "suspensions"}
+VALID_COMPETITION_LEVELS = {"超级", "甲级", "乙级", "冠军杯", "联盟杯", "无铭剑杯"}
 PROMOTION_THEMES = {"violet", "blue", "green", "gold", "rose", "neutral"}
 LEAGUE_LEVELS = ("超级", "甲级", "乙级")
 LEAGUE_RESULT_STATUSES = {"played", "home_forfeit", "away_forfeit", "double_forfeit"}
@@ -37,6 +37,36 @@ def _clean_optional(value: str | None, limit: int, label: str) -> str | None:
     return clean or None
 
 
+def _business_now() -> datetime:
+    """Return the league's wall-clock time for naive SQLite schedule fields."""
+    return datetime.now(BUSINESS_TIMEZONE).replace(tzinfo=None)
+
+
+def _normalize_tab_target(value: str | None) -> str | None:
+    target = _clean_optional(value, 300, "按钮目标")
+    if target == "competition:rankings":
+        return "competition:playerRankings"
+    return target
+
+
+def _is_valid_tab_target(target: str) -> bool:
+    parts = target.split(":")
+    if not parts or parts[0] not in VALID_ROOT_TAB_TARGETS:
+        return False
+    if len(parts) == 1:
+        return True
+    if parts[0] == "database":
+        return len(parts) == 2 and parts[1] in VALID_DATABASE_SUBTABS
+    if parts[0] != "competition" or len(parts) > 3 or parts[1] not in VALID_COMPETITION_SUBTABS:
+        return False
+    if len(parts) == 2:
+        return True
+    level = parts[2]
+    if level not in VALID_COMPETITION_LEVELS:
+        return False
+    return parts[1] in {"standings", "schedule"} or level in LEAGUE_LEVELS
+
+
 def _validate_request(request: HomePromotionUpsertRequest) -> dict:
     title = str(request.title or "").strip()
     body = str(request.body or "").strip()
@@ -52,13 +82,13 @@ def _validate_request(request: HomePromotionUpsertRequest) -> dict:
     if request.starts_at and request.ends_at and request.ends_at <= request.starts_at:
         raise HTTPException(status_code=400, detail="结束时间必须晚于开始时间")
     action_label = _clean_optional(request.action_label, 40, "按钮文字")
-    action_target = _clean_optional(request.action_target, 300, "按钮目标")
+    action_target = _normalize_tab_target(request.action_target)
     if request.action_kind == "none":
         action_label = None
         action_target = None
     elif not action_label or not action_target:
         raise HTTPException(status_code=400, detail="启用宣传按钮时必须填写按钮文字和目标")
-    elif request.action_kind == "tab" and action_target not in VALID_TAB_TARGETS:
+    elif request.action_kind == "tab" and not _is_valid_tab_target(action_target):
         raise HTTPException(status_code=400, detail="不支持的站内页面目标")
     elif request.action_kind == "url" and not action_target.startswith(("/", "https://", "http://")):
         raise HTTPException(status_code=400, detail="链接必须以 /、https:// 或 http:// 开头")
@@ -73,6 +103,7 @@ def _validate_request(request: HomePromotionUpsertRequest) -> dict:
         "action_label": action_label,
         "action_kind": request.action_kind,
         "action_target": action_target,
+        "display_mode": request.display_mode,
         "is_active": int(bool(request.is_active)),
         "is_pinned": int(bool(request.is_pinned)),
         "is_dismissible": int(bool(request.is_dismissible)),
@@ -91,7 +122,7 @@ def _audit(db: Session, operator: str, action: str, summary: str, details: dict 
 
 
 def list_public_promotions(db: Session) -> list[HomePromotionResponse]:
-    now = datetime.now()
+    now = _business_now()
     rows = (
         db.query(HomePromotion)
         .filter(

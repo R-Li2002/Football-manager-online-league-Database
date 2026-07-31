@@ -32,6 +32,10 @@ assert(coaches.includes('onsubmit="event.preventDefault(); coachLogin();"'), 'co
 assert(team.includes('async function openCoachLinkedTeam('), 'coach login should resolve and open the linked team');
 assert(team.includes('Number(team.id) === Number(account.team_id)'), 'linked team navigation should prefer the stable team id');
 assert(team.includes('id="teamCenterDirectory"'), 'team center landing should include the 54-team directory');
+assert(team.includes('function toggleTeamCenterLeague(level)'), 'mobile team directory should expose collapsible league groups');
+assert(team.includes('teamCenterExpandedInitialized'), 'the default league group should only be initialized once so every group can be collapsed');
+assert(team.includes('aria-controls="${contentId}"'), 'league group toggles should expose their controlled directory');
+assert(team.includes("linkedTeam?.level || '超级'"), 'mobile team directory should prefer the linked team league and otherwise open super league');
 assert(team.includes("openTeamDetail(decodeURIComponent('${encodedName}'))"), 'landing team cards should open team detail');
 assert(team.includes('/api/attributes/power-ranking?shape=all&limit=all&team=${encoded}'), 'all growth shapes should be loaded for CA estimation');
 assert(team.includes('/api/teams/${team.id}/lineup'), 'saved team lineup should be loaded');
@@ -87,6 +91,7 @@ assert(css.includes('.team-roster-view-switch'), 'team roster should have a dedi
 assert(css.includes('.team-roster-detail-table'), 'team roster detailed table should be styled');
 assert(css.includes('.team-roster-card-grid'), 'team roster card grid should be styled');
 assert(css.includes('.team-center-club-grid'), 'team center directory grid should exist');
+assert(css.includes('.team-center-league-group.is-collapsed .team-center-club-grid'), 'mobile team directory should hide collapsed league groups');
 assert(team.includes('return options.compact ? renderLeagueLevelSignature'), 'team center should reuse the shared compact league signature');
 assert(team.includes('${renderLeagueTierSet()}'), 'team center welcome should display the three league signatures together');
 assert(css.includes('.team-center-coach-access'), 'coach login shortcut should have dedicated responsive styling');
@@ -94,6 +99,9 @@ assert(css.includes('--team-coach-accent: #25a96f; min-width: 250px; min-height:
 assert(css.includes('body:not(.light-mode) .team-center-coach-access { --team-coach-accent: #36d6a0; }'), 'coach login shortcut should adapt to the dark team-center background');
 assert(css.includes('.team-center-switcher-control select { width: 100%; min-width: 0; min-height: 52px;'), 'detail team selector should be high contrast and touch friendly');
 assert(css.includes('@media (max-width: 700px)'), 'mobile team layout should exist');
+assert(css.includes('.team-detail-toolbar-meta > span:last-child { display: none; }'), 'mobile toolbar should hide only its direct metadata child');
+assert(css.includes('.team-detail-toolbar-meta .league-level-signature { width: 40px; height: 40px; min-height: 40px; padding: 0; justify-content: center;'), 'mobile league badge should use a centered square frame');
+assert(css.includes('.team-detail-toolbar-meta .league-level-copy { display: none; }'), 'mobile league badge should intentionally hide its copy without affecting alignment');
 assert(css.includes('@media (prefers-reduced-motion: reduce)'), 'reduced motion should be respected');
 
 console.log('frontend team detail checks passed');

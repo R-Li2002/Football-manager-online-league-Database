@@ -100,6 +100,7 @@ var rosterFormationState = {
     canEdit: null,
     saveBusy: false,
     saveMessage: '',
+    saveState: 'idle',
     exportBusy: false,
     selectedMove: null,
 };
@@ -818,8 +819,8 @@ function renderRosterFormationModal() {
                     <select onchange="changeRosterFormation(this.value)" ${canEdit ? '' : 'disabled'}>${formationOptions}</select>
                 </label>
                 ${canEdit ? '<button class="btn btn-secondary" type="button" onclick="autoFillRosterFormation()">自动填入</button><button class="btn btn-secondary" type="button" onclick="clearRosterFormation()">清空</button>' : ''}
-                ${canEdit && rosterFormationState.teamId ? `<button class="btn btn-primary" type="button" onclick="saveRosterFormation()" ${rosterFormationState.saveBusy ? 'disabled' : ''}>${rosterFormationState.saveBusy ? '保存中…' : '保存阵容'}</button>` : ''}
-                ${rosterFormationState.saveMessage ? `<span class="formation-save-message">${escapeHtml(rosterFormationState.saveMessage)}</span>` : ''}
+                ${canEdit && rosterFormationState.teamId ? `<button class="btn btn-primary" type="button" onclick="saveRosterFormation()" ${rosterFormationState.saveBusy ? 'disabled aria-busy="true"' : ''}>${rosterFormationState.saveBusy ? '<span class="ui-button-spinner" aria-hidden="true"></span><span>保存中...</span>' : '保存阵容'}</button>` : ''}
+                ${rosterFormationState.saveMessage ? `<span class="formation-save-message is-${escapeHtml(rosterFormationState.saveState || 'idle')}" role="${rosterFormationState.saveState === 'error' ? 'alert' : 'status'}" aria-live="${rosterFormationState.saveState === 'error' ? 'assertive' : 'polite'}">${escapeHtml(rosterFormationState.saveMessage)}</span>` : ''}
             </div>
             ${canEdit ? '' : '<div class="formation-readonly-note capture-exclude">当前为公开预览；只有本队主教练或完整管理员可以调整并保存阵容。</div>'}
             <section id="rosterFormationCapture" class="formation-capture surface-card" data-team-name="${escapeHtml(teamName)}" onclick="clearRosterFormationSelection()">
@@ -865,6 +866,7 @@ function openRosterFormationModal(teamName, options = {}) {
         : [];
     rosterFormationState.canEdit = typeof options.canEdit === 'boolean' ? options.canEdit : null;
     rosterFormationState.saveMessage = '';
+    rosterFormationState.saveState = 'idle';
     rosterFormationState.formation = ROSTER_FORMATION_SLOT_KEYS[options.formation] ? options.formation : (rosterFormationState.formation || '4-3-3');
     const savedPicks = options.picks && typeof options.picks === 'object' ? options.picks : {};
     rosterFormationState.picks = Object.keys(savedPicks).length
@@ -909,11 +911,13 @@ async function saveRosterFormation() {
     const pickedUids = Object.values(rosterFormationState.picks || {}).map(uid => Number(uid)).filter(Boolean);
     if (pickedUids.length !== 11 || new Set(pickedUids).size !== 11) {
         rosterFormationState.saveMessage = '请先在场上安排恰好 11 名不同球员';
+        rosterFormationState.saveState = 'warning';
         refreshRosterFormationModal();
         return;
     }
     rosterFormationState.saveBusy = true;
-    rosterFormationState.saveMessage = '';
+    rosterFormationState.saveMessage = '正在保存阵容';
+    rosterFormationState.saveState = 'saving';
     refreshRosterFormationModal();
     try {
         const response = await fetch(`/api/teams/${rosterFormationState.teamId}/lineup`, {
@@ -926,10 +930,12 @@ async function saveRosterFormation() {
         rosterFormationState.formation = payload.formation || rosterFormationState.formation;
         rosterFormationState.picks = payload.picks || rosterFormationState.picks;
         rosterFormationState.saveMessage = '阵容已保存并同步到球队中心';
+        rosterFormationState.saveState = 'saved';
         if (typeof teamDetailHandleLineupSaved === 'function') teamDetailHandleLineupSaved(payload);
     } catch (error) {
         console.error('Failed to save roster formation:', error);
         rosterFormationState.saveMessage = `保存失败：${error.message || '请稍后重试'}`;
+        rosterFormationState.saveState = 'error';
     } finally {
         rosterFormationState.saveBusy = false;
         refreshRosterFormationModal();

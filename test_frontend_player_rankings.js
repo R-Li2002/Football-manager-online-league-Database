@@ -36,6 +36,9 @@ const context = {
     htmlJsString(value) {
         return escapeHtml(JSON.stringify(String(value ?? '')));
     },
+    uiIconSvg(name, className = '') {
+        return `<svg class="${className}" data-icon="${name}"></svg>`;
+    },
 };
 
 vm.createContext(context);
@@ -73,6 +76,8 @@ function assertMobileRankingPlayerNameLinksToAttributeDetail() {
 
     assert.match(playerRankingsBoard.innerHTML, /player-ranking-player-link mobile-player-ranking-name/);
     assert.match(playerRankingsBoard.innerHTML, /openCompetitionPlayerAttributeDetail\(83320135, 'playerRankings'\)/);
+    assert.match(playerRankingsBoard.innerHTML, /mobile-player-ranking-toggle/);
+    assert.doesNotMatch(playerRankingsBoard.innerHTML, /mobile-player-ranking-stats/);
 }
 
 function assertMissingUidRemainsPlainText() {

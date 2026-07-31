@@ -9,6 +9,8 @@ const databaseCode = fs.readFileSync(path.join(workspaceRoot, 'static/js/app.dat
 const databaseSearchCode = fs.readFileSync(path.join(workspaceRoot, 'static/js/database.search.js'), 'utf8');
 const appCode = fs.readFileSync(path.join(workspaceRoot, 'static/app.js'), 'utf8');
 
+assert.match(appCode, /competition:\s*\{onEnter:\s*async \(\) => \{ if \(typeof loadCompetitionData === 'function'\) await loadCompetitionData\(\); \}\}/, 'competition navigation should await data before restoring the requested round');
+
 function createClassList(initialClasses = []) {
     const classes = new Set(initialClasses);
     return {
@@ -268,6 +270,8 @@ async function flushMicrotasks() {
     assert.equal(competitionState.competition.workFilter, 'missing_events');
     assert.equal(competitionState.competition.rankingType, 'assists');
     assert.match(context.buildAppHistoryUrl(competitionState), /competitionSubtab=schedule/);
+    assert.match(context.buildAppHistoryUrl(competitionState), /level=%E7%94%B2%E7%BA%A7/);
+    assert.match(context.buildAppHistoryUrl(competitionState), /round=17/);
     assert.match(context.buildAppHistoryUrl(competitionState), /workFilter=missing_events/);
 })().catch(error => {
     console.error(error);

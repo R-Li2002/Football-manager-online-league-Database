@@ -22,7 +22,7 @@ from schemas_read import (
     WorkspaceSessionResponse,
     WorkspaceTaskResponse,
 )
-from services import auth_service, coach_service, competition_work_service
+from services import auth_service, coach_service, competition_work_service, data_status_service
 
 CAPABILITY_LABELS = {
     "schedule.write": "赛程维护",
@@ -238,7 +238,18 @@ def get_workspace_dashboard(db: Session, identity: WorkspaceIdentityResponse) ->
         )
         for row in recent_rows
     ]
-    return WorkspaceDashboardResponse(identity=identity, metrics=metrics, tasks=tasks, recent_actions=recent_actions)
+    data_statuses = data_status_service.get_actionable_data_statuses(
+        db,
+        is_full_admin=identity.is_full_admin,
+        capabilities=capabilities,
+    )
+    return WorkspaceDashboardResponse(
+        identity=identity,
+        metrics=metrics,
+        tasks=tasks,
+        data_statuses=data_statuses,
+        recent_actions=recent_actions,
+    )
 
 
 def list_workspace_accounts(db: Session, identity: WorkspaceIdentityResponse) -> WorkspaceAccountsResponse:

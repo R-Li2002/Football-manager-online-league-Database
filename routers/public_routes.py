@@ -17,6 +17,8 @@ from schemas_read import (
     CoachesResponse,
     CoachReactionActionResponse,
     DataFeedbackSubmitResponse,
+    DataStatusResponse,
+    HomeDashboardResponse,
     HomePromotionResponse,
     HomeSummaryResponse,
     CupBracketResponse,
@@ -40,7 +42,7 @@ from schemas_read import (
     WageDetailResponse,
 )
 from schemas_write import AdvancedAttributeSearchRequest, AttributeBatchLookupRequest, DataFeedbackRequest
-from services import candidate_list_service, coach_service, cup_service, data_feedback_service, export_service, home_promotion_service, home_service, player_ranking_service, project_update_service, read_service, reaction_service, site_note_service, site_visit_service, suspension_service, team_lineup_service
+from services import candidate_list_service, coach_service, cup_service, data_feedback_service, data_status_service, export_service, home_promotion_service, home_service, player_ranking_service, project_update_service, read_service, reaction_service, site_note_service, site_visit_service, suspension_service, team_lineup_service
 
 REACTION_VISITOR_COOKIE_NAME = "heigo_reaction_visitor"
 ADMIN_SESSION_COOKIE_NAME = "session_token"
@@ -75,6 +77,17 @@ def build_public_router(get_db):
     @router.get("/api/home/summary", response_model=HomeSummaryResponse)
     def get_home_summary(db: Session = Depends(get_db)):
         return home_service.get_home_summary(db)
+
+    @router.get("/api/home/dashboard", response_model=HomeDashboardResponse)
+    def get_home_dashboard(
+        team_id: int | None = Query(None, ge=1),
+        db: Session = Depends(get_db),
+    ):
+        return home_service.get_home_dashboard(db, team_id=team_id)
+
+    @router.get("/api/data-status", response_model=DataStatusResponse)
+    def get_data_status(db: Session = Depends(get_db)):
+        return data_status_service.get_data_status(db)
 
     @router.get("/api/teams", response_model=list[TeamResponse])
     def get_teams(db: Session = Depends(get_db)):

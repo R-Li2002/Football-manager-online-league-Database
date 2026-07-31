@@ -15,6 +15,17 @@
     min-width: 144px;
 }
 
+.subpage-theme-icon {
+    width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+}
+
+.subpage-theme-icon .theme-sun-path { display: none; }
+.subpage-theme-icon.is-dark-mode .theme-moon-path { display: none; }
+.subpage-theme-icon.is-dark-mode .theme-sun-path { display: initial; }
+
 .subpage-nav-button {
     text-decoration: none;
 }

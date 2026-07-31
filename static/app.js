@@ -96,7 +96,8 @@ function renderGlobalCoachAccount() {
     if (!account.authenticated) {
         globalCoachMenuOpen = false;
         host.classList.remove('is-open');
-        host.innerHTML = '<button class="global-coach-login" type="button" onclick="openGlobalCoachLogin()"><span class="global-coach-login-mark" aria-hidden="true">◉</span><span>教练登录</span></button>';
+        host.innerHTML = '<button class="global-coach-login" type="button" onclick="openGlobalCoachLogin()"><span class="global-coach-login-mark" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.5-4 2.7-6 6.5-6s6 2 6.5 6"/></svg></span><span>教练登录</span></button>';
+        if (typeof syncHomeDashboardAccount === 'function') syncHomeDashboardAccount();
         return;
     }
     const avatar = account.avatar_path
@@ -126,6 +127,7 @@ function renderGlobalCoachAccount() {
             <button class="global-coach-logout" type="button" role="menuitem" onclick="globalCoachLogout()">退出教练账号</button>
         </div>
     `;
+    if (typeof syncHomeDashboardAccount === 'function') syncHomeDashboardAccount();
 }
 
 function toggleGlobalCoachMenu(event) {
@@ -322,7 +324,7 @@ const AppModules = {
     home: {onEnter: () => { if (typeof updateHeroBadgeState === 'function') updateHeroBadgeState(); }},
     overview: {onEnter: () => { if (typeof renderOverview === 'function') renderOverview(); }},
     team: {onEnter: () => { if (typeof renderTeamDetail === 'function') renderTeamDetail(); }},
-    players: {onEnter: () => {
+    players: {onEnter: async () => {
         if (typeof populateTeamSelect === 'function') {
             populateTeamSelect();
         }
@@ -331,8 +333,10 @@ const AppModules = {
         } else if (typeof renderPlayerQueryState === 'function') {
             renderPlayerQueryState();
         }
+        if (typeof loadDataStatus === 'function') await loadDataStatus();
+        if (typeof renderDataStatusStrip === 'function') renderDataStatusStrip('rosterDataStatus', 'roster', 'all');
     }},
-    competition: {onEnter: () => { if (typeof loadCompetitionData === 'function') loadCompetitionData(); }},
+    competition: {onEnter: async () => { if (typeof loadCompetitionData === 'function') await loadCompetitionData(); }},
     coaches: {onEnter: () => { if (typeof loadCoaches === 'function') loadCoaches(); }},
     database: {onEnter: async () => {
         if (typeof loadAttributeVersionCatalog === 'function') {
@@ -358,6 +362,8 @@ const AppModules = {
         }
         if (typeof renderCompareDock === 'function') renderCompareDock();
         if (typeof renderCandidateDock === 'function') renderCandidateDock();
+        if (typeof loadDataStatus === 'function') await loadDataStatus();
+        if (typeof renderDataStatusStrip === 'function') renderDataStatusStrip('databaseDataStatus', 'attributes', 'all');
     }},
     admin: {onEnter: async () => {
         if (typeof openWorkspace === 'function') {
@@ -391,7 +397,7 @@ function isMobileViewport() {
     return window.matchMedia ? window.matchMedia('(max-width: 780px)').matches : window.innerWidth <= 780;
 }
 
-function closeMobileMoreMenu() {
+function closeMobileMoreMenu(options = {}) {
     const menu = document.getElementById('mobileMoreMenu');
     const toggle = document.querySelector('[data-mobile-more-toggle]');
     if (menu) {
@@ -400,6 +406,7 @@ function closeMobileMoreMenu() {
     if (toggle) {
         toggle.setAttribute('aria-expanded', 'false');
         toggle.classList.remove('is-open');
+        if (options.restoreFocus === true) toggle.focus();
     }
 }
 
@@ -411,17 +418,32 @@ function toggleMobileMoreMenu(forceOpen) {
     menu.hidden = !shouldOpen;
     toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
     toggle.classList.toggle('is-open', shouldOpen);
+    if (shouldOpen) {
+        window.requestAnimationFrame(() => {
+            const target = menu.querySelector('.mobile-more-menu-item.active:not(.hidden-tab)')
+                || menu.querySelector('.mobile-more-menu-item:not(.hidden-tab)');
+            target?.focus();
+        });
+    } else {
+        toggle.focus();
+    }
 }
 
 function syncMobileNavState(options = {}) {
     const activeTab = getActiveTabName();
     document.querySelectorAll('[data-mobile-tab]').forEach(button => {
-        button.classList.toggle('active', button.dataset.mobileTab === activeTab);
+        const isActive = button.dataset.mobileTab === activeTab;
+        button.classList.toggle('active', isActive);
+        if (isActive) button.setAttribute('aria-current', 'page');
+        else button.removeAttribute('aria-current');
     });
 
     const moreToggle = document.querySelector('[data-mobile-more-toggle]');
     if (moreToggle) {
-        moreToggle.classList.toggle('active', APP_TAB_NAMES.has(activeTab) && !MOBILE_PRIMARY_TABS.has(activeTab));
+        const representsActivePage = APP_TAB_NAMES.has(activeTab) && !MOBILE_PRIMARY_TABS.has(activeTab);
+        moreToggle.classList.toggle('active', representsActivePage);
+        if (representsActivePage) moreToggle.setAttribute('aria-current', 'page');
+        else moreToggle.removeAttribute('aria-current');
     }
 
     const mobileAdminTab = document.getElementById('mobileAdminTab');
@@ -464,7 +486,7 @@ function initializeMobileNavigation() {
 
     document.addEventListener('keydown', event => {
         if (event.key === 'Escape') {
-            closeMobileMoreMenu();
+            closeMobileMoreMenu({restoreFocus: true});
         }
     });
 
@@ -1133,11 +1155,15 @@ async function showTab(tabName, triggerElement = null, options = {}) {
     const normalizedTab = normalizeAppTabName(tabName);
     const activationId = ++tabActivationSequence;
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(el => {
+        el.classList.remove('active');
+        el.removeAttribute?.('aria-current');
+    });
     document.getElementById(normalizedTab).classList.add('active');
     const activeButton = triggerElement || document.querySelector(`.nav-tab[data-tab="${normalizedTab}"]`);
     if (activeButton) {
         activeButton.classList.add('active');
+        activeButton.setAttribute?.('aria-current', 'page');
     }
     document.body.dataset.activeTab = normalizedTab;
     syncMobileNavState();
@@ -1308,12 +1334,7 @@ async function copyHeigoGroupNumber(groupNumber) {
 
 async function exportData() {
     const exportButton = document.getElementById('homeRosterExportButton');
-    const originalContent = exportButton?.innerHTML || '';
-    if (exportButton) {
-        exportButton.disabled = true;
-        exportButton.setAttribute('aria-busy', 'true');
-        exportButton.innerHTML = '<span class="shell-utility-mark" aria-hidden="true">…</span><span>正在整理</span>';
-    }
+    setUiButtonBusy(exportButton, true, '正在整理');
     try {
         const response = await fetch('/api/export/excel');
         if (!response.ok) {
@@ -1334,15 +1355,12 @@ async function exportData() {
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
+        showUiToast('联赛名单 Excel 已开始下载', 'success');
     } catch (error) {
         console.error('导出错误:', error);
         showModal('错误', `导出失败：${error.message}`);
     } finally {
-        if (exportButton) {
-            exportButton.disabled = false;
-            exportButton.removeAttribute('aria-busy');
-            exportButton.innerHTML = originalContent;
-        }
+        setUiButtonBusy(exportButton, false);
     }
 }
 
