@@ -528,10 +528,16 @@ function renderRankingBoard() {
     }
     container.innerHTML = `
         <section class="ranking-desk">
-            <div class="ranking-leaderboard-panel">
+            <div class="ranking-leaderboard-panel exportable-panel" data-export-view="rankings-HEIGO">
                 <header class="ranking-board-head">
                     <div><span class="panel-kicker">HEIGO RATING DESK</span><h2>排位积分榜</h2><p>胜者取得败者赛前基础分的 10%；每完成一场，总分另加 ${formatRankingPoints(rankingData.appearance_bonus)}。</p></div>
-                    <div class="ranking-rule-strip" aria-label="排位规则"><span><small>初始基础分</small><strong>${formatRankingPoints(rankingData.initial_points)}</strong></span><span><small>胜负转移</small><strong>${Number(rankingData.transfer_rate || 0) * 100}%</strong></span><span><small>每场奖励</small><strong>+${formatRankingPoints(rankingData.appearance_bonus)}</strong></span></div>
+                    <div class="ranking-board-meta">
+                        <div class="ranking-export-actions capture-exclude">
+                            <button class="btn btn-secondary competition-excel-btn" type="button" onclick="exportRankingExcel()">Excel表格</button>
+                            <button class="btn btn-secondary competition-image-btn" type="button" onclick="saveCompetitionImage('rankings', 'HEIGO')">保存图片</button>
+                        </div>
+                        <div class="ranking-rule-strip" aria-label="排位规则"><span><small>初始基础分</small><strong>${formatRankingPoints(rankingData.initial_points)}</strong></span><span><small>胜负转移</small><strong>${Number(rankingData.transfer_rate || 0) * 100}%</strong></span><span><small>每场奖励</small><strong>+${formatRankingPoints(rankingData.appearance_bonus)}</strong></span></div>
+                    </div>
                 </header>
                 <div class="ranking-table-wrap">
                     <table class="ranking-table">
@@ -4715,14 +4721,24 @@ function downloadCompetitionBlob(blob, fileName) {
 
 function buildCompetitionImageFileName(kind, level) {
     const cleanLevel = String(level || currentCompetitionLevel || 'HEIGO').replace(/[\\/:*?"<>|\s]+/g, '_');
-    const label = kind === 'suspensions' ? '伤停统计' : '积分榜';
+    const label = kind === 'suspensions' ? '伤停统计' : kind === 'rankings' ? '排位积分榜' : '积分榜';
     const date = new Date();
     const stamp = [
         date.getFullYear(),
         String(date.getMonth() + 1).padStart(2, '0'),
         String(date.getDate()).padStart(2, '0'),
     ].join('');
-    return `HEIGO_${cleanLevel}_${label}_${stamp}.png`;
+    return kind === 'rankings' ? `HEIGO_${label}_${stamp}.png` : `HEIGO_${cleanLevel}_${label}_${stamp}.png`;
+}
+
+function buildRankingExcelFileName() {
+    const date = new Date();
+    const stamp = [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0'),
+    ].join('');
+    return `HEIGO_排位积分榜_${stamp}.xlsx`;
 }
 
 function buildSuspensionsExcelFileName(level) {
@@ -4758,6 +4774,20 @@ async function exportStandingsExcel(level = currentCompetitionLevel) {
     } catch (error) {
         console.error('Failed to export standings Excel:', error);
         showModal('导出失败', escapeHtml(error.message || '积分榜 Excel 导出失败，请稍后重试。'));
+    }
+}
+
+async function exportRankingExcel() {
+    try {
+        const response = await fetch('/api/export/rankings.xlsx');
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.detail || '排位 Excel 导出失败');
+        }
+        downloadCompetitionBlob(await response.blob(), buildRankingExcelFileName());
+    } catch (error) {
+        console.error('Failed to export ranking Excel:', error);
+        showModal('导出失败', escapeHtml(error.message || '排位 Excel 导出失败，请稍后重试。'));
     }
 }
 

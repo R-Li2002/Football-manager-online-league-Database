@@ -5503,6 +5503,18 @@ body:not(.light-mode) #competitionLevelWumingjianCup {
     line-height: 1.55;
 }
 
+.ranking-board-meta {
+    display: grid;
+    align-content: center;
+    gap: 9px;
+}
+
+.ranking-export-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 7px;
+}
+
 .ranking-rule-strip {
     display: grid;
     grid-template-columns: repeat(3, minmax(74px, 1fr));

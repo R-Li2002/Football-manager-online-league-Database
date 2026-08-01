@@ -45,7 +45,7 @@ from schemas_read import (
     WageDetailResponse,
 )
 from schemas_write import AdvancedAttributeSearchRequest, AttributeBatchLookupRequest, DataFeedbackRequest
-from services import candidate_list_service, coach_service, cup_service, data_feedback_service, data_status_service, export_service, home_promotion_service, home_service, player_ranking_service, project_update_service, ranking_service, read_service, reaction_service, site_note_service, site_visit_service, suspension_service, team_lineup_service
+from services import candidate_list_service, coach_service, cup_service, data_feedback_service, data_status_service, export_service, home_promotion_service, home_service, player_ranking_service, project_update_service, ranking_export_service, ranking_service, read_service, reaction_service, site_note_service, site_visit_service, suspension_service, team_lineup_service
 
 REACTION_VISITOR_COOKIE_NAME = "heigo_reaction_visitor"
 ADMIN_SESSION_COOKIE_NAME = "session_token"
@@ -371,6 +371,19 @@ def build_public_router(get_db):
     ):
         try:
             output, filename = export_service.build_standings_excel(db, level)
+        except ValueError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @router.get("/api/export/rankings.xlsx")
+    def export_rankings_excel(db: Session = Depends(get_db)):
+        try:
+            output, filename = ranking_export_service.build_ranking_excel(db)
         except ValueError as exc:
             from fastapi import HTTPException
             raise HTTPException(status_code=400, detail=str(exc)) from exc
