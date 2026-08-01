@@ -14,6 +14,7 @@ var isAdmin = false;
 var currentAdminRole = '';
 var canManageSchedule = false;
 var canManageCupStandings = false;
+var canManageRankings = false;
 var canManageSuspensions = false;
 var canManageCandidateLists = false;
 var adminEntryUnlocked = false;
@@ -92,6 +93,7 @@ Object.defineProperties(window.AppState, {
     currentAdminRole: {enumerable: true, get: () => currentAdminRole, set: value => { currentAdminRole = value; }},
     canManageSchedule: {enumerable: true, get: () => canManageSchedule, set: value => { canManageSchedule = value; }},
     canManageCupStandings: {enumerable: true, get: () => canManageCupStandings, set: value => { canManageCupStandings = value; }},
+    canManageRankings: {enumerable: true, get: () => canManageRankings, set: value => { canManageRankings = value; }},
     canManageSuspensions: {enumerable: true, get: () => canManageSuspensions, set: value => { canManageSuspensions = value; }},
     canManageCandidateLists: {enumerable: true, get: () => canManageCandidateLists, set: value => { canManageCandidateLists = value; }},
     adminEntryUnlocked: {enumerable: true, get: () => adminEntryUnlocked, set: value => { adminEntryUnlocked = value; }},

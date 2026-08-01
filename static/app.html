@@ -487,6 +487,7 @@
                     <button class="database-subtab active" id="competitionSubtabStandings" type="button" onclick="showCompetitionSubtab('standings')" role="tab" aria-selected="true" aria-controls="competitionStandingsView"><span class="competition-subtab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 19v-7h3v7M10.5 19V5h3v14M16 19v-10h3v10M4 19.5h16"/></svg></span><span>积分榜</span></button>
                     <button class="database-subtab" id="competitionSubtabSchedule" type="button" onclick="showCompetitionSubtab('schedule')" role="tab" aria-selected="false" aria-controls="competitionScheduleView"><span class="competition-subtab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 4v3M18 4v3M4 9h16M5 6h14v14H5zM8 13h3M13 13h3M8 16h3"/></svg></span><span>赛程</span></button>
                     <button class="database-subtab" id="competitionSubtabPlayerRankings" type="button" onclick="showCompetitionSubtab('playerRankings')" role="tab" aria-selected="false" aria-controls="competitionPlayerRankingsView"><span class="competition-subtab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5h8v4a4 4 0 0 1-8 0V5ZM8 7H5v1a4 4 0 0 0 4 4M16 7h3v1a4 4 0 0 1-4 4M12 13v4M8 20h8M9 17h6"/></svg></span><span>球员榜</span></button>
+                    <button class="database-subtab" id="competitionSubtabRating" type="button" onclick="showCompetitionSubtab('rating')" role="tab" aria-selected="false" aria-controls="competitionRatingView"><span class="competition-subtab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 18h14M7 15V9h3v6M11 15V5h3v10M15 15v-3h3v3"/><path d="m5 7 4-3 3 2 6-4"/></svg></span><span>排位</span></button>
                     <button class="database-subtab" id="competitionSubtabSuspensions" type="button" onclick="showCompetitionSubtab('suspensions')" role="tab" aria-selected="false" aria-controls="competitionSuspensionsView"><span class="competition-subtab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM12 9v6M9 12h6"/></svg></span><span>伤停</span></button>
                 </div>
                 <div class="competition-actions competition-actions-inline" id="competitionAdminActions"></div>
@@ -552,6 +553,10 @@
                     <div id="playerRankingsBoard"><div class="loading">加载中...</div></div>
                 </div>
 
+                <div class="list-view" id="competitionRatingView">
+                    <div id="ratingBoard"><div class="loading">加载中...</div></div>
+                </div>
+
                 <div class="list-view" id="competitionSuspensionsView">
                     <div id="suspensionsBoard"><div class="loading">加载中...</div></div>
                 </div>
@@ -588,6 +593,7 @@
                         <nav class="workspace-nav" aria-label="联赛工作台功能">
                             <button class="workspace-nav-item active" type="button" data-workspace-view="home" onclick="showWorkspaceView('home')">我的工作</button>
                             <button class="workspace-nav-item" type="button" data-workspace-capability="schedule.write" onclick="openWorkspaceTask('competition', 'schedule')">比赛与赛程</button>
+                            <button class="workspace-nav-item" type="button" data-workspace-capability="rankings.write" onclick="openWorkspaceTask('competition', 'rating')">排位统计</button>
                             <button class="workspace-nav-item" type="button" data-workspace-capability="suspensions.write" onclick="openWorkspaceTask('competition', 'suspensions')">纪律与伤停</button>
                             <button class="workspace-nav-item" type="button" data-workspace-capability="candidate_lists.write" onclick="openWorkspaceTask('database', 'candidates')">候选名单</button>
                             <button class="workspace-nav-item" type="button" data-workspace-imports data-workspace-view="imports" onclick="showWorkspaceView('imports')">数据导入</button>

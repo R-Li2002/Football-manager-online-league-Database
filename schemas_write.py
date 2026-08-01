@@ -16,6 +16,7 @@ class LoginResponse(BaseModel):
     can_manage_admin: bool = False
     can_manage_schedule: bool = False
     can_manage_cup_standings: bool = False
+    can_manage_rankings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
 
@@ -125,6 +126,13 @@ class MatchBatchUpdateRequest(BaseModel):
     matches: list[MatchBatchUpdateItem]
 
 
+class RankingMatchCreateRequest(BaseModel):
+    home_team_id: int
+    away_team_id: int
+    home_score: int = Field(ge=0, le=99)
+    away_score: int = Field(ge=0, le=99)
+
+
 class CupMatchTeamsUpdateRequest(BaseModel):
     home_team_id: Optional[int] = None
     away_team_id: Optional[int] = None
@@ -203,6 +211,7 @@ class CoachAccountUpsertRequest(BaseModel):
     is_active: bool = True
     can_manage_schedule: bool = False
     can_manage_cup_standings: bool = False
+    can_manage_rankings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
 

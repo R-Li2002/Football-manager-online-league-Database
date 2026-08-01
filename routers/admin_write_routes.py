@@ -5,7 +5,7 @@ from fastapi import APIRouter, Cookie, Depends, File, Form, HTTPException, Reque
 from sqlalchemy.orm import Session
 
 from models import Match
-from schemas_read import CoachAccountAdminResponse, CoachAccountPublicResponse
+from schemas_read import CoachAccountAdminResponse, CoachAccountPublicResponse, RankingsResponse
 from schemas_read import (
     CandidateListDetailResponse,
     CandidateListMutationResponse,
@@ -49,6 +49,7 @@ from schemas_write import (
     MatchUpdateRequest,
     PlayerUpdateRequest,
     RejuvenateRequest,
+    RankingMatchCreateRequest,
     ScheduleImportResponse,
     SiteNoteUpdateRequest,
     SuspensionRecordUpdateRequest,
@@ -58,7 +59,7 @@ from schemas_write import (
     TransferRequest,
     UpdateUidRequest,
 )
-from services import admin_write_service, auth_service, candidate_list_service, coach_service, competition_work_service, import_upload_service, site_note_service, suspension_service, team_lineup_service, team_logo_match_service, team_logo_service
+from services import admin_write_service, auth_service, candidate_list_service, coach_service, competition_work_service, import_upload_service, ranking_service, site_note_service, suspension_service, team_lineup_service, team_logo_match_service, team_logo_service
 
 COACH_SESSION_COOKIE_NAME = "coach_session_token"
 ADMIN_SESSION_COOKIE_NAME = "session_token"
@@ -71,6 +72,7 @@ def build_admin_write_router(
     verify_schedule_editor,
     verify_schedule_manager,
     verify_cup_standings_manager,
+    verify_ranking_manager,
     verify_suspension_manager,
     verify_candidate_list_manager,
     set_session_cookie,
@@ -78,6 +80,22 @@ def build_admin_write_router(
     write_to_log,
 ):
     router = APIRouter()
+
+    @router.post("/api/admin/rankings/matches", response_model=RankingsResponse)
+    def create_ranking_match(
+        request: RankingMatchCreateRequest,
+        db: Session = Depends(get_db),
+        operator: str = Depends(verify_ranking_manager),
+    ):
+        return ranking_service.create_ranking_match(db, operator, request, write_to_log)
+
+    @router.delete("/api/admin/rankings/matches/{match_id}", response_model=RankingsResponse)
+    def delete_ranking_match(
+        match_id: int,
+        db: Session = Depends(get_db),
+        operator: str = Depends(verify_ranking_manager),
+    ):
+        return ranking_service.delete_ranking_match(db, operator, match_id, write_to_log)
 
     def require_level_responsibility(db: Session, operator: str, level: str, responsibility_type: str) -> None:
         if level in competition_work_service.LEAGUE_LEVELS and not competition_work_service.operator_can_manage_level(

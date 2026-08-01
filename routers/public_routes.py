@@ -35,6 +35,7 @@ from schemas_read import (
     PlayerRankingsResponse,
     PlayerResponse,
     ProjectUpdateEntryResponse,
+    RankingsResponse,
     SiteVisitStatsResponse,
     SiteNoteResponse,
     StandingsResponse,
@@ -44,7 +45,7 @@ from schemas_read import (
     WageDetailResponse,
 )
 from schemas_write import AdvancedAttributeSearchRequest, AttributeBatchLookupRequest, DataFeedbackRequest
-from services import candidate_list_service, coach_service, cup_service, data_feedback_service, data_status_service, export_service, home_promotion_service, home_service, player_ranking_service, project_update_service, read_service, reaction_service, site_note_service, site_visit_service, suspension_service, team_lineup_service
+from services import candidate_list_service, coach_service, cup_service, data_feedback_service, data_status_service, export_service, home_promotion_service, home_service, player_ranking_service, project_update_service, ranking_service, read_service, reaction_service, site_note_service, site_visit_service, suspension_service, team_lineup_service
 
 REACTION_VISITOR_COOKIE_NAME = "heigo_reaction_visitor"
 ADMIN_SESSION_COOKIE_NAME = "session_token"
@@ -162,6 +163,10 @@ def build_public_router(get_db):
     @router.get("/api/player-rankings", response_model=PlayerRankingsResponse)
     def get_player_rankings(db: Session = Depends(get_db)):
         return player_ranking_service.get_player_rankings(db)
+
+    @router.get("/api/rankings", response_model=RankingsResponse)
+    def get_rankings(db: Session = Depends(get_db)):
+        return ranking_service.get_rankings(db)
 
     @router.get("/api/suspensions", response_model=SuspensionsResponse)
     def get_suspensions(db: Session = Depends(get_db)):

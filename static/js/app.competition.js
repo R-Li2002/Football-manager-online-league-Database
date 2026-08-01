@@ -4,6 +4,7 @@ var currentCupPhase = 'knockout';
 var standingsData = {levels: [], rows: []};
 var scheduleData = {levels: [], rounds: [], matches: []};
 var playerRankingData = {levels: [], rows: []};
+var rankingData = {initial_points: 1000, appearance_bonus: 20, transfer_rate: 0.1, total_matches: 0, rows: [], matches: []};
 var suspensionData = {levels: [], teams: []};
 var siteNotesData = {};
 var cupBracketData = {};
@@ -48,10 +49,15 @@ var currentCompetitionWorkFilter = 'all';
 var currentCompetitionWorkTargetMatchId = null;
 var competitionAssignableAccounts = [];
 var competitionWorkPanelExpanded = false;
+var rankingMatchMutationBusy = false;
 
 function renderCompetitionDataStatus() {
     const container = document.getElementById('competitionDataStatus');
     if (!container) return;
+    if (currentCompetitionSubtab === 'rating') {
+        container.hidden = true;
+        return;
+    }
     const keys = {
         standings: 'standings',
         schedule: 'schedule',
@@ -403,7 +409,7 @@ function isMobileViewport() {
 }
 
 function showCompetitionSubtab(subtab) {
-    currentCompetitionSubtab = ['schedule', 'playerRankings', 'suspensions'].includes(subtab) ? subtab : 'standings';
+    currentCompetitionSubtab = ['schedule', 'playerRankings', 'rating', 'suspensions'].includes(subtab) ? subtab : 'standings';
     if (['playerRankings', 'suspensions'].includes(currentCompetitionSubtab) && !LEAGUE_COMPETITION_LEVELS.includes(currentCompetitionLevel)) {
         currentCompetitionLevel = '超级';
     }
@@ -415,6 +421,7 @@ function showCompetitionSubtab(subtab) {
         ['competitionSubtabStandings', 'standings'],
         ['competitionSubtabSchedule', 'schedule'],
         ['competitionSubtabPlayerRankings', 'playerRankings'],
+        ['competitionSubtabRating', 'rating'],
         ['competitionSubtabSuspensions', 'suspensions'],
     ].forEach(([id, value]) => {
         const button = document.getElementById(id);
@@ -427,7 +434,15 @@ function showCompetitionSubtab(subtab) {
     document.getElementById('competitionStandingsView')?.classList.toggle('active', currentCompetitionSubtab === 'standings');
     document.getElementById('competitionScheduleView')?.classList.toggle('active', currentCompetitionSubtab === 'schedule');
     document.getElementById('competitionPlayerRankingsView')?.classList.toggle('active', currentCompetitionSubtab === 'playerRankings');
+    document.getElementById('competitionRatingView')?.classList.toggle('active', currentCompetitionSubtab === 'rating');
     document.getElementById('competitionSuspensionsView')?.classList.toggle('active', currentCompetitionSubtab === 'suspensions');
+    const isRating = currentCompetitionSubtab === 'rating';
+    const selector = document.getElementById('competitionSelector');
+    const statusHost = document.getElementById('competitionDataStatus');
+    const workPanel = document.getElementById('competitionWorkPanel');
+    if (selector) selector.hidden = isRating;
+    if (statusHost) statusHost.hidden = isRating;
+    if (workPanel && isRating) workPanel.hidden = true;
     syncCompetitionLevelTabs();
     syncCupPhaseTabs();
     renderCompetitionAdminActions();
@@ -437,6 +452,8 @@ function showCompetitionSubtab(subtab) {
         renderScheduleBoard();
     } else if (currentCompetitionSubtab === 'playerRankings') {
         renderPlayerRankingsBoard();
+    } else if (currentCompetitionSubtab === 'rating') {
+        renderRankingBoard();
     } else if (currentCompetitionSubtab === 'suspensions') {
         renderSuspensionsBoard();
     } else {
@@ -444,6 +461,150 @@ function showCompetitionSubtab(subtab) {
     }
     if (typeof syncAppHistory === 'function') {
         syncAppHistory('replace');
+    }
+}
+
+function canManageRankingMatches() {
+    return Boolean(canManageRankings);
+}
+
+function formatRankingPoints(value) {
+    return new Intl.NumberFormat('zh-CN', {minimumFractionDigits: 0, maximumFractionDigits: 4}).format(Number(value || 0));
+}
+
+function getRankingTeamMark(row) {
+    if (row?.logo_path) return `<img src="${escapeHtml(row.logo_path)}" alt="">`;
+    return escapeHtml(getScheduleTeamInitials(row?.team_name || '—'));
+}
+
+function renderRankingEntryForm() {
+    if (!canManageRankingMatches()) {
+        return '<div class="ranking-entry-locked"><strong>比赛记录</strong><span>拥有“排位统计”权限后可在这里添加比分。</span></div>';
+    }
+    const options = (rankingData.rows || [])
+        .slice()
+        .sort((a, b) => String(a.team_name || '').localeCompare(String(b.team_name || ''), 'en'))
+        .map(row => `<option value="${Number(row.team_id)}">${escapeHtml(row.team_name)}</option>`)
+        .join('');
+    return `
+        <form class="ranking-entry-form" onsubmit="event.preventDefault(); saveRankingMatch();">
+            <div class="ranking-entry-heading"><div><span>NEW RESULT</span><strong>添加排位比赛</strong></div><small>保存后即时重算</small></div>
+            <label><span>主队</span><select id="rankingHomeTeam" required><option value="">选择球队</option>${options}</select></label>
+            <div class="ranking-score-entry" aria-label="录入比分">
+                <input id="rankingHomeScore" type="number" min="0" max="99" inputmode="numeric" placeholder="0" required aria-label="主队比分">
+                <span>:</span>
+                <input id="rankingAwayScore" type="number" min="0" max="99" inputmode="numeric" placeholder="0" required aria-label="客队比分">
+            </div>
+            <label><span>客队</span><select id="rankingAwayTeam" required><option value="">选择球队</option>${options}</select></label>
+            <button class="btn btn-primary" id="rankingSaveButton" type="submit">记入排位</button>
+        </form>
+    `;
+}
+
+function renderRankingMatches() {
+    const matches = rankingData.matches || [];
+    if (!matches.length) {
+        return '<div class="ranking-matches-empty"><strong>暂无逐场比分</strong><span>Excel 导入的是累计积分；从现在录入的比赛会显示在这里。</span></div>';
+    }
+    return `<div class="ranking-match-list" aria-label="排位比赛比分">${matches.map(match => `
+        <article class="ranking-match-ticket">
+            <div class="ranking-ticket-team"><span>${escapeHtml(getScheduleTeamInitials(match.home_team_name))}</span><strong title="${escapeHtml(match.home_team_name)}">${escapeHtml(getCupTeamDisplayName(match.home_team_name))}</strong></div>
+            <div class="ranking-ticket-score"><b>${Number(match.home_score)}</b><i>:</i><b>${Number(match.away_score)}</b></div>
+            <div class="ranking-ticket-team is-away"><strong title="${escapeHtml(match.away_team_name)}">${escapeHtml(getCupTeamDisplayName(match.away_team_name))}</strong><span>${escapeHtml(getScheduleTeamInitials(match.away_team_name))}</span></div>
+            ${canManageRankingMatches() ? `<button class="ranking-ticket-delete" type="button" onclick="deleteRankingMatch(${Number(match.id)})" aria-label="撤销 ${escapeHtml(match.home_team_name)} 对 ${escapeHtml(match.away_team_name)} 的比赛">×</button>` : ''}
+        </article>
+    `).join('')}</div>`;
+}
+
+function renderRankingBoard() {
+    const container = document.getElementById('ratingBoard');
+    if (!container) return;
+    const rows = rankingData.rows || [];
+    if (!rows.length) {
+        container.innerHTML = renderUiState({tone: 'empty', title: '排位积分尚未建立', message: '完成初始积分导入后，所有当前联赛球队会出现在这里。', compact: true});
+        return;
+    }
+    container.innerHTML = `
+        <section class="ranking-desk">
+            <div class="ranking-leaderboard-panel">
+                <header class="ranking-board-head">
+                    <div><span class="panel-kicker">HEIGO RATING DESK</span><h2>排位积分榜</h2><p>胜者取得败者赛前基础分的 10%；每完成一场，总分另加 ${formatRankingPoints(rankingData.appearance_bonus)}。</p></div>
+                    <div class="ranking-rule-strip" aria-label="排位规则"><span><small>初始基础分</small><strong>${formatRankingPoints(rankingData.initial_points)}</strong></span><span><small>胜负转移</small><strong>${Number(rankingData.transfer_rate || 0) * 100}%</strong></span><span><small>每场奖励</small><strong>+${formatRankingPoints(rankingData.appearance_bonus)}</strong></span></div>
+                </header>
+                <div class="ranking-table-wrap">
+                    <table class="ranking-table">
+                        <thead><tr><th>排名</th><th>球队</th><th>基础分</th><th>总分</th><th>场次</th><th>胜</th><th>负</th></tr></thead>
+                        <tbody>${rows.map(row => `
+                            <tr class="${Number(row.rank) <= 3 ? `is-podium is-rank-${Number(row.rank)}` : ''}">
+                                <td><span class="ranking-position">${Number(row.rank)}</span></td>
+                                <td><div class="ranking-team-cell"><span class="ranking-team-mark ${row.logo_path ? 'has-logo' : ''}">${getRankingTeamMark(row)}</span><div><strong>${escapeHtml(row.team_name)}</strong><small>${escapeHtml(row.level)}级</small></div></div></td>
+                                <td><strong class="ranking-base-points" title="${Number(row.base_points).toFixed(4)}">${formatRankingPoints(row.base_points)}</strong></td>
+                                <td><strong class="ranking-total-points" title="${Number(row.total_points).toFixed(4)}">${formatRankingPoints(row.total_points)}</strong></td>
+                                <td>${Number(row.matches)}</td><td>${Number(row.wins)}</td><td>${Number(row.losses)}</td>
+                            </tr>
+                        `).join('')}</tbody>
+                    </table>
+                </div>
+            </div>
+            <aside class="ranking-results-panel">
+                ${renderRankingEntryForm()}
+                <div class="ranking-results-heading"><div><span>RESULT LOG</span><strong>比赛比分</strong></div><b>${Number(rankingData.total_matches || 0)} 场</b></div>
+                ${renderRankingMatches()}
+            </aside>
+        </section>
+    `;
+}
+
+async function saveRankingMatch() {
+    if (!canManageRankingMatches() || rankingMatchMutationBusy) return;
+    const homeTeamId = Number(document.getElementById('rankingHomeTeam')?.value || 0);
+    const awayTeamId = Number(document.getElementById('rankingAwayTeam')?.value || 0);
+    const homeScore = Number(document.getElementById('rankingHomeScore')?.value);
+    const awayScore = Number(document.getElementById('rankingAwayScore')?.value);
+    if (!homeTeamId || !awayTeamId || !Number.isInteger(homeScore) || !Number.isInteger(awayScore) || homeScore < 0 || awayScore < 0) {
+        showModal('比分未填写完整', '请选择主客队，并填写双方的非负整数比分。');
+        return;
+    }
+    if (homeTeamId === awayTeamId) {
+        showModal('球队选择重复', '排位比赛双方不能是同一支球队。');
+        return;
+    }
+    rankingMatchMutationBusy = true;
+    const button = document.getElementById('rankingSaveButton');
+    if (button) { button.disabled = true; button.textContent = '正在计算…'; }
+    try {
+        const result = await adminJsonRequest('/api/admin/rankings/matches', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({home_team_id: homeTeamId, away_team_id: awayTeamId, home_score: homeScore, away_score: awayScore}),
+        });
+        if (!result) return;
+        if (!result.response.ok) {
+            showModal('录入失败', escapeHtml(result.data.detail || '排位比赛保存失败。'));
+            return;
+        }
+        rankingData = result.data;
+        renderRankingBoard();
+    } finally {
+        rankingMatchMutationBusy = false;
+    }
+}
+
+async function deleteRankingMatch(matchId) {
+    if (!canManageRankingMatches() || rankingMatchMutationBusy) return;
+    const match = (rankingData.matches || []).find(item => Number(item.id) === Number(matchId));
+    if (!match || !confirm(`确认撤销 ${match.home_team_name} ${match.home_score}:${match.away_score} ${match.away_team_name}？后续积分会按比赛顺序重新计算。`)) return;
+    rankingMatchMutationBusy = true;
+    try {
+        const result = await adminJsonRequest(`/api/admin/rankings/matches/${Number(matchId)}`, {method: 'DELETE'});
+        if (!result) return;
+        if (!result.response.ok) {
+            showModal('撤销失败', escapeHtml(result.data.detail || '排位比赛撤销失败。'));
+            return;
+        }
+        rankingData = result.data;
+        renderRankingBoard();
+    } finally {
+        rankingMatchMutationBusy = false;
     }
 }
 
@@ -701,7 +862,7 @@ function renderCompetitionWorkTaskPreview(tasks) {
 function renderCompetitionWorkPanel() {
     const container = document.getElementById('competitionWorkPanel');
     if (!container) return;
-    if (!hasLeagueCompetitionWorkAccess() || isCupCompetitionLevel()) {
+    if (currentCompetitionSubtab === 'rating' || !hasLeagueCompetitionWorkAccess() || isCupCompetitionLevel()) {
         container.hidden = true;
         container.innerHTML = '';
         return;
@@ -4779,6 +4940,7 @@ async function loadCompetitionData(options = {}) {
     if (competitionDataLoaded && options.force !== true) {
         renderCompetitionPrimaryBoard();
         renderScheduleBoard();
+        renderRankingBoard();
         renderSuspensionsBoard();
         renderCompetitionDataStatus();
         return;
@@ -4790,10 +4952,11 @@ async function loadCompetitionData(options = {}) {
     if (scheduleContainer) scheduleContainer.innerHTML = '<div class="loading">加载中...</div>';
 
     try {
-        const [standingsRes, scheduleRes, playerRankingsRes, suspensionsRes, siteNotesRes, championsCupRes, leagueCupRes, wumingjianCupRes, championsGroupsRes, leagueGroupsRes] = await Promise.all([
+        const [standingsRes, scheduleRes, playerRankingsRes, rankingsRes, suspensionsRes, siteNotesRes, championsCupRes, leagueCupRes, wumingjianCupRes, championsGroupsRes, leagueGroupsRes] = await Promise.all([
             fetch('/api/standings'),
             fetch('/api/matches'),
             fetch('/api/player-rankings'),
+            fetch('/api/rankings'),
             fetch('/api/suspensions'),
             fetch('/api/site-notes'),
             fetch('/api/cups/champions_cup/bracket'),
@@ -4805,6 +4968,7 @@ async function loadCompetitionData(options = {}) {
         standingsData = await standingsRes.json();
         scheduleData = await scheduleRes.json();
         playerRankingData = await playerRankingsRes.json();
+        rankingData = await rankingsRes.json();
         suspensionData = await suspensionsRes.json();
         siteNotesData = (await siteNotesRes.json()).reduce((acc, note) => {
             acc[note.key] = note;
@@ -4830,6 +4994,7 @@ async function loadCompetitionData(options = {}) {
     renderCompetitionPrimaryBoard();
     renderScheduleBoard();
     renderPlayerRankingsBoard();
+    renderRankingBoard();
     renderSuspensionsBoard();
     renderCompetitionDataStatus();
     renderCompetitionWorkPanel();

@@ -103,7 +103,7 @@ function renderGlobalCoachAccount() {
     const avatar = account.avatar_path
         ? `<img src="${escapeHtml(account.avatar_path)}" alt="${escapeHtml(account.nickname || '教练')}头像">`
         : `<span class="global-coach-avatar-fallback">${escapeHtml(getGlobalCoachInitials(account.nickname || account.username))}</span>`;
-    const hasWork = Boolean(!account.must_change_password && account.qq_number && (account.can_manage_schedule || account.can_manage_suspensions || account.can_manage_candidate_lists));
+    const hasWork = Boolean(!account.must_change_password && account.qq_number && (account.can_manage_schedule || account.can_manage_cup_standings || account.can_manage_rankings || account.can_manage_suspensions || account.can_manage_candidate_lists));
     const identityMeta = account.team_name || (account.qq_number ? `QQ ${account.qq_number}` : '教练账号');
     host.classList.toggle('is-open', globalCoachMenuOpen);
     host.innerHTML = `
@@ -608,7 +608,7 @@ function applyInitialUrlState(rawState) {
         }
     }
     if (state.tab === 'competition') {
-        if (['standings', 'schedule', 'playerRankings', 'suspensions'].includes(competitionSubtab)) {
+        if (['standings', 'schedule', 'playerRankings', 'rating', 'suspensions'].includes(competitionSubtab)) {
             state.competition.subtab = competitionSubtab;
         }
         if (['超级', '甲级', '乙级', '冠军杯', '联盟杯', '无铭剑杯'].includes(competitionLevel)) {
@@ -1074,6 +1074,7 @@ async function init() {
         isAdmin = Boolean(adminData.authenticated && adminData.can_manage_admin);
         canManageSchedule = Boolean(adminData.authenticated && adminData.can_manage_schedule);
         canManageCupStandings = Boolean(adminData.authenticated && adminData.can_manage_cup_standings);
+        canManageRankings = Boolean(adminData.authenticated && adminData.can_manage_rankings);
         canManageSuspensions = Boolean(adminData.authenticated && adminData.can_manage_suspensions);
         canManageCandidateLists = Boolean(adminData.authenticated && adminData.can_manage_candidate_lists);
         workspaceSessionState = workspaceSession || workspaceSessionState;
@@ -1083,6 +1084,7 @@ async function init() {
             const capabilities = new Set(workspaceSessionState.identity.capabilities || []);
             canManageSchedule = capabilities.has('schedule.write');
             canManageCupStandings = capabilities.has('cup_standings.write');
+            canManageRankings = capabilities.has('rankings.write');
             canManageSuspensions = capabilities.has('suspensions.write');
             canManageCandidateLists = capabilities.has('candidate_lists.write');
         }

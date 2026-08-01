@@ -17,6 +17,7 @@ from models import (
     DataFeedbackReport,
     Match,
     PlayerSuspensionRecord,
+    RankingMatch,
 )
 from services.workspace_service import (
     get_workspace_dashboard,
@@ -45,6 +46,7 @@ class WorkspaceServiceTests(unittest.TestCase):
                 must_change_password=0,
                 can_manage_schedule=1,
                 can_manage_cup_standings=1,
+                can_manage_rankings=1,
                 can_manage_suspensions=1,
                 can_manage_candidate_lists=0,
             ),
@@ -80,6 +82,7 @@ class WorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(coach_identity.display_name, "大直塞")
         self.assertIn("schedule.write", coach_identity.capabilities)
         self.assertIn("cup_standings.write", coach_identity.capabilities)
+        self.assertIn("rankings.write", coach_identity.capabilities)
         self.assertIn("suspensions.write", coach_identity.capabilities)
         self.assertNotIn("candidate_lists.write", coach_identity.capabilities)
 
@@ -104,6 +107,7 @@ class WorkspaceServiceTests(unittest.TestCase):
             PlayerSuspensionRecord(player_uid=1, player_name="P", team_name="A", level="超级", yellow_cards=1),
             CandidateList(name="候选名单", status="draft"),
             DataFeedbackReport(issue_type="other", summary="反馈", details="详情", status="open"),
+            RankingMatch(home_team_id=1, home_team_name="A", away_team_id=2, away_team_name="B", home_score=2, away_score=1),
         ])
         self.session.commit()
         identity = resolve_workspace_identity(
@@ -120,6 +124,7 @@ class WorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(values["suspensions"], 1)
         self.assertEqual(values["candidate_lists"], 1)
         self.assertEqual(values["feedback"], 1)
+        self.assertEqual(values["rankings"], 1)
         self.assertEqual(len(dashboard.tasks), 1)
         self.assertEqual(dashboard.tasks[0].status, "unassigned")
 

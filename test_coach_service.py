@@ -264,6 +264,7 @@ class CoachServiceTest(unittest.TestCase):
                 username="coach-a",
                 password="",
                 can_manage_cup_standings=True,
+                can_manage_rankings=True,
                 can_manage_suspensions=True,
                 can_manage_candidate_lists=True,
             ),
@@ -277,6 +278,7 @@ class CoachServiceTest(unittest.TestCase):
         _token, identity = coach_service.login_coach(self.db, CoachLoginRequest(username="coach-a", password="secret123"))
         self.assertFalse(identity.can_manage_schedule)
         self.assertTrue(identity.can_manage_cup_standings)
+        self.assertTrue(identity.can_manage_rankings)
         self.assertTrue(identity.can_manage_suspensions)
         self.assertTrue(identity.can_manage_candidate_lists)
 
@@ -292,6 +294,7 @@ class CoachServiceTest(unittest.TestCase):
                 password="secret123",
                 can_manage_schedule=True,
                 can_manage_cup_standings=True,
+                can_manage_rankings=True,
                 can_manage_candidate_lists=True,
             ),
             lambda *_args: None,
@@ -303,6 +306,7 @@ class CoachServiceTest(unittest.TestCase):
         self.assertTrue(identity.authenticated)
         self.assertTrue(identity.can_manage_schedule)
         self.assertTrue(identity.can_manage_cup_standings)
+        self.assertTrue(identity.can_manage_rankings)
         self.assertFalse(identity.can_manage_suspensions)
         self.assertTrue(identity.can_manage_candidate_lists)
 

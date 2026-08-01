@@ -311,6 +311,43 @@ class CupGroupTeam(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class RankingSeed(Base):
+    __tablename__ = "ranking_seeds"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
+    team_name = Column(String, nullable=False)
+    base_points = Column(Float, nullable=False, default=1000.0)
+    matches = Column(Integer, nullable=False, default=0)
+    wins = Column(Integer, nullable=False, default=0)
+    draws = Column(Integer, nullable=False, default=0)
+    losses = Column(Integer, nullable=False, default=0)
+    source_name = Column(String)
+    source_row = Column(Integer)
+    imported_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class RankingMatch(Base):
+    __tablename__ = "ranking_matches"
+    __table_args__ = (
+        CheckConstraint("home_score >= 0", name="ck_ranking_matches_home_score_non_negative"),
+        CheckConstraint("away_score >= 0", name="ck_ranking_matches_away_score_non_negative"),
+        CheckConstraint("home_team_id != away_team_id", name="ck_ranking_matches_distinct_teams"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    home_team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), index=True)
+    home_team_name = Column(String, nullable=False)
+    away_team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), index=True)
+    away_team_name = Column(String, nullable=False)
+    home_score = Column(Integer, nullable=False)
+    away_score = Column(Integer, nullable=False)
+    created_by = Column(String)
+    played_at = Column(DateTime, nullable=False, default=datetime.now, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+
+
 class PlayerCompetitionStat(Base):
     __tablename__ = "player_competition_stats"
 
@@ -442,6 +479,7 @@ class CoachAccount(Base):
     must_change_password = Column(Integer, nullable=False, default=1)
     can_manage_schedule = Column(Integer, nullable=False, default=0)
     can_manage_cup_standings = Column(Integer, nullable=False, default=0)
+    can_manage_rankings = Column(Integer, nullable=False, default=0)
     can_manage_suspensions = Column(Integer, nullable=False, default=0)
     can_manage_candidate_lists = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.now)

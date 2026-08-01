@@ -87,6 +87,21 @@ def verify_cup_standings_manager(
     raise HTTPException(status_code=401, detail="未授权")
 
 
+def verify_ranking_manager(
+    session_token: Optional[str] = Cookie(None),
+    coach_session_token: Optional[str] = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+    db: Session = Depends(get_db),
+):
+    username = get_session_username(db, session_token)
+    role = auth_service.get_admin_role(db, username)
+    if username and auth_service.can_manage_rankings(role):
+        return username
+    coach_operator = auth_service.get_coach_work_operator(db, coach_session_token, "rankings")
+    if coach_operator:
+        return coach_operator
+    raise HTTPException(status_code=401, detail="未授权")
+
+
 def verify_suspension_manager(
     session_token: Optional[str] = Cookie(None),
     coach_session_token: Optional[str] = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
@@ -202,6 +217,7 @@ def _register_routes(app: FastAPI) -> None:
             verify_schedule_editor=verify_schedule_editor,
             verify_schedule_manager=verify_schedule_manager,
             verify_cup_standings_manager=verify_cup_standings_manager,
+            verify_ranking_manager=verify_ranking_manager,
             verify_suspension_manager=verify_suspension_manager,
             verify_candidate_list_manager=verify_candidate_list_manager,
             set_session_cookie=set_session_cookie,

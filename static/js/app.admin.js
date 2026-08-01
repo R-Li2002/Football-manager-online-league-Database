@@ -19,6 +19,7 @@ const WORKSPACE_CAPABILITY_LABELS = {
     'schedule.write': '赛程维护',
     'match_events.write': '比赛事件',
     'cup_standings.write': '杯赛积分榜',
+    'rankings.write': '排位统计',
     'suspensions.write': '伤停维护',
     'candidate_lists.write': '候选名单',
     'roster.write': '球员操作',
@@ -59,6 +60,7 @@ async function loadWorkspaceSession(options = {}) {
         const capabilities = new Set(identity.capabilities || []);
         canManageSchedule = capabilities.has('schedule.write');
         canManageCupStandings = capabilities.has('cup_standings.write');
+        canManageRankings = capabilities.has('rankings.write');
         canManageSuspensions = capabilities.has('suspensions.write');
         canManageCandidateLists = capabilities.has('candidate_lists.write');
         if (identity.source === 'coach_account') {
@@ -72,6 +74,7 @@ async function loadWorkspaceSession(options = {}) {
                 team_name: identity.team_name,
                 can_manage_schedule: canManageSchedule,
                 can_manage_cup_standings: canManageCupStandings,
+                can_manage_rankings: canManageRankings,
                 can_manage_suspensions: canManageSuspensions,
                 can_manage_candidate_lists: canManageCandidateLists,
             };
@@ -666,6 +669,7 @@ function showWorkspaceAccountEditor(coachUid) {
                     <legend>联赛工作权限</legend>
                     <label><input id="workspaceEditSchedule" type="checkbox" ${capabilities.has('schedule.write') ? 'checked' : ''}>赛程与比赛事件</label>
                     <label><input id="workspaceEditCupStandings" type="checkbox" ${capabilities.has('cup_standings.write') ? 'checked' : ''}>杯赛积分榜</label>
+                    <label><input id="workspaceEditRankings" type="checkbox" ${capabilities.has('rankings.write') ? 'checked' : ''}>排位统计</label>
                     <label><input id="workspaceEditSuspensions" type="checkbox" ${capabilities.has('suspensions.write') ? 'checked' : ''}>纪律与伤停</label>
                     <label><input id="workspaceEditCandidates" type="checkbox" ${capabilities.has('candidate_lists.write') ? 'checked' : ''}>候选名单</label>
                 </fieldset>
@@ -766,6 +770,7 @@ async function saveWorkspaceAccount(coachUid) {
         is_active: Boolean(document.getElementById('workspaceEditActive')?.checked),
         can_manage_schedule: Boolean(document.getElementById('workspaceEditSchedule')?.checked),
         can_manage_cup_standings: Boolean(document.getElementById('workspaceEditCupStandings')?.checked),
+        can_manage_rankings: Boolean(document.getElementById('workspaceEditRankings')?.checked),
         can_manage_suspensions: Boolean(document.getElementById('workspaceEditSuspensions')?.checked),
         can_manage_candidate_lists: Boolean(document.getElementById('workspaceEditCandidates')?.checked),
     };
@@ -1164,7 +1169,7 @@ async function workspaceCoachLogin() {
 }
 
 async function finishWorkspaceCoachLogin(data) {
-    if (!(data.can_manage_schedule || data.can_manage_cup_standings || data.can_manage_suspensions || data.can_manage_candidate_lists)) {
+    if (!(data.can_manage_schedule || data.can_manage_cup_standings || data.can_manage_rankings || data.can_manage_suspensions || data.can_manage_candidate_lists)) {
         showModal('没有工作权限', '该教练账号可以使用个人中心，但尚未获得数据工作权限。');
         return;
     }
@@ -1213,6 +1218,7 @@ function enterAdminLoggedOutState(options = {}) {
     currentAdminRole = '';
     canManageSchedule = false;
     canManageCupStandings = false;
+    canManageRankings = false;
     canManageSuspensions = false;
     canManageCandidateLists = false;
     if (typeof endCandidateListMaintenance === 'function') {
@@ -1255,7 +1261,7 @@ function isCoachWorkAccountActive() {
     return Boolean(
         !currentAdminRole
         && coachAccount?.authenticated
-        && (canManageSchedule || canManageCupStandings || canManageSuspensions || canManageCandidateLists)
+        && (canManageSchedule || canManageCupStandings || canManageRankings || canManageSuspensions || canManageCandidateLists)
     );
 }
 
@@ -1266,6 +1272,7 @@ async function handleCoachWorkUnauthorized(message = '工作账号登录已失�
         currentCoachAccount = {authenticated: false};
         canManageSchedule = false;
         canManageCupStandings = false;
+        canManageRankings = false;
         canManageSuspensions = false;
         canManageCandidateLists = false;
     }
@@ -1336,6 +1343,7 @@ async function syncAdminAuthStatus(options = {}) {
     isAdmin = Boolean(data.authenticated && data.can_manage_admin);
     canManageSchedule = Boolean(data.authenticated && data.can_manage_schedule);
     canManageCupStandings = Boolean(data.authenticated && data.can_manage_cup_standings);
+    canManageRankings = Boolean(data.authenticated && data.can_manage_rankings);
     canManageSuspensions = Boolean(data.authenticated && data.can_manage_suspensions);
     canManageCandidateLists = Boolean(data.authenticated && data.can_manage_candidate_lists);
     syncAdminTabVisibility();

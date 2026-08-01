@@ -12,6 +12,7 @@ from models import (
     CupMatch,
     DataFeedbackReport,
     OperationAudit,
+    RankingMatch,
 )
 from schemas_read import (
     WorkspaceAccountResponse,
@@ -29,6 +30,7 @@ CAPABILITY_LABELS = {
     "schedule.write": "赛程维护",
     "match_events.write": "比赛事件",
     "cup_standings.write": "杯赛积分榜",
+    "rankings.write": "排位统计",
     "suspensions.write": "伤停维护",
     "candidate_lists.write": "候选名单",
     "roster.write": "球员操作",
@@ -46,6 +48,7 @@ FULL_ADMIN_CAPABILITIES = list(CAPABILITY_LABELS)
 WORK_CAPABILITIES = {
     "schedule": ("schedule.write", "match_events.write"),
     "cup_standings": ("cup_standings.write",),
+    "rankings": ("rankings.write",),
     "suspensions": ("suspensions.write",),
     "candidate_lists": ("candidate_lists.write",),
 }
@@ -63,6 +66,8 @@ def _admin_capabilities(role: str | None) -> list[str]:
         capabilities.extend(WORK_CAPABILITIES["schedule"])
     if auth_service.can_manage_cup_standings(role):
         capabilities.extend(WORK_CAPABILITIES["cup_standings"])
+    if auth_service.can_manage_rankings(role):
+        capabilities.extend(WORK_CAPABILITIES["rankings"])
     if auth_service.can_manage_suspensions(role):
         capabilities.extend(WORK_CAPABILITIES["suspensions"])
     if auth_service.can_manage_candidate_lists(role):
@@ -76,6 +81,8 @@ def _coach_capabilities(account: CoachAccount) -> list[str]:
         capabilities.extend(WORK_CAPABILITIES["schedule"])
     if account.can_manage_cup_standings:
         capabilities.extend(WORK_CAPABILITIES["cup_standings"])
+    if account.can_manage_rankings:
+        capabilities.extend(WORK_CAPABILITIES["rankings"])
     if account.can_manage_suspensions:
         capabilities.extend(WORK_CAPABILITIES["suspensions"])
     if account.can_manage_candidate_lists:
@@ -185,6 +192,9 @@ def get_workspace_dashboard(db: Session, identity: WorkspaceIdentityResponse) ->
             or 0
         )
         metrics.append(_metric("cup_standings", "杯赛待录比分", pending_cup_matches, "按小组逐对录入主客场比分，积分榜自动计算", "competition", "schedule"))
+    if "rankings.write" in capabilities:
+        ranking_match_count = db.query(func.count(RankingMatch.id)).scalar() or 0
+        metrics.append(_metric("rankings", "排位比赛", ranking_match_count, "录入比分后基础分与场次总分实时重算", "competition", "rating"))
     if "suspensions.write" in capabilities:
         pending_confirmations = sum(
             1 for item in suspension_levels if item.total_matches > 0 and not item.suspension_confirmed

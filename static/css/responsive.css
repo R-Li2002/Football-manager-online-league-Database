@@ -6790,6 +6790,16 @@
     .suspension-team-head {
         display: flex;
     }
+
+    .ranking-desk { grid-template-columns: 1fr; gap: 12px; }
+    .ranking-results-panel { position: static; order: -1; }
+    .ranking-board-head { display: grid; padding: 17px 16px 14px; }
+    .ranking-rule-strip { min-width: 0; width: 100%; }
+    .ranking-table { min-width: 650px; }
+    .ranking-table th,
+    .ranking-table td { padding: 9px 8px; }
+    .ranking-match-list { max-height: 360px; }
+    .ranking-ticket-delete { width: 28px; height: 28px; top: -7px; right: -4px; opacity: 1; }
 }
 
 /*Final team/overview ownership restores late shared rules that originally

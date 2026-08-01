@@ -186,7 +186,7 @@ function canEditCurrentCoach(coach = currentCoachDetail) {
 }
 
 function coachAccountHasWorkPermissions(account = currentCoachAccount) {
-    return Boolean(!account?.must_change_password && account?.qq_number && (account?.can_manage_schedule || account?.can_manage_cup_standings || account?.can_manage_suspensions || account?.can_manage_candidate_lists));
+    return Boolean(!account?.must_change_password && account?.qq_number && (account?.can_manage_schedule || account?.can_manage_cup_standings || account?.can_manage_rankings || account?.can_manage_suspensions || account?.can_manage_candidate_lists));
 }
 
 function syncWorkPermissionsFromCoachAccount() {
@@ -194,6 +194,7 @@ function syncWorkPermissionsFromCoachAccount() {
     const securityReady = Boolean(currentCoachAccount.authenticated && !currentCoachAccount.must_change_password && currentCoachAccount.qq_number);
     canManageSchedule = Boolean(securityReady && currentCoachAccount.can_manage_schedule);
     canManageCupStandings = Boolean(securityReady && currentCoachAccount.can_manage_cup_standings);
+    canManageRankings = Boolean(securityReady && currentCoachAccount.can_manage_rankings);
     canManageSuspensions = Boolean(securityReady && currentCoachAccount.can_manage_suspensions);
     canManageCandidateLists = Boolean(securityReady && currentCoachAccount.can_manage_candidate_lists);
 }
@@ -710,6 +711,7 @@ async function showCoachAccountModal() {
                     <span>勾选后，该教练账号可直接维护对应模块。</span>
                 </div>
                 <label class="coach-account-toggle"><input id="coachAccountSchedule" type="checkbox">赛程编辑</label>
+                <label class="coach-account-toggle"><input id="coachAccountRankings" type="checkbox">排位统计</label>
                 <label class="coach-account-toggle"><input id="coachAccountCupStandings" type="checkbox">杯赛积分榜</label>
                 <label class="coach-account-toggle"><input id="coachAccountSuspensions" type="checkbox">伤停编辑</label>
                 <label class="coach-account-toggle"><input id="coachAccountCandidates" type="checkbox">候选名单编辑</label>
@@ -998,6 +1000,7 @@ async function loadCoachAccountStatus() {
         const permissions = [];
         if (data.can_manage_schedule) permissions.push('赛程');
         if (data.can_manage_cup_standings) permissions.push('杯赛积分榜');
+        if (data.can_manage_rankings) permissions.push('排位统计');
         if (data.can_manage_suspensions) permissions.push('伤停');
         if (data.can_manage_candidate_lists) permissions.push('候选名单');
         status.textContent = data.exists
@@ -1013,12 +1016,14 @@ async function loadCoachAccountStatus() {
     const activeInput = document.getElementById('coachAccountActive');
     const scheduleInput = document.getElementById('coachAccountSchedule');
     const cupStandingsInput = document.getElementById('coachAccountCupStandings');
+    const rankingsInput = document.getElementById('coachAccountRankings');
     const suspensionsInput = document.getElementById('coachAccountSuspensions');
     const candidatesInput = document.getElementById('coachAccountCandidates');
     if (usernameInput && data.username) usernameInput.value = data.username;
     if (activeInput) activeInput.checked = data.exists ? Boolean(data.is_active) : true;
     if (scheduleInput) scheduleInput.checked = Boolean(data.can_manage_schedule);
     if (cupStandingsInput) cupStandingsInput.checked = Boolean(data.can_manage_cup_standings);
+    if (rankingsInput) rankingsInput.checked = Boolean(data.can_manage_rankings);
     if (suspensionsInput) suspensionsInput.checked = Boolean(data.can_manage_suspensions);
     if (candidatesInput) candidatesInput.checked = Boolean(data.can_manage_candidate_lists);
 }
@@ -1043,6 +1048,7 @@ async function saveCoachAccount() {
         is_active: Boolean(document.getElementById('coachAccountActive')?.checked),
         can_manage_schedule: Boolean(document.getElementById('coachAccountSchedule')?.checked),
         can_manage_cup_standings: Boolean(document.getElementById('coachAccountCupStandings')?.checked),
+        can_manage_rankings: Boolean(document.getElementById('coachAccountRankings')?.checked),
         can_manage_suspensions: Boolean(document.getElementById('coachAccountSuspensions')?.checked),
         can_manage_candidate_lists: Boolean(document.getElementById('coachAccountCandidates')?.checked),
     };

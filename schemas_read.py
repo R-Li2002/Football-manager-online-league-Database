@@ -95,6 +95,7 @@ class AuthStatusResponse(BaseModel):
     can_manage_admin: bool = False
     can_manage_schedule: bool = False
     can_manage_cup_standings: bool = False
+    can_manage_rankings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
 
@@ -684,6 +685,41 @@ class PlayerRankingsResponse(BaseModel):
     coverage: list[PlayerRankingCoverageResponse] = Field(default_factory=list)
 
 
+class RankingStandingRowResponse(BaseModel):
+    rank: int
+    team_id: int
+    team_name: str
+    level: str
+    logo_path: Optional[str] = None
+    base_points: float = 1000.0
+    total_points: float = 1000.0
+    matches: int = 0
+    wins: int = 0
+    draws: int = 0
+    losses: int = 0
+
+
+class RankingMatchResponse(BaseModel):
+    id: int
+    home_team_id: int
+    home_team_name: str
+    away_team_id: int
+    away_team_name: str
+    home_score: int
+    away_score: int
+    result: Literal["home", "draw", "away"]
+    played_at: datetime
+
+
+class RankingsResponse(BaseModel):
+    initial_points: float = 1000.0
+    appearance_bonus: float = 20.0
+    transfer_rate: float = 0.1
+    total_matches: int = 0
+    rows: list[RankingStandingRowResponse] = Field(default_factory=list)
+    matches: list[RankingMatchResponse] = Field(default_factory=list)
+
+
 class SuspensionPlayerResponse(BaseModel):
     player_uid: int
     player_name: str
@@ -955,6 +991,7 @@ class CoachAccountPublicResponse(BaseModel):
     must_change_password: bool = False
     can_manage_schedule: bool = False
     can_manage_cup_standings: bool = False
+    can_manage_rankings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
 
@@ -967,6 +1004,7 @@ class CoachAccountAdminResponse(BaseModel):
     must_change_password: bool = False
     can_manage_schedule: bool = False
     can_manage_cup_standings: bool = False
+    can_manage_rankings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
     last_login_at: Optional[datetime] = None
