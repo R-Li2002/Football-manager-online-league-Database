@@ -130,6 +130,15 @@ class CupMatchTeamsUpdateRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class CupGroupUpdateRequest(BaseModel):
+    team_ids: list[Optional[int]] = Field(default_factory=list)
+
+
+class CupGroupMatchResultUpdateRequest(BaseModel):
+    home_score: Optional[int] = None
+    away_score: Optional[int] = None
+
+
 class CupMatchResultUpdateRequest(BaseModel):
     home_score: Optional[int] = None
     away_score: Optional[int] = None

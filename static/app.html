@@ -7,6 +7,11 @@
     <link rel="icon" href="/favicon.ico">
     <link rel="stylesheet" href="/static/app.css?v=__STATIC_ASSET_VERSION__">
     <link rel="stylesheet" href="/static/css/ui-foundation.css?v=__STATIC_ASSET_VERSION__">
+    <link rel="stylesheet" href="/static/css/shell.css?v=__STATIC_ASSET_VERSION__">
+    <link rel="stylesheet" href="/static/css/pages/database.css?v=__STATIC_ASSET_VERSION__">
+    <link rel="stylesheet" href="/static/css/pages/competition.css?v=__STATIC_ASSET_VERSION__">
+    <link rel="stylesheet" href="/static/css/pages/team.css?v=__STATIC_ASSET_VERSION__">
+    <link rel="stylesheet" href="/static/css/responsive.css?v=__STATIC_ASSET_VERSION__">
 </head>
 <body class="light-mode">
     <div class="container">
@@ -281,7 +286,11 @@
             <div id="databaseDataStatus" class="data-status-host" aria-live="polite"><div class="data-status-skeleton">读取球员库状态...</div></div>
 
             <div class="list-view active" id="dbListView">
-                <div class="search-section">
+                <section class="database-module-hero database-search-hero surface-card">
+                    <div class="database-module-copy"><span class="panel-kicker">Player Intelligence</span><h2>球员搜索</h2><p>从完整属性库按姓名、UID 与多维条件定位球员，并在不同数据版本之间核对成长与能力变化。</p></div>
+                    <div class="database-module-marks" aria-label="球员搜索能力"><span><strong>NAME</strong><small>姓名</small></span><span><strong>UID</strong><small>编号</small></span><span><strong>FILTER</strong><small>多维筛选</small></span></div>
+                </section>
+                <div class="search-section surface-card database-filter-card">
                     <div class="search-controls">
                         <div class="form-group" style="flex: 2;">
                             <label for="dbPlayerSearch">搜索球员库 (<span id="dbPlayerSearchCount">-</span> 球员)</label>
@@ -322,7 +331,7 @@
                     </div>
                 </div>
 
-                <div class="table-container">
+                <div class="table-container surface-card database-results-panel">
                     <div class="table-header-row">
                         <div class="database-table-heading">
                             <h2 id="dbTableTitle" class="table-title">球员库搜索结果</h2>
@@ -338,9 +347,10 @@
 
             <div class="list-view" id="dbCandidateListsView">
                 <div class="candidate-lists-shell">
-                    <div class="candidate-lists-head surface-card">
+                    <div class="candidate-lists-head database-module-hero database-candidate-hero surface-card">
                         <div class="candidate-lists-head-row">
                             <div>
+                                <span class="panel-kicker">Scouting Shortlists</span>
                                 <h2 id="candidateListPageTitle">候选名单</h2>
                             </div>
                             <div class="candidate-lists-actions" id="candidateListTopActions"></div>
@@ -354,7 +364,7 @@
             </div>
 
             <div class="list-view" id="dbPowerRankingView">
-                <div class="power-ranking-hero surface-card">
+                <div class="power-ranking-hero database-module-hero surface-card">
                     <div>
                         <span class="power-ranking-kicker">WEIGHTED POWER</span>
                         <h2>战力排行榜</h2>
@@ -364,7 +374,7 @@
                         <span>+1<small>11 CA</small></span><span>+2<small>30 CA</small></span><span>+3<small>50 CA</small></span><span>+4<small>70 CA</small></span><span>+5<small>90 CA</small></span>
                     </div>
                 </div>
-                <div class="search-section power-ranking-filter-card">
+                <div class="search-section power-ranking-filter-card database-filter-card surface-card">
                     <div class="search-controls leaderboard-controls">
                         <div class="form-group">
                             <label for="dbPowerShapeSelect">球员形态</label>
@@ -387,7 +397,7 @@
                         <div class="leaderboard-actions"><button class="btn btn-secondary" type="button" onclick="resetPowerRankingFilters()">重置筛选</button></div>
                     </div>
                 </div>
-                <div class="table-container power-ranking-results">
+                <div class="table-container power-ranking-results database-results-panel surface-card">
                     <div class="table-header-row"><div><h2 id="dbPowerRankingTitle" class="table-title">战力排行榜</h2><p class="database-table-meta">门将暂不纳入此套外场球员战力模型</p></div></div>
                     <div id="dbPowerRankingTable"><div class="loading">加载中...</div></div>
                 </div>
@@ -398,7 +408,11 @@
             </div>
 
             <div class="list-view" id="dbReactionLeaderboardView">
-                <div class="search-section">
+                <section class="database-module-hero database-reaction-hero surface-card">
+                    <div class="database-module-copy"><span class="panel-kicker">Community Signal</span><h2>互动排行榜</h2><p>把鲜花、鸡蛋与净值作为社区反馈信号，结合球队和属性信息快速发现高关注或高争议球员。</p></div>
+                    <div class="database-module-marks is-reaction" aria-label="互动榜指标"><span><strong>花</strong><small>认可</small></span><span><strong>蛋</strong><small>争议</small></span><span><strong>净</strong><small>综合</small></span></div>
+                </section>
+                <div class="search-section database-filter-card surface-card">
                     <div class="search-controls leaderboard-controls">
                         <div class="form-group">
                             <label for="dbReactionMetricSelect">榜单类型</label>
@@ -428,9 +442,9 @@
                     </div>
                 </div>
 
-                <div class="table-container">
+                <div class="table-container database-results-panel reaction-ranking-results surface-card">
                     <div class="table-header-row">
-                        <h2 id="dbReactionLeaderboardTitle" class="table-title">互动排行榜</h2>
+                        <div><h2 id="dbReactionLeaderboardTitle" class="table-title">互动排行榜</h2><p class="database-table-meta">按社区反馈排序，点击球员可查看完整属性档案</p></div>
                     </div>
                     <div id="dbReactionLeaderboardTable"><div class="loading">加载中...</div></div>
                 </div>
@@ -506,26 +520,15 @@
                 </section>
                 <div id="competitionDataStatus" class="data-status-host" aria-live="polite"><div class="data-status-skeleton">读取联赛数据状态...</div></div>
 
-                <div class="cup-phase-switch surface-card" id="cupPhaseTabs" role="tablist" aria-label="杯赛阶段切换" hidden>
-                    <button class="cup-phase-tab" id="cupPhaseGroupTab" type="button" onclick="setCupPhase('group')" role="tab" aria-selected="false">
-                        <span class="cup-phase-index">01</span>
-                        <span class="cup-phase-copy"><strong>小组赛阶段</strong><small>GROUP STAGE</small></span>
-                    </button>
-                    <span class="cup-phase-connector" aria-hidden="true"><i></i></span>
-                    <button class="cup-phase-tab active" id="cupPhaseKnockoutTab" type="button" onclick="setCupPhase('knockout')" role="tab" aria-selected="true">
-                        <span class="cup-phase-index">02</span>
-                        <span class="cup-phase-copy"><strong>淘汰赛阶段</strong><small>KNOCKOUT STAGE</small></span>
-                    </button>
-                </div>
+                <div class="cup-phase-switch surface-card" id="cupPhaseTabs" role="tablist" aria-label="杯赛内容切换" hidden></div>
 
                 <div class="list-view active" id="competitionStandingsView">
                     <div id="standingsBoard"><div class="loading">加载中...</div></div>
-                    <div id="cupGroupStageBoard" class="cup-group-stage-board" style="display:none;"></div>
                     <div id="cupBracketBoard" class="cup-bracket-board" style="display:none;"><div class="loading">加载中...</div></div>
                 </div>
 
                 <div class="list-view" id="competitionScheduleView">
-                    <div class="search-section">
+                    <div class="search-section" id="competitionScheduleFilters">
                         <div class="search-controls competition-filters">
                             <div class="form-group">
                                 <label for="scheduleRoundSelect">轮次</label>
@@ -536,6 +539,7 @@
                             <button class="btn btn-secondary" type="button" onclick="resetScheduleFilters()">查看全部轮次</button>
                         </div>
                     </div>
+                    <div id="cupGroupStageBoard" class="cup-group-stage-board" style="display:none;"></div>
                     <div id="scheduleBoard"><div class="loading">加载中...</div></div>
                 </div>
 

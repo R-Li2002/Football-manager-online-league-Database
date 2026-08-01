@@ -30,13 +30,14 @@ LEVEL_ORDER = {"超级": 1, "甲级": 2, "乙级": 3}
 VISIBLE_LEVEL = "隐藏"
 FORFEIT_STATUSES = {"home_forfeit", "away_forfeit", "double_forfeit"}
 MATCH_STATUSES = {"scheduled", "played", "postponed", "cancelled", *FORFEIT_STATUSES}
-MATCH_EVENT_TYPES = {"goal", "assist", "mvp"}
+MATCH_EVENT_TYPES = {"goal", "own_goal", "assist", "mvp"}
 SCHEDULE_ROOT = Path("imports") / "schedules"
 SCHEDULE_TEAM_ALIASES = {
     "A.Bilbao": "A. Bilbao",
     "Ajax": "AFC Ajax",
     "AS Roma": "Associazione Sportiva Roma",
     "At Madrid": "A. Madrid",
+    "Bayer 04": "Bayer 04 Leverkusen",
     "Bayern": "FC Bayern München",
     "Benfica": "Sport Lisboa e Benfica",
     "Boca": "Club Atlético Boca Juniors",
@@ -126,8 +127,8 @@ def _parse_round_no(value: Any) -> int | None:
         return None
     if isinstance(value, (int, float)) and int(value) == value:
         return int(value)
-    match = re.search(r"\d+", str(value))
-    return int(match.group()) if match else None
+    match = re.fullmatch(r"(?:第\s*)?(\d+)(?:\s*轮)?", str(value).strip())
+    return int(match.group(1)) if match else None
 
 
 def _parse_fixture_sheet(ws, level: str) -> list[ParsedFixture]:
@@ -563,7 +564,7 @@ def _replace_match_player_events(db: Session, match: Match, request: MatchUpdate
     for item in request.events or []:
         event_type = str(item.event_type or "").strip().lower()
         if event_type not in MATCH_EVENT_TYPES:
-            raise HTTPException(status_code=400, detail="比赛球员事件仅支持 goal、assist 或 mvp")
+            raise HTTPException(status_code=400, detail="比赛事件仅支持 goal、own_goal、assist 或 mvp")
         quantity = int(item.quantity or 0)
         if quantity <= 0:
             raise HTTPException(status_code=400, detail="球员事件数量必须大于 0")
@@ -573,20 +574,24 @@ def _replace_match_player_events(db: Session, match: Match, request: MatchUpdate
         side = side_by_team_name.get(team_name)
         if not side:
             raise HTTPException(status_code=400, detail=f"球员事件球队不属于本场比赛：{team_name}")
-        player = _resolve_event_player(side["players"], item, team_name=side["team_name"])
-        if not _player_belongs_to_team(player, team_id=side["team_id"], team_name=side["team_name"]):
-            raise HTTPException(status_code=400, detail=f"球员不属于 {side['team_name']}：{player.name}")
+        player = None
+        if event_type != "own_goal":
+            player = _resolve_event_player(side["players"], item, team_name=side["team_name"])
+            if not _player_belongs_to_team(player, team_id=side["team_id"], team_name=side["team_name"]):
+                raise HTTPException(status_code=400, detail=f"球员不属于 {side['team_name']}：{player.name}")
 
         side_key = id(side)
-        if event_type in totals[side_key]:
+        if event_type in {"goal", "own_goal"}:
+            totals[side_key]["goal"] += quantity
+        elif event_type in totals[side_key]:
             totals[side_key][event_type] += quantity
         db.add(
             MatchPlayerEvent(
                 match_id=match.id,
                 team_id=side["team_id"],
                 team_name=side["team_name"],
-                player_uid=player.uid,
-                player_name=player.name,
+                player_uid=player.uid if player else None,
+                player_name=player.name if player else "乌龙球",
                 event_type=event_type,
                 quantity=quantity,
                 created_at=datetime.now(),

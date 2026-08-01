@@ -7,6 +7,7 @@ let teamPowerSummariesPromise = null;
 let teamCenterCoachAuthReady = false;
 let teamCenterCoachAuthPromise = null;
 let teamRosterCopyToastTimer = null;
+let currentTeamJourneyView = 'league';
 const teamDetailCache = new Map();
 const TEAM_ROSTER_VIEW_MODES = new Set(['compact', 'detail', 'cards']);
 const teamCenterExpandedLevels = new Set();
@@ -205,6 +206,67 @@ function teamDetailMatchSeriesCard(series, team, compact = false) {
             return `<div class="team-match-series-leg ${resultClass}"><span class="team-match-leg-meta"><small>第 ${teamDetailSafeNumber(item.match.round_no)} 轮</small><b class="team-match-venue ${item.isHome ? 'is-home' : 'is-away'}">${item.isHome ? '主场' : '客场'}</b></span>${item.played ? `<strong>${item.ownScore} : ${item.opponentScore}</strong>` : ''}</div>`;
         }).join('')}</div>
     </article>`;
+}
+
+function teamDetailCupThemeClass(item) {
+    return ['champion', 'league', 'wumingjian'].includes(item?.theme) ? `is-${item.theme}` : '';
+}
+
+function teamDetailCupFixtureCard(match) {
+    const roundLabel = match.phase === 'knockout'
+        ? match.stage_label
+        : `第 ${teamDetailSafeNumber(match.round_no)} 轮`;
+    return `<div class="team-cup-next-row"><span><small>${escapeHtml(roundLabel || '杯赛')}</small><b class="team-match-venue ${match.is_home ? 'is-home' : 'is-away'}">${match.is_home ? '主场' : '客场'}</b></span><strong>${escapeHtml(match.opponent_team_name || '待定')}</strong></div>`;
+}
+
+function teamDetailCupOpponentProgress(item) {
+    const pending = (item.opponents || []).filter(opponent => teamDetailSafeNumber(opponent.remaining_legs) > 0);
+    const completedCount = (item.opponents || []).length - pending.length;
+    return `<div class="team-cup-opponent-list">
+        ${pending.map(opponent => `<div class="team-cup-opponent-row"><strong>${escapeHtml(opponent.team_name)}</strong><span class="team-cup-leg-progress"><b>${teamDetailSafeNumber(opponent.played_legs)}</b>/2</span></div>`).join('')}
+        ${completedCount > 0 ? `<div class="team-cup-completed">已完成 ${completedCount} 个对手的主客两回合</div>` : ''}
+    </div>`;
+}
+
+function teamDetailCupJourney(item) {
+    if (!item) return '<div class="team-detail-empty-inline">暂无杯赛征程数据。</div>';
+    const groupMeta = item.phase === 'group'
+        ? `<span>${escapeHtml(item.group_name || '-')}组</span><span>第 ${teamDetailSafeNumber(item.rank, '-')} 名</span><span>${teamDetailSafeNumber(item.points)} 分</span><span>净胜球 ${teamDetailSafeNumber(item.goal_difference) > 0 ? '+' : ''}${teamDetailSafeNumber(item.goal_difference)}</span>`
+        : `<span>${escapeHtml(item.qualification_label || '淘汰赛')}</span>`;
+    const statusPrefix = item.qualification_provisional ? '当前' : '最终';
+    const knockoutNext = item.phase === 'knockout'
+        ? `<div class="team-cup-next"><div class="team-cup-section-title"><strong>下一场</strong><small>当前淘汰赛阶段</small></div>${(item.next_matches || []).map(match => teamDetailCupFixtureCard({...match, phase: item.phase})).join('') || '<div class="team-detail-empty-inline">当前没有待进行的杯赛。</div>'}</div>`
+        : '';
+    return `<div class="team-cup-outlook ${teamDetailCupThemeClass(item)}">
+        <div class="team-cup-summary">${groupMeta}</div>
+        <div class="team-cup-qualification"><small>${statusPrefix}去向</small><strong>${escapeHtml(item.qualification_label || '待定')}</strong>${item.qualification_context ? `<span>${escapeHtml(item.qualification_context)}</span>` : ''}</div>
+        <div class="team-cup-remaining"><strong>剩余 ${teamDetailSafeNumber(item.remaining_opponent_count)} 个对手</strong><span>${teamDetailSafeNumber(item.remaining_match_count)} 场比赛</span></div>
+        ${teamDetailCupOpponentProgress(item)}
+        ${knockoutNext}
+    </div>`;
+}
+
+function teamDetailJourneyPanel(team, leagueSeries, cupPayload) {
+    const cups = Array.isArray(cupPayload?.competitions) ? cupPayload.competitions : [];
+    const availableViews = new Set(['league', ...cups.map(item => item.competition)]);
+    if (!availableViews.has(currentTeamJourneyView)) currentTeamJourneyView = 'league';
+    const activeCup = cups.find(item => item.competition === currentTeamJourneyView);
+    const tabs = cups.length ? `<div class="team-journey-tabs" role="tablist" aria-label="赛事征程切换">
+        <button class="team-journey-tab ${currentTeamJourneyView === 'league' ? 'active' : ''}" type="button" onclick="setTeamJourneyView('league')">联赛 <small>${leagueSeries.reduce((sum, series) => sum + series.length, 0)}场</small></button>
+        ${cups.map(item => `<button class="team-journey-tab ${currentTeamJourneyView === item.competition ? 'active' : ''}" type="button" onclick="setTeamJourneyView('${escapeHtml(item.competition)}')">${escapeHtml(item.title)} <small>${teamDetailSafeNumber(item.remaining_match_count)}场</small></button>`).join('')}
+    </div>` : '';
+    const content = activeCup
+        ? teamDetailCupJourney(activeCup)
+        : `<div class="team-next-series-list">${leagueSeries.map(series => teamDetailMatchSeriesCard(series, team, true)).join('') || '<div class="team-detail-empty-inline">当前导入赛程中暂无该队后续比赛。</div>'}</div>`;
+    const action = activeCup
+        ? `<button class="team-panel-link" type="button" onclick="openTeamCupJourney('${escapeHtml(activeCup.title)}', '${escapeHtml(activeCup.phase)}')">查看杯赛 →</button>`
+        : `<button class="team-panel-link" type="button" onclick="openTeamSchedule('${escapeHtml(team.level)}')">完整赛程 →</button>`;
+    return `<section class="team-panel team-next-panel team-journey-panel surface-card"><div class="team-panel-header"><div><span class="panel-kicker">Competition Journey</span><h2>赛事征程</h2></div>${action}</div>${tabs}${content}</section>`;
+}
+
+function setTeamJourneyView(view) {
+    currentTeamJourneyView = String(view || 'league');
+    if (currentTeamDetailData) renderTeamDetailLoaded(currentTeamDetailData);
 }
 
 function teamDetailGrowthStepFromCa(player) {
@@ -789,7 +851,7 @@ function renderTeamCenterLanding() {
 function renderTeamDetailLoaded(data) {
     const root = document.getElementById('teamDetailRoot');
     if (!root || data.team.name !== currentTeamDetailName) return;
-    const {team, players, standings, matchesPayload, suspensionsPayload, powerPayload, lineupPayload, teamPowerSummaries} = data;
+    const {team, players, standings, matchesPayload, suspensionsPayload, powerPayload, lineupPayload, teamPowerSummaries, cupOutlookPayload} = data;
     const allPowerItems = Array.isArray(powerPayload?.items) ? powerPayload.items : [];
     const powerByUid = teamDetailSelectPowerShapes(players, allPowerItems);
     const powerItems = [...powerByUid.values()].sort((a, b) => teamDetailSafeNumber(b.heigo_power) - teamDetailSafeNumber(a.heigo_power));
@@ -841,7 +903,7 @@ function renderTeamDetailLoaded(data) {
     <div class="team-detail-primary-grid">
         <section class="team-panel team-lineup-panel surface-card"><div class="team-panel-header"><div><span class="panel-kicker">Starting XI</span><h2>11 人阵容预览</h2><p class="team-lineup-explain">${lineupPayload?.is_saved ? '主教练自定义阵容' : '当前展示系统推荐阵容，主教练可保存自定义阵型与首发。'}</p></div><div class="team-panel-actions"><button class="team-panel-link team-lineup-action team-lineup-copy" type="button" onclick="copyTeamLineupImage()">复制阵容图</button><button class="team-panel-link team-lineup-action team-lineup-edit" type="button" onclick="openTeamLineupEditor()">${lineupPayload?.can_edit ? '编辑阵容' : '查看阵容'} →</button></div></div>${renderRosterFormationPreview({teamName: team.name, players: lineupPlayers, formation: lineupPayload?.formation || '4-3-3', picks: lineupPayload?.picks || {}})}</section>
         <aside class="team-detail-side-stack">
-            <section class="team-panel team-next-panel surface-card"><div class="team-panel-header"><div><span class="panel-kicker">Next Fixtures</span><h2>后续赛程</h2></div><button class="team-panel-link" type="button" onclick="openTeamSchedule('${escapeHtml(team.level)}')">完整赛程 →</button></div><div class="team-next-series-list">${upcomingFourSeries.map(series => teamDetailMatchSeriesCard(series, team, true)).join('') || '<div class="team-detail-empty-inline">当前导入赛程中暂无该队后续比赛。</div>'}</div></section>
+            ${teamDetailJourneyPanel(team, upcomingFourSeries, cupOutlookPayload)}
             <section class="team-panel surface-card"><div class="team-panel-header"><div><span class="panel-kicker">Availability</span><h2>纪律状态</h2></div></div>${teamDetailDiscipline(teamSuspensions)}</section>
         </aside>
     </div>
@@ -865,6 +927,7 @@ async function loadTeamDetailData(teamName, options = {}) {
         fetchJsonOrThrow(`/api/attributes/power-ranking?shape=all&limit=all&team=${encoded}`),
         fetchJsonOrThrow(`/api/teams/${team.id}/lineup`),
         loadTeamPowerSummaries(),
+        fetchJsonOrThrow(`/api/teams/${team.id}/cup-outlook`),
     ]);
     const value = index => results[index].status === 'fulfilled' ? results[index].value : null;
     const data = {
@@ -876,6 +939,7 @@ async function loadTeamDetailData(teamName, options = {}) {
         powerPayload: value(4),
         lineupPayload: value(5) || {team_id: team.id, team_name: team.name, formation: '4-3-3', picks: {}, is_saved: false, can_edit: false},
         teamPowerSummaries: value(6),
+        cupOutlookPayload: value(7) || {team_id: team.id, team_name: team.name, competitions: []},
     };
     teamDetailCache.set(teamName, data);
     return data;
@@ -903,6 +967,7 @@ async function renderTeamDetail(options = {}) {
 }
 
 async function openTeamDetail(teamName, options = {}) {
+    if (String(teamName || '').trim() !== currentTeamDetailName) currentTeamJourneyView = 'league';
     currentTeamDetailName = String(teamName || '').trim();
     await showTab('team', options.triggerElement || null, {syncHistory: false});
     window.scrollTo({top: 0, behavior: options.smooth === false ? 'auto' : 'smooth'});
@@ -946,5 +1011,18 @@ async function openTeamSchedule(level) {
     await showTab('competition', null, {syncHistory: false});
     if (typeof currentCompetitionLevel !== 'undefined') currentCompetitionLevel = level || '超级';
     if (typeof showCompetitionSubtab === 'function') showCompetitionSubtab('schedule');
+    syncAppHistory('push');
+}
+
+async function openTeamCupJourney(competition, phase = 'group') {
+    await showTab('competition', null, {syncHistory: false});
+    if (typeof currentCompetitionLevel !== 'undefined') currentCompetitionLevel = competition || '冠军杯';
+    if (typeof currentCupPhase !== 'undefined') currentCupPhase = phase === 'group' ? 'group' : 'knockout';
+    if (phase === 'group') {
+        if (typeof currentCupGroupScheduleView !== 'undefined') currentCupGroupScheduleView = 'results';
+        if (typeof showCompetitionSubtab === 'function') showCompetitionSubtab('schedule');
+    } else if (typeof showCompetitionSubtab === 'function') {
+        showCompetitionSubtab('standings');
+    }
     syncAppHistory('push');
 }

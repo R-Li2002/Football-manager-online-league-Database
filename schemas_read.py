@@ -433,7 +433,7 @@ class MatchPlayerEventResponse(BaseModel):
     team_name: str
     player_uid: Optional[int] = None
     player_name: str
-    event_type: Literal["goal", "assist", "mvp"]
+    event_type: Literal["goal", "own_goal", "assist", "mvp"]
     quantity: int = 1
 
 
@@ -491,6 +491,125 @@ class CupBracketResponse(BaseModel):
     title: str
     trophy_url: str
     stages: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CupGroupSlotResponse(BaseModel):
+    slot_no: int
+    team_id: Optional[int] = None
+    team_name: Optional[str] = None
+    manager: Optional[str] = None
+    level: Optional[str] = None
+    logo_path: Optional[str] = None
+
+
+class CupGroupMatchResponse(BaseModel):
+    id: int
+    round_no: int
+    slot_no: int
+    home_team_id: int
+    home_team_name: str
+    away_team_id: int
+    away_team_name: str
+    home_score: Optional[int] = None
+    away_score: Optional[int] = None
+    status: Literal["scheduled", "played"] = "scheduled"
+    updated_at: Optional[datetime] = None
+
+
+class CupGroupStandingResponse(BaseModel):
+    rank: int
+    team_id: int
+    team_name: str
+    played: int = 0
+    wins: int = 0
+    draws: int = 0
+    losses: int = 0
+    goals_for: int = 0
+    goals_against: int = 0
+    goal_difference: int = 0
+    points: int = 0
+    qualification: Literal["champions_knockout", "league_knockout", "eliminated", "pending"] = "pending"
+    qualification_label: str = "待定"
+    qualification_provisional: bool = True
+
+
+class CupQualifiedTeamResponse(BaseModel):
+    team_id: int
+    team_name: str
+    source_competition: str
+    group_name: str
+    group_rank: int
+    points: int = 0
+    goal_difference: int = 0
+    goals_for: int = 0
+
+
+class CupGroupResponse(BaseModel):
+    group_no: int
+    group_name: str
+    teams: list[CupGroupSlotResponse] = Field(default_factory=list)
+    matches: list[CupGroupMatchResponse] = Field(default_factory=list)
+    standings: list[CupGroupStandingResponse] = Field(default_factory=list)
+
+
+class CupGroupStageResponse(BaseModel):
+    competition: str
+    title: str
+    group_count: int
+    teams_per_group: int
+    assigned_team_count: int = 0
+    groups: list[CupGroupResponse] = Field(default_factory=list)
+    qualification_complete: bool = False
+    champions_knockout_qualifiers: list[CupQualifiedTeamResponse] = Field(default_factory=list)
+    league_knockout_qualifiers: list[CupQualifiedTeamResponse] = Field(default_factory=list)
+
+
+class TeamCupOpponentProgressResponse(BaseModel):
+    team_id: int
+    team_name: str
+    played_legs: int = 0
+    remaining_legs: int = 0
+
+
+class TeamCupFixtureResponse(BaseModel):
+    id: int
+    stage: str
+    stage_label: str
+    round_no: Optional[int] = None
+    opponent_team_id: Optional[int] = None
+    opponent_team_name: str
+    is_home: bool
+    home_team_name: str
+    away_team_name: str
+    home_score: Optional[int] = None
+    away_score: Optional[int] = None
+    status: Literal["scheduled", "played"] = "scheduled"
+
+
+class TeamCupCompetitionOutlookResponse(BaseModel):
+    competition: str
+    title: str
+    theme: str
+    phase: Literal["group", "knockout"]
+    group_name: Optional[str] = None
+    rank: Optional[int] = None
+    played: int = 0
+    points: int = 0
+    goal_difference: int = 0
+    qualification: str = "pending"
+    qualification_label: str = "待定"
+    qualification_provisional: bool = True
+    qualification_context: str = ""
+    remaining_match_count: int = 0
+    remaining_opponent_count: int = 0
+    opponents: list[TeamCupOpponentProgressResponse] = Field(default_factory=list)
+    next_matches: list[TeamCupFixtureResponse] = Field(default_factory=list)
+
+
+class TeamCupOutlookResponse(BaseModel):
+    team_id: int
+    team_name: str
+    competitions: list[TeamCupCompetitionOutlookResponse] = Field(default_factory=list)
 
 
 class StandingRowResponse(BaseModel):

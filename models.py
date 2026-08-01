@@ -294,6 +294,23 @@ class CupMatch(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class CupGroupTeam(Base):
+    __tablename__ = "cup_group_teams"
+    __table_args__ = (
+        UniqueConstraint("competition", "group_no", "slot_no", name="uq_cup_group_teams_competition_group_slot"),
+        UniqueConstraint("competition", "team_id", name="uq_cup_group_teams_competition_team"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    competition = Column(String, index=True, nullable=False)
+    group_no = Column(Integer, index=True, nullable=False)
+    slot_no = Column(Integer, index=True, nullable=False)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), index=True, nullable=False)
+    team_name = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class PlayerCompetitionStat(Base):
     __tablename__ = "player_competition_stats"
 

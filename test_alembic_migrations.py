@@ -8,7 +8,7 @@ from sqlalchemy.pool import NullPool
 
 from database import init_database, run_manual_runtime_fallback, run_schema_migrations
 
-LATEST_REVISION = "20260730_000040"
+LATEST_REVISION = "20260731_000041"
 
 
 class AlembicMigrationTests(unittest.TestCase):
@@ -39,6 +39,7 @@ class AlembicMigrationTests(unittest.TestCase):
             "competition_round_work_states",
             "competition_round_work_logs",
             "competition_responsibility_assignments",
+            "cup_group_teams",
             "league_info",
             "team_logo_sources",
             "alembic_version",

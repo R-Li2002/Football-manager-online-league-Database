@@ -253,7 +253,7 @@ function renderDatabaseTacticsBoard() {
     const summary = getDatabaseTacticsSummary();
     const versions = (availableAttributeVersions || []).length ? availableAttributeVersions : [databaseTacticsState.version].filter(Boolean);
     board.innerHTML = `
-        <section class="db-tactics-hero surface-card">
+        <section class="db-tactics-hero database-module-hero surface-card">
             <div><span class="panel-kicker">Build Your XI</span><h2>自定义战术板</h2><p>从完整球员库自由选人，为每名球员独立设置成长形态。阵型仅作为参考，场上 11 人都可以用鼠标或手指拖到任意位置。</p></div>
             <div class="db-tactics-summary">
                 <span><strong>${summary.count}</strong><small>/ 11 人</small></span>
@@ -261,7 +261,7 @@ function renderDatabaseTacticsBoard() {
                 <span><strong>${summary.weightedAverage === null ? '--' : summary.weightedAverage.toFixed(2)}</strong><small>平均加权战力</small></span>
             </div>
         </section>
-        <div class="db-tactics-toolbar surface-card">
+        <div class="db-tactics-toolbar database-filter-card surface-card">
             <label class="db-tactics-name"><span>方案名称</span><input type="text" maxlength="40" value="${escapeHtml(databaseTacticsState.name)}" oninput="setDatabaseTacticsName(this.value)"></label>
             <label><span>参考阵型</span><select onchange="changeDatabaseTacticsFormation(this.value)">${Object.keys(DB_TACTICS_FORMATIONS).map(name => `<option value="${name}" ${name === databaseTacticsState.formation ? 'selected' : ''}>${name}</option>`).join('')}</select></label>
             <label><span>数据库版本</span><select onchange="changeDatabaseTacticsVersion(this.value)">${versions.map(version => `<option value="${escapeHtml(version)}" ${version === databaseTacticsState.version ? 'selected' : ''}>${escapeHtml(version)}</option>`).join('')}</select></label>

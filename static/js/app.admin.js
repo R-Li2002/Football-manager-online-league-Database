@@ -772,6 +772,7 @@ async function saveWorkspaceAccount(coachUid) {
     }
     closeModal();
     workspaceAccountsData = [];
+    if (typeof invalidateCompetitionAssignableAccounts === 'function') invalidateCompetitionAssignableAccounts();
     await loadWorkspaceAccounts({force: true});
 }
 

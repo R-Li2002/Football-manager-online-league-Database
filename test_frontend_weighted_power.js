@@ -5,7 +5,11 @@ const vm = require('node:vm');
 
 const databaseCode = fs.readFileSync(path.join(__dirname, 'static/js/app.database.js'), 'utf8');
 const databaseCompareCode = fs.readFileSync(path.join(__dirname, 'static/js/database.compare.js'), 'utf8');
-const appCss = fs.readFileSync(path.join(__dirname, 'static/app.css'), 'utf8');
+const appCss = [
+    fs.readFileSync(path.join(__dirname, 'static/app.css'), 'utf8'),
+    fs.readFileSync(path.join(__dirname, 'static/css/pages/database.css'), 'utf8'),
+    fs.readFileSync(path.join(__dirname, 'static/css/responsive.css'), 'utf8'),
+].join('\n');
 
 function escapeHtml(value) {
     return String(value ?? '')

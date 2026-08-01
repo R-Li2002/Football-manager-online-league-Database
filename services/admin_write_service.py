@@ -23,6 +23,8 @@ from services.admin_write_actions import (
     update_site_note,
     update_cup_match_result,
     update_cup_match_teams,
+    update_cup_group,
+    update_cup_group_match_result,
     update_team_info,
 )
 
@@ -48,6 +50,8 @@ __all__ = [
     "update_site_note",
     "update_cup_match_result",
     "update_cup_match_teams",
+    "update_cup_group",
+    "update_cup_group_match_result",
     "recalculate_wages",
     "rebuild_team_stat_caches",
     "import_current_league_data",

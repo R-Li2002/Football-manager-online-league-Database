@@ -11,6 +11,12 @@ assert.match(
     /competition:\s*\[[^\]]*app\.admin\.js[^\]]*app\.competition\.js[^\]]*\]/,
     'competition module must load the shared admin request helpers before app.competition.js',
 );
+assert.match(
+    appCode,
+    /tabName === 'competition'[\s\S]*?Promise\.all\(\[ensureAppModule\('competition'\), ensureTeamsLoaded\(\), ensurePlayersLoaded\(\)\]\)/,
+    'competition must load league players before rendering match-event and suspension suggestions',
+);
+assert.match(competitionCode, /function invalidateCompetitionPlayerCaches\(\)/, 'competition player caches should be reset when the roster dataset changes');
 assert.match(competitionCode, /competition\.suspensions\.team\.\$\{Number\(teamId\)\}/);
 assert.match(competitionCode, /\/api\/export\/suspensions\.xlsx\?level=/);
 assert.match(competitionCode, /导出 Excel/);
@@ -19,6 +25,9 @@ assert.match(
     /oninput="updateMatchEventSuggestions\(this, \$\{Number\(match\.id\)\}\)" onchange="scheduleMatchAutoSave/,
     'typing a scorer name should update suggestions without triggering an immediate auto-save',
 );
+assert.match(competitionCode, /<option value="own_goal"[^>]*>乌龙球<\/option>/, 'match events should offer an own-goal entry');
+assert.match(competitionCode, /isOwnGoal \? null : findMatchEventPlayer/, 'own goals should not require a player lookup');
+assert.match(competitionCode, /\['goal', 'own_goal'\]\.includes\(event\.event_type\)/, 'mobile match totals should include own goals');
 assert.doesNotMatch(
     competitionCode,
     /function addMatchEventRow[\s\S]*?insertAdjacentHTML\('beforeend', renderMatchEventRow\(match\)\);\s*scheduleMatchAutoSave/,
@@ -32,6 +41,8 @@ assert.match(
 assert.match(competitionCode, /scheduleMatchSaveVersions = new Map\(\)/, 'match saves should version local edits');
 assert.match(competitionCode, /scheduleMatchSaveInFlight = new Set\(\)/, 'only one save request per match should be in flight');
 assert.match(competitionCode, /scheduleMatchSaveQueued = new Set\(\)/, 'new edits should queue a follow-up save');
+assert.match(competitionCode, /function invalidateCompetitionAssignableAccounts\(\)/, 'permission changes should be able to invalidate the responsibility account cache');
+assert.match(competitionCode, /loadCompetitionAssignableAccounts\(\{force: true\}\)/, 'the responsibility dialog should always request the latest eligible accounts');
 assert.match(
     competitionCode,
     /scheduleMatchSaveQueued\.has\(numericMatchId\) \|\| !isCurrentAttempt\(\)/,
@@ -153,6 +164,12 @@ function assertWorkPanelShowsActionableRoundProgress() {
 
     assert.equal(workPanel.hidden, false);
     assert.match(workPanel.innerHTML, /超级 · 第 17-18 轮/);
+    assert.match(workPanel.innerHTML, /16 场待补事件/);
+    assert.match(workPanel.innerHTML, /伤停待确认/);
+    assert.match(workPanel.innerHTML, /展开工作台/);
+    assert.match(workPanel.innerHTML, /competition-work-details" hidden/);
+    assert.match(workPanel.innerHTML, /刷新数据/);
+    assert.match(workPanel.innerHTML, /退出登录/);
     assert.match(workPanel.innerHTML, /16\/16/);
     assert.match(workPanel.innerHTML, /0\/16/);
     assert.match(workPanel.innerHTML, /确认本轮伤停/);
@@ -162,6 +179,10 @@ function assertWorkPanelShowsActionableRoundProgress() {
     assert.match(workPanel.innerHTML, /设置级别职责/);
     assert.match(workPanel.innerHTML, /工作记录/);
     assert.doesNotMatch(workPanel.innerHTML, /提交复核/);
+
+    context.toggleCompetitionWorkPanel();
+    assert.match(workPanel.innerHTML, /收起工作台/);
+    assert.doesNotMatch(workPanel.innerHTML, /competition-work-details" hidden/);
 }
 
 function assertReviewActionsFollowBackendCapabilities() {
@@ -190,6 +211,36 @@ function assertSaveStateIsVisibleAndRetryable() {
     assert.equal(saveBadge.textContent, '网络失败，点击重试');
     assert.match(saveBadge.className, /is-error/);
     assert.equal(saveBadge.role, 'button');
+}
+
+async function assertResponsibilityDialogRefreshesEligibleAccounts() {
+    let fetchCalls = 0;
+    let modalPayload = null;
+    let accountItems = [
+        {principal_id: 'admin:root', display_name: 'root', account_type: 'administrator', is_active: true, capabilities: ['schedule.write', 'suspensions.write']},
+        {principal_id: 'coach:schedule', display_name: '赛程教练', account_type: 'coach_worker', is_active: true, capabilities: ['schedule.write']},
+        {principal_id: 'coach:suspensions', display_name: '伤停教练', account_type: 'coach_worker', is_active: true, capabilities: ['suspensions.write']},
+        {principal_id: 'coach:candidates', display_name: '候选名单教练', account_type: 'coach_worker', is_active: true, capabilities: ['coach_profile.write_self', 'candidate_lists.write']},
+    ];
+    context.fetch = async () => {
+        fetchCalls += 1;
+        return {ok: true, json: async () => ({items: accountItems})};
+    };
+    context.showModal = (title, body) => {
+        modalPayload = {title, body};
+    };
+
+    await context.showCompetitionAssignmentDialog();
+    assert.match(modalPayload.body, /赛程教练/);
+    assert.match(modalPayload.body, /伤停教练/);
+    assert.match(modalPayload.body, /候选名单教练/);
+    assert.match(modalPayload.body, /需先授予赛程权限/);
+    assert.match(modalPayload.body, /需先授予伤停权限/);
+
+    accountItems = [...accountItems, {principal_id: 'coach:new-worker', display_name: '新工作人员', account_type: 'coach_worker', is_active: true, capabilities: ['schedule.write']}];
+    await context.showCompetitionAssignmentDialog();
+    assert.equal(fetchCalls, 2, 'opening the dialog again should bypass the previous account cache');
+    assert.match(modalPayload.body, /新工作人员/);
 }
 
 async function assertCupInitializationUsesExplicitResetAndFeedback() {
@@ -228,6 +279,7 @@ async function main() {
     assertReviewActionsFollowBackendCapabilities();
     assertTaskFiltersUseBackendIssueCodes();
     assertSaveStateIsVisibleAndRetryable();
+    await assertResponsibilityDialogRefreshesEligibleAccounts();
     await assertCupInitializationUsesExplicitResetAndFeedback();
 }
 

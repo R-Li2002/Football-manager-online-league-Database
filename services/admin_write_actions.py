@@ -8,6 +8,8 @@ from schemas_write import (
     BatchReleaseRequest,
     BatchTransferRequest,
     ConsumeRequest,
+    CupGroupMatchResultUpdateRequest,
+    CupGroupUpdateRequest,
     CupMatchResultUpdateRequest,
     CupMatchTeamsUpdateRequest,
     FishPlayerRequest,
@@ -46,6 +48,8 @@ MATCH_BATCH_UPDATE_LABEL = "\u8d5b\u7a0b\u6bd4\u5206\u6279\u91cf\u7f16\u8f91"
 SUSPENSION_UPDATE_LABEL = "\u4f24\u505c\u8bb0\u5f55\u7ef4\u62a4"
 SITE_NOTE_UPDATE_LABEL = "\u9875\u9762\u6ce8\u91ca\u66f4\u65b0"
 CUP_INITIALIZE_LABEL = "\u676f\u8d5b\u521d\u59cb\u5316"
+CUP_GROUP_UPDATE_LABEL = "\u676f\u8d5b\u5c0f\u7ec4\u7f16\u8f91"
+CUP_GROUP_RESULT_UPDATE_LABEL = "\u676f\u8d5b\u5c0f\u7ec4\u6bd4\u5206\u7f16\u8f91"
 CUP_TEAMS_UPDATE_LABEL = "\u676f\u8d5b\u7403\u961f\u7f16\u8f91"
 CUP_RESULT_UPDATE_LABEL = "\u676f\u8d5b\u6bd4\u5206\u7f16\u8f91"
 
@@ -497,6 +501,46 @@ def update_cup_match_teams(
         operator=admin,
         request_payload={"match_id": match_id, **to_payload(request)},
         executor=lambda: cup_service.update_cup_match_teams(db, admin, match_id, request, write_to_log),
+        response_model=AdminActionResponse,
+    )
+
+
+def update_cup_group(
+    db: Session,
+    admin: str | None,
+    competition: str,
+    group_no: int,
+    request: CupGroupUpdateRequest,
+    write_to_log,
+) -> AdminActionResponse:
+    return execute_admin_action(
+        db,
+        category="competition",
+        action="update_cup_group",
+        operation_label=CUP_GROUP_UPDATE_LABEL,
+        operator=admin,
+        request_payload={"competition": competition, "group_no": group_no, **to_payload(request)},
+        executor=lambda: cup_service.update_cup_group(db, admin, competition, group_no, request, write_to_log),
+        response_model=AdminActionResponse,
+    )
+
+
+def update_cup_group_match_result(
+    db: Session,
+    admin: str | None,
+    competition: str,
+    match_id: int,
+    request: CupGroupMatchResultUpdateRequest,
+    write_to_log,
+) -> AdminActionResponse:
+    return execute_admin_action(
+        db,
+        category="competition",
+        action="update_cup_group_match_result",
+        operation_label=CUP_GROUP_RESULT_UPDATE_LABEL,
+        operator=admin,
+        request_payload={"competition": competition, "match_id": match_id, **to_payload(request)},
+        executor=lambda: cup_service.update_cup_group_match_result(db, admin, competition, match_id, request, write_to_log),
         response_model=AdminActionResponse,
     )
 

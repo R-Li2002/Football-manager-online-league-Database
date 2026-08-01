@@ -12,7 +12,7 @@ const APP_MODULE_ASSETS = {
     overview: ['/static/js/app.coaches.js', '/static/js/app.overview.js'],
     team: ['/static/js/app.coaches.js', '/static/vendor/html-to-image.js', '/static/js/app.players.js', '/static/js/app.team.js'],
     players: ['/static/js/app.coaches.js', '/static/js/app.players.js'],
-    competition: ['/static/js/app.coaches.js', '/static/js/app.admin.js', '/static/js/app.competition.js'],
+    competition: ['/static/js/app.coaches.js', '/static/vendor/html-to-image.js', '/static/js/app.admin.js', '/static/js/app.competition.js'],
     database: [
         '/static/vendor/html-to-image.js',
         '/static/js/app.database.js',
@@ -255,6 +255,7 @@ function ensurePlayersLoaded(options = {}) {
         .then(data => {
             allPlayers = Array.isArray(data) ? data : [];
             currentPlayers = [...allPlayers];
+            if (typeof invalidateCompetitionPlayerCaches === 'function') invalidateCompetitionPlayerCaches();
             return allPlayers;
         })
         .finally(() => {
@@ -296,7 +297,7 @@ async function prepareAppTab(tabName) {
     } else if (tabName === 'players') {
         await Promise.all([ensureAppModule('players'), ensureTeamsLoaded(), ensurePlayersLoaded()]);
     } else if (tabName === 'competition') {
-        await Promise.all([ensureAppModule('competition'), ensureTeamsLoaded()]);
+        await Promise.all([ensureAppModule('competition'), ensureTeamsLoaded(), ensurePlayersLoaded()]);
     } else if (tabName === 'coaches') {
         await ensureAppModule('coaches');
     } else if (tabName === 'database') {
@@ -503,7 +504,7 @@ function buildAppHistoryUrl(state) {
     const normalized = normalizeHistoryState(state);
     const url = new URL(window.location.href);
     const params = url.searchParams;
-    ['tab', 'team', 'databaseSubtab', 'candidateList', 'q', 'version', 'competitionSubtab', 'level', 'cupPhase', 'round', 'workFilter', 'rankingType'].forEach(key => params.delete(key));
+    ['tab', 'team', 'databaseSubtab', 'candidateList', 'q', 'version', 'competitionSubtab', 'level', 'cupPhase', 'cupView', 'round', 'workFilter', 'rankingType'].forEach(key => params.delete(key));
 
     if (normalized.tab !== 'home') {
         params.set('tab', normalized.tab);
@@ -536,6 +537,7 @@ function buildAppHistoryUrl(state) {
         if (competition.subtab !== 'standings') params.set('competitionSubtab', competition.subtab);
         if (competition.level !== '超级') params.set('level', competition.level);
         if (competition.cupPhase === 'group') params.set('cupPhase', competition.cupPhase);
+        if (competition.cupView === 'results') params.set('cupView', competition.cupView);
         if (competition.round) params.set('round', String(competition.round));
         if (competition.workFilter !== 'all') params.set('workFilter', competition.workFilter);
         if (competition.rankingType !== 'goals') params.set('rankingType', competition.rankingType);
@@ -557,6 +559,7 @@ function applyInitialUrlState(rawState) {
     const competitionSubtab = params.get('competitionSubtab');
     const competitionLevel = params.get('level');
     const competitionCupPhase = params.get('cupPhase');
+    const competitionCupView = params.get('cupView');
     const competitionRound = Number(params.get('round'));
     const workFilter = params.get('workFilter');
     const rankingType = params.get('rankingType');
@@ -613,6 +616,9 @@ function applyInitialUrlState(rawState) {
         }
         if (['group', 'knockout'].includes(competitionCupPhase)) {
             state.competition.cupPhase = competitionCupPhase;
+        }
+        if (['groups', 'results'].includes(competitionCupView)) {
+            state.competition.cupView = competitionCupView;
         }
         if (Number.isFinite(competitionRound) && competitionRound > 0) {
             state.competition.round = competitionRound;
@@ -690,6 +696,7 @@ function captureCompetitionHistoryState() {
     const workFilter = typeof currentCompetitionWorkFilter === 'string' ? currentCompetitionWorkFilter : 'all';
     const rankingType = typeof currentPlayerRankingType === 'string' ? currentPlayerRankingType : 'goals';
     const cupPhase = typeof currentCupPhase === 'string' ? currentCupPhase : 'knockout';
+    const cupView = typeof currentCupGroupScheduleView === 'string' ? currentCupGroupScheduleView : 'groups';
     return {
         subtab: ['schedule', 'playerRankings', 'suspensions'].includes(subtab)
             ? subtab
@@ -698,6 +705,7 @@ function captureCompetitionHistoryState() {
             ? level
             : '超级',
         cupPhase: cupPhase === 'group' ? 'group' : 'knockout',
+        cupView: cupView === 'results' ? 'results' : 'groups',
         round: Number(document.getElementById('scheduleRoundSelect')?.value || 0) || null,
         workFilter: ['missing_result', 'missing_events', 'invalid'].includes(workFilter)
             ? workFilter
@@ -753,6 +761,7 @@ function normalizeHistoryState(rawState, index = appHistoryIndex) {
                 ? baseState.competition.level
                 : '超级',
             cupPhase: baseState.competition?.cupPhase === 'group' ? 'group' : 'knockout',
+            cupView: baseState.competition?.cupView === 'results' ? 'results' : 'groups',
             round: Number.isFinite(Number(baseState.competition?.round)) && Number(baseState.competition.round) > 0
                 ? Number(baseState.competition.round)
                 : null,
@@ -878,6 +887,7 @@ async function restoreCompetitionHistoryState(competitionState) {
     if (typeof showCompetitionSubtab !== 'function') return;
     currentCompetitionLevel = competitionState.level || '超级';
     currentCupPhase = competitionState.cupPhase === 'group' ? 'group' : 'knockout';
+    currentCupGroupScheduleView = competitionState.cupView === 'results' ? 'results' : 'groups';
     currentPlayerRankingType = competitionState.rankingType || 'goals';
     currentCompetitionWorkFilter = competitionState.workFilter || 'all';
     showCompetitionSubtab(competitionState.subtab || 'standings');
@@ -1135,6 +1145,7 @@ async function refreshPlayerDataset() {
     allPlayers = await playersRes.json();
     currentPlayers = [...allPlayers];
     playersLoadPromise = null;
+    if (typeof invalidateCompetitionPlayerCaches === 'function') invalidateCompetitionPlayerCaches();
     if (typeof markRosterRenderStale === 'function') {
         markRosterRenderStale();
     }

@@ -22,6 +22,7 @@ from schemas_read import (
     HomePromotionResponse,
     HomeSummaryResponse,
     CupBracketResponse,
+    CupGroupStageResponse,
     LeagueInfoResponse,
     ScheduleResponse,
     PlayerReactionActionResponse,
@@ -29,6 +30,7 @@ from schemas_read import (
     PlayerPowerCalibrationResponse,
     PlayerPowerRankingResponse,
     TeamPowerSummariesResponse,
+    TeamCupOutlookResponse,
     PlayerAttributeDetailResponse,
     PlayerRankingsResponse,
     PlayerResponse,
@@ -180,6 +182,14 @@ def build_public_router(get_db):
     @router.get("/api/cups/{competition}/bracket", response_model=CupBracketResponse)
     def get_cup_bracket(competition: str, db: Session = Depends(get_db)):
         return cup_service.get_bracket(db, competition)
+
+    @router.get("/api/cups/{competition}/groups", response_model=CupGroupStageResponse)
+    def get_cup_group_stage(competition: str, db: Session = Depends(get_db)):
+        return cup_service.get_group_stage(db, competition)
+
+    @router.get("/api/teams/{team_id}/cup-outlook", response_model=TeamCupOutlookResponse)
+    def get_team_cup_outlook(team_id: int, db: Session = Depends(get_db)):
+        return cup_service.get_team_cup_outlook(db, team_id)
 
     @router.get("/api/candidate-lists", response_model=list[CandidateListSummaryResponse])
     def get_candidate_lists(db: Session = Depends(get_db)):

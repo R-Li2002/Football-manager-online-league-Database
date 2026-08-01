@@ -37,6 +37,8 @@ from schemas_write import (
     CandidateListPlayerCommitRequest,
     CandidateListPlayerPreviewRequest,
     CandidateListUpsertRequest,
+    CupGroupMatchResultUpdateRequest,
+    CupGroupUpdateRequest,
     CupMatchResultUpdateRequest,
     CupMatchTeamsUpdateRequest,
     FishPlayerRequest,
@@ -56,7 +58,7 @@ from schemas_write import (
     TransferRequest,
     UpdateUidRequest,
 )
-from services import admin_write_service, auth_service, candidate_list_service, coach_service, competition_work_service, import_upload_service, suspension_service, team_lineup_service, team_logo_match_service, team_logo_service
+from services import admin_write_service, auth_service, candidate_list_service, coach_service, competition_work_service, import_upload_service, site_note_service, suspension_service, team_lineup_service, team_logo_match_service, team_logo_service
 
 COACH_SESSION_COOKIE_NAME = "coach_session_token"
 ADMIN_SESSION_COOKIE_NAME = "session_token"
@@ -708,6 +710,26 @@ def build_admin_write_router(
         admin: str = Depends(verify_schedule_manager),
     ):
         return admin_write_service.update_cup_match_teams(db, admin, match_id, request, write_to_log)
+
+    @router.put("/api/admin/cups/{competition}/groups/{group_no}", response_model=AdminActionResponse)
+    def update_cup_group(
+        competition: str,
+        group_no: int,
+        request: CupGroupUpdateRequest,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_schedule_manager),
+    ):
+        return admin_write_service.update_cup_group(db, admin, competition, group_no, request, write_to_log)
+
+    @router.patch("/api/admin/cups/{competition}/group-matches/{match_id}", response_model=AdminActionResponse)
+    def update_cup_group_match_result(
+        competition: str,
+        match_id: int,
+        request: CupGroupMatchResultUpdateRequest,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_schedule_manager),
+    ):
+        return admin_write_service.update_cup_group_match_result(db, admin, competition, match_id, request, write_to_log)
 
     @router.patch("/api/admin/cups/matches/{match_id}/result", response_model=AdminActionResponse)
     def update_cup_match_result(

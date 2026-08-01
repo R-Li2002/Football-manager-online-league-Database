@@ -172,6 +172,12 @@ function syncDatabaseSubtabUI() {
         tacticsButton.classList.toggle('active', active);
         tacticsButton.setAttribute('aria-selected', active ? 'true' : 'false');
     }
+    const activeButton = [searchButton, candidatesButton, powerButton, tacticsButton, leaderboardButton]
+        .find(button => button?.classList.contains('active'));
+    const tablist = activeButton?.closest?.('.database-subtabs');
+    if (activeButton && tablist && tablist.scrollWidth > tablist.clientWidth) {
+        requestAnimationFrame(() => activeButton.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'}));
+    }
 }
 
 function populateReactionLeaderboardTeamSelect() {

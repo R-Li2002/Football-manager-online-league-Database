@@ -7,9 +7,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import Match, Player, Team
+from models import Match, MatchPlayerEvent, Player, Team
 from schemas_write import MatchBatchUpdateItem, MatchBatchUpdateRequest, MatchPlayerEventUpdateItem, MatchUpdateRequest
-from services import match_service, player_ranking_service
+from services import competition_work_service, match_service, player_ranking_service
 
 
 class MatchServiceTest(unittest.TestCase):
@@ -47,6 +47,21 @@ class MatchServiceTest(unittest.TestCase):
         self.assertEqual((fixtures[0].level, fixtures[0].round_no), ("超级", 1))
         self.assertEqual((fixtures[0].home_team_name, fixtures[0].away_team_name), ("Alpha", "Beta"))
         self.assertEqual((fixtures[1].round_no, fixtures[1].home_team_name, fixtures[1].away_team_name), (2, "Beta", "Alpha"))
+
+    def test_parse_schedule_does_not_treat_numeric_team_names_as_round_headers(self):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "乙级赛程"
+        ws.append([None, None, 1, None, None, None, 2])
+        ws.append([None, "Bayer 04", "vs", "FC Heidenheim 1846", None, "FC Heidenheim 1846", "vs", "Bayer 04"])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "numeric-team-names.xlsx"
+            wb.save(path)
+            fixtures = match_service.parse_schedule_workbook(path)
+
+        self.assertEqual(len(fixtures), 2)
+        self.assertEqual((fixtures[0].round_no, fixtures[0].home_team_name, fixtures[0].away_team_name), (1, "Bayer 04", "FC Heidenheim 1846"))
+        self.assertEqual((fixtures[1].round_no, fixtures[1].home_team_name, fixtures[1].away_team_name), (2, "FC Heidenheim 1846", "Bayer 04"))
 
     def test_standings_are_calculated_from_played_matches(self):
         alpha = self.db.query(Team).filter(Team.name == "Alpha").one()
@@ -143,6 +158,16 @@ class MatchServiceTest(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(match.home_team_id, leipzig.id)
         self.assertEqual(logs[0][0], "赛程导入")
+
+    def test_schedule_alias_resolves_bayer_04(self):
+        team = Team(name="Bayer 04 Leverkusen", level="乙级", manager="Bayer Boss")
+        self.db.add(team)
+        self.db.commit()
+
+        resolved = match_service._resolve_schedule_team(self.db, None, "Bayer 04")
+
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved.id, team.id)
 
     def test_update_match_result_marks_played_and_recalculates_standings(self):
         match = Match(level="超级", round_no=1, home_team_name="Alpha", away_team_name="Beta", status="scheduled")
@@ -244,6 +269,58 @@ class MatchServiceTest(unittest.TestCase):
         self.assertEqual(coverage.goal_quantity, 2)
         self.assertEqual(coverage.assist_quantity, 1)
         self.assertEqual(coverage.mvp_quantity, 1)
+
+    def test_own_goal_completes_score_without_crediting_player_ranking(self):
+        alpha = self.db.query(Team).filter(Team.name == "Alpha").one()
+        beta = self.db.query(Team).filter(Team.name == "Beta").one()
+        alpha_scorer = Player(uid=301, name="Alpha Scorer", team_id=alpha.id, team_name="Alpha")
+        beta_scorer = Player(uid=302, name="Beta Scorer", team_id=beta.id, team_name="Beta")
+        match = Match(
+            level="超级",
+            round_no=1,
+            home_team_id=alpha.id,
+            home_team_name="Alpha",
+            away_team_id=beta.id,
+            away_team_name="Beta",
+            status="scheduled",
+        )
+        self.db.add_all([alpha_scorer, beta_scorer, match])
+        self.db.commit()
+
+        response = match_service.update_match_result(
+            self.db,
+            "admin",
+            match.id,
+            MatchUpdateRequest(
+                home_score=2,
+                away_score=1,
+                status="played",
+                events=[
+                    MatchPlayerEventUpdateItem(team_name="Alpha", player_uid=301, player_name="Alpha Scorer", event_type="goal"),
+                    MatchPlayerEventUpdateItem(team_name="Alpha", player_uid=None, player_name="乌龙球", event_type="own_goal"),
+                    MatchPlayerEventUpdateItem(team_name="Beta", player_uid=302, player_name="Beta Scorer", event_type="goal"),
+                    MatchPlayerEventUpdateItem(team_name="Beta", player_uid=302, player_name="Beta Scorer", event_type="mvp"),
+                ],
+            ),
+            lambda operation, details, operator: None,
+        )
+
+        self.assertTrue(response["success"])
+        events = self.db.query(MatchPlayerEvent).filter(MatchPlayerEvent.match_id == match.id).all()
+        own_goal = next(event for event in events if event.event_type == "own_goal")
+        self.assertIsNone(own_goal.player_uid)
+        self.assertEqual(own_goal.player_name, "乌龙球")
+        is_ready, events_ready, issue_codes, issue_messages = competition_work_service.evaluate_match_readiness(match, events)
+        self.assertTrue(is_ready)
+        self.assertTrue(events_ready)
+        self.assertNotIn("missing_events", issue_codes)
+        self.assertFalse(any("还缺少" in message for message in issue_messages))
+
+        rankings = player_ranking_service.get_player_rankings(self.db)
+        rows_by_name = {row.player_name: row for row in rankings.rows if row.level == "超级"}
+        self.assertEqual(rows_by_name["Alpha Scorer"].goals, 1)
+        self.assertEqual(rows_by_name["Beta Scorer"].goals, 1)
+        self.assertNotIn("乌龙球", rows_by_name)
 
     def test_player_ranking_coverage_reports_played_matches_missing_events(self):
         self.db.add(

@@ -3,7 +3,11 @@ const fs = require('fs');
 
 const app = fs.readFileSync('static/app.js', 'utf8');
 const html = fs.readFileSync('static/app.html', 'utf8');
-const css = fs.readFileSync('static/app.css', 'utf8');
+const css = [
+    fs.readFileSync('static/css/pages/team.css', 'utf8'),
+    fs.readFileSync('static/css/responsive.css', 'utf8'),
+].join('\n');
+const shellCss = fs.readFileSync('static/css/shell.css', 'utf8');
 const team = fs.readFileSync('static/js/app.team.js', 'utf8');
 const players = fs.readFileSync('static/js/app.players.js', 'utf8');
 const coaches = fs.readFileSync('static/js/app.coaches.js', 'utf8');
@@ -39,6 +43,7 @@ assert(team.includes("linkedTeam?.level || '超级'"), 'mobile team directory sh
 assert(team.includes("openTeamDetail(decodeURIComponent('${encodedName}'))"), 'landing team cards should open team detail');
 assert(team.includes('/api/attributes/power-ranking?shape=all&limit=all&team=${encoded}'), 'all growth shapes should be loaded for CA estimation');
 assert(team.includes('/api/teams/${team.id}/lineup'), 'saved team lineup should be loaded');
+assert(team.includes('/api/teams/${team.id}/cup-outlook'), 'team cup outlook should be loaded');
 assert(team.includes("fetchJsonOrThrow('/api/teams/power-summaries')"), 'level-wide team power summaries should be loaded');
 assert(team.includes('renderRosterFormationPreview({teamName: team.name'), 'team center should render an eleven-player pitch preview');
 assert(players.includes('...Object.keys(picks)'), 'saved free-position lineup slots should remain visible in the team preview');
@@ -46,7 +51,14 @@ assert(team.includes('function openTeamLineupEditor()'), 'team lineup editor sho
 assert(team.includes('function teamDetailGroupMatchSeries('), 'consecutive rounds against one opponent should be grouped');
 assert(team.includes('upcomingMatches.slice(0, 4)'), 'the merged upcoming fixture panel should show four rounds at once');
 assert(team.includes('team-next-series-list'), 'upcoming fixtures should use the grouped future-schedule card style');
-assert.strictEqual((team.match(/<h2>后续赛程<\/h2>/g) || []).length, 1, 'team center should render only one future schedule panel');
+assert.strictEqual((team.match(/<h2>赛事征程<\/h2>/g) || []).length, 1, 'team center should render one competition journey panel');
+assert(team.includes('function setTeamJourneyView(view)'), 'competition journey should switch between league and cups');
+assert(team.includes('剩余 ${teamDetailSafeNumber(item.remaining_opponent_count)} 个对手'), 'cup journey should show remaining distinct opponents');
+assert(team.includes('${teamDetailSafeNumber(opponent.played_legs)}</b>/2'), 'cup journey should show two-leg opponent progress');
+assert(team.includes('item.qualification_label'), 'cup journey should show the canonical qualification result');
+assert(team.includes("item.phase === 'knockout'"), 'specific next fixture details should be limited to the knockout phase');
+assert(!team.includes("item.phase === 'group' ? '下一组对阵'"), 'group journey should not render specific next matchup details');
+assert(team.includes("currentCupGroupScheduleView = 'results'"), 'cup group journey should open the group results view');
 assert(!team.includes('<h2>接下来 4 轮</h2>'), 'the duplicate next-four panel title should be removed');
 assert(!team.includes("<h2>下一组对阵</h2>"), 'the old next-pair UI should be removed');
 assert(!team.includes(" : 'VS'"), 'unplayed team-center fixtures should not render VS labels');
@@ -78,12 +90,15 @@ assert(team.includes('<span>HEIGO 战力</span><small>前 '), 'power percentile 
 assert(team.includes('Promise.allSettled'), 'partial API failure should not break the whole page');
 
 assert(css.includes('.team-detail-primary-grid'), 'desktop team layout should exist');
-assert(css.includes('.team-nav-icon .team-nav-shirt'), 'team center jersey icon should inherit the navigation theme color');
-assert(css.includes('.team-detail-primary-grid, .team-detail-secondary-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(290px, .75fr);'), 'the four core team modules should share the same column boundary');
-assert(css.includes('.team-match-venue { font-size: .78rem;'), 'home and away labels should be visually prominent');
+assert.match(css, /\.team-detail-side-stack\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-rows:\s*auto auto;[\s\S]*?align-content:\s*start;/, 'team journey and discipline cards should keep natural height instead of stretching to the lineup');
+assert(shellCss.includes('.team-nav-icon .team-nav-shirt'), 'team center jersey icon should inherit the navigation theme color from the shell layer');
+assert.match(css, /\.team-detail-primary-grid,\s*\.team-detail-secondary-grid\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0, 1\.65fr\) minmax\(290px, \.75fr\);/, 'the four core team modules should share the same column boundary');
+assert.match(css, /\.team-match-venue\s*\{[\s\S]*?font-size:\s*\.78rem;/, 'home and away labels should be visually prominent');
 assert(css.includes('.team-center-lineup-capture'), 'embedded football pitch styling should exist');
 assert(css.includes('.team-match-series-card'), 'two-leg fixture styling should exist');
 assert(css.includes('.team-next-series-list'), 'merged upcoming fixture styling should exist');
+assert(css.includes('.team-journey-tabs'), 'competition journey tabs should be styled');
+assert(css.includes('.team-cup-opponent-row'), 'cup opponent progress should be styled');
 assert(css.includes('.team-power-summary-values'), 'the dual HEIGO average card should be styled');
 assert(css.includes('.team-power-heigo small'), 'HEIGO percentile should have a dedicated label style');
 assert(css.includes('.team-roster-export-card'), 'roster image export styling should exist');
@@ -95,13 +110,13 @@ assert(css.includes('.team-center-league-group.is-collapsed .team-center-club-gr
 assert(team.includes('return options.compact ? renderLeagueLevelSignature'), 'team center should reuse the shared compact league signature');
 assert(team.includes('${renderLeagueTierSet()}'), 'team center welcome should display the three league signatures together');
 assert(css.includes('.team-center-coach-access'), 'coach login shortcut should have dedicated responsive styling');
-assert(css.includes('--team-coach-accent: #25a96f; min-width: 250px; min-height: 74px;'), 'coach login shortcut should use the team UI green accent and a larger click target');
-assert(css.includes('body:not(.light-mode) .team-center-coach-access { --team-coach-accent: #36d6a0; }'), 'coach login shortcut should adapt to the dark team-center background');
-assert(css.includes('.team-center-switcher-control select { width: 100%; min-width: 0; min-height: 52px;'), 'detail team selector should be high contrast and touch friendly');
+assert.match(css, /\.team-center-coach-access\s*\{[\s\S]*?--team-coach-accent:\s*#25a96f;[\s\S]*?min-width:\s*250px;[\s\S]*?min-height:\s*74px;/, 'coach login shortcut should use the team UI green accent and a larger click target');
+assert.match(css, /body:not\(\.light-mode\) \.team-center-coach-access\s*\{\s*--team-coach-accent:\s*#36d6a0;/, 'coach login shortcut should adapt to the dark team-center background');
+assert.match(css, /\.team-center-switcher-control select\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?min-height:\s*52px;/, 'detail team selector should be high contrast and touch friendly');
 assert(css.includes('@media (max-width: 700px)'), 'mobile team layout should exist');
-assert(css.includes('.team-detail-toolbar-meta > span:last-child { display: none; }'), 'mobile toolbar should hide only its direct metadata child');
-assert(css.includes('.team-detail-toolbar-meta .league-level-signature { width: 40px; height: 40px; min-height: 40px; padding: 0; justify-content: center;'), 'mobile league badge should use a centered square frame');
-assert(css.includes('.team-detail-toolbar-meta .league-level-copy { display: none; }'), 'mobile league badge should intentionally hide its copy without affecting alignment');
+assert.match(css, /\.team-detail-toolbar-meta > span:last-child\s*\{\s*display:\s*none;/, 'mobile toolbar should hide only its direct metadata child');
+assert.match(css, /\.team-detail-toolbar-meta \.league-level-signature\s*\{[\s\S]*?width:\s*40px;[\s\S]*?height:\s*40px;[\s\S]*?min-height:\s*40px;[\s\S]*?padding:\s*0;[\s\S]*?justify-content:\s*center;/, 'mobile league badge should use a centered square frame');
+assert.match(css, /\.team-detail-toolbar-meta \.league-level-copy\s*\{\s*display:\s*none;/, 'mobile league badge should intentionally hide its copy without affecting alignment');
 assert(css.includes('@media (prefers-reduced-motion: reduce)'), 'reduced motion should be respected');
 
 console.log('frontend team detail checks passed');

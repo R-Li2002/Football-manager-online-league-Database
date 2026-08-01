@@ -3,7 +3,11 @@ const fs = require('fs');
 
 const app = fs.readFileSync('static/app.js', 'utf8');
 const html = fs.readFileSync('static/app.html', 'utf8');
-const css = fs.readFileSync('static/app.css', 'utf8');
+const css = [
+    fs.readFileSync('static/app.css', 'utf8'),
+    fs.readFileSync('static/css/pages/team.css', 'utf8'),
+    fs.readFileSync('static/css/responsive.css', 'utf8'),
+].join('\n');
 const core = fs.readFileSync('static/js/app.core.js', 'utf8');
 const overview = fs.readFileSync('static/js/app.overview.js', 'utf8');
 const players = fs.readFileSync('static/js/app.players.js', 'utf8');

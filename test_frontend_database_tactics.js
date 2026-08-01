@@ -4,7 +4,11 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const html = fs.readFileSync(path.join(__dirname, 'static/app.html'), 'utf8');
-const css = fs.readFileSync(path.join(__dirname, 'static/app.css'), 'utf8');
+const css = [
+    fs.readFileSync(path.join(__dirname, 'static/app.css'), 'utf8'),
+    fs.readFileSync(path.join(__dirname, 'static/css/pages/database.css'), 'utf8'),
+    fs.readFileSync(path.join(__dirname, 'static/css/responsive.css'), 'utf8'),
+].join('\n');
 const app = fs.readFileSync(path.join(__dirname, 'static/app.js'), 'utf8');
 const tactics = fs.readFileSync(path.join(__dirname, 'static/js/database.tactics.js'), 'utf8');
 
@@ -23,8 +27,8 @@ assert.match(tactics, /function setDatabaseTacticsDropPoint/);
 assert.match(css, /#dbTacticsView \.db-tactics-pitch/);
 assert.match(css, /@media \(max-width: 640px\)[\s\S]*db-tactics-player-card/);
 assert.match(css, /touch-action: none/);
-assert.match(css, /white-space: normal; overflow-wrap: break-word; word-break: normal/);
-assert.match(css, /db-tactics-player-card strong \{ grid-column: 2 \/ 4/);
+assert.match(css, /white-space:\s*normal;\s*overflow-wrap:\s*break-word;\s*word-break:\s*normal/);
+assert.match(css, /db-tactics-player-card strong\s*\{[^}]*grid-column:\s*2 \/ 4/s);
 
 const storage = new Map();
 const context = {

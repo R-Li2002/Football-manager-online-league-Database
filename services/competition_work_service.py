@@ -206,7 +206,7 @@ def _get_or_create_state(db: Session, level: str, round_start: int) -> Competiti
 
 
 def _event_totals(events: list[MatchPlayerEvent]) -> tuple[int, int, int]:
-    goals = sum(int(item.quantity or 0) for item in events if item.event_type == "goal")
+    goals = sum(int(item.quantity or 0) for item in events if item.event_type in {"goal", "own_goal"})
     assists = sum(int(item.quantity or 0) for item in events if item.event_type == "assist")
     mvps = sum(int(item.quantity or 0) for item in events if item.event_type == "mvp")
     return goals, assists, mvps

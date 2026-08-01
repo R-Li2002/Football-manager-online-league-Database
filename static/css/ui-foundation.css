@@ -3,7 +3,7 @@
     font-family: "HEIGO UI CN";
     src: url("/static/font/heigo-ui-cn.woff2") format("woff2");
     font-style: normal;
-    font-weight: 400 900;
+    font-weight: 400;
     font-display: swap;
 }
 
@@ -88,7 +88,8 @@ html {
 body {
     line-height: 1.5;
     text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
+    -webkit-font-smoothing: auto;
+    font-synthesis: weight;
 }
 
 button,
@@ -96,6 +97,11 @@ input,
 select,
 textarea {
     line-height: 1.25;
+    font-weight: 500;
+}
+
+:where(th, label, summary) {
+    font-weight: 600;
 }
 
 ::selection {

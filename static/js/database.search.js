@@ -1234,7 +1234,7 @@ function updateCandidateListPageHeader() {
     const head = document.querySelector('.candidate-lists-head');
     const title = document.getElementById('candidateListPageTitle');
     const description = document.getElementById('candidateListPageDescription');
-    if (head) head.classList.toggle('is-public-search-style', !canManageCandidateLists);
+    if (head) head.classList.remove('is-public-search-style');
     if (title) title.textContent = '候选名单';
     if (description) {
         description.textContent = canManageCandidateLists
@@ -1393,7 +1393,7 @@ function renderPublicCandidateListsBoard() {
     const filteredLists = getFilteredPublicCandidateLists();
     const resultSummary = getCandidatePublicResultLabel(filteredLists.length);
     board.innerHTML = `
-        <div class="search-section candidate-public-search-section">
+        <div class="search-section candidate-public-search-section database-filter-card surface-card">
             <div class="candidate-public-compact-head">
                 <div>
                     <h2>候选名单</h2>
@@ -1418,7 +1418,7 @@ function renderPublicCandidateListsBoard() {
                 <button class="btn btn-primary" type="button" onclick="renderCandidateListsBoard()">搜索</button>
             </div>
         </div>
-        <div class="table-container candidate-public-results-panel">
+        <div class="table-container candidate-public-results-panel database-results-panel surface-card">
             <div class="table-header-row">
                 <div class="database-table-heading">
                     <h2 class="table-title">候选名单列表</h2>
@@ -2441,10 +2441,11 @@ function renderReactionLeaderboard(payload) {
 
     const items = Array.isArray(payload?.items) ? payload.items : [];
     if (!items.length) {
-        table.innerHTML = '<div class="no-data">当前筛选条件下还没有互动数据</div>';
+        table.innerHTML = '<div class="database-empty-state"><strong>当前筛选条件下还没有互动数据</strong><small>可以切换榜单类型、球队或显示数量后重试。</small></div>';
         return;
     }
 
+    const playerAction = item => `showPlayerDetail(${item.uid}, {returnTab: 'database', returnSubtab: 'leaderboard', version: '${escapeHtml(item.data_version)}'})`;
     table.innerHTML = `
         <table class="db-reaction-table" aria-label="球员互动排行榜">
             <thead>
@@ -2465,7 +2466,7 @@ function renderReactionLeaderboard(payload) {
                 ${items.map((item, index) => `
                     <tr>
                         <td class="numeric-cell"><span class="leaderboard-rank-badge">${index + 1}</span></td>
-                        <td><span class="player-link" onclick="showPlayerDetail(${item.uid}, {returnTab: 'database', returnSubtab: 'leaderboard', version: '${escapeHtml(item.data_version)}'})">${escapeHtml(item.name)}</span></td>
+                        <td><button class="player-link reaction-player-link" type="button" onclick="${playerAction(item)}">${escapeHtml(item.name)}</button></td>
                         <td class="numeric-cell">${escapeHtml(item.uid)}</td>
                         <td class="${item.heigo_club !== '大海' ? 'heigo-club' : ''}">${escapeHtml(item.heigo_club || '大海')}</td>
                         <td>${escapeHtml(item.position || '-')}</td>
@@ -2478,6 +2479,15 @@ function renderReactionLeaderboard(payload) {
                 `).join('')}
             </tbody>
         </table>
+        <div class="mobile-reaction-ranking is-${escapeHtml(metric)}" aria-label="球员互动排行榜移动列表">
+            ${items.map((item, index) => `
+                <article class="reaction-ranking-card">
+                    <span class="reaction-card-rank">${index + 1}</span>
+                    <div class="reaction-card-main"><button class="reaction-card-name" type="button" onclick="${playerAction(item)}">${escapeHtml(item.name)}</button><span>${escapeHtml(item.heigo_club || '大海')} · ${escapeHtml(item.position || '-')}</span><small>CA ${escapeHtml(item.ca ?? '-')} · PA ${escapeHtml(item.pa ?? '-')} · UID ${escapeHtml(item.uid)}</small></div>
+                    <div class="reaction-card-scores"><span class="${metric === 'flowers' ? 'is-active' : ''}"><small>鲜花</small><strong>${escapeHtml(item.flowers ?? 0)}</strong></span><span class="${metric === 'eggs' ? 'is-active' : ''}"><small>鸡蛋</small><strong>${escapeHtml(item.eggs ?? 0)}</strong></span><span class="${metric === 'net' ? 'is-active' : ''}"><small>净值</small><strong>${escapeHtml(item.net_score ?? 0)}</strong></span></div>
+                </article>
+            `).join('')}
+        </div>
     `;
 }
 

@@ -238,6 +238,8 @@ function assertRenderedRowsLinkBackToLeaderboard() {
     });
 
     assert.ok(elements.get('dbReactionLeaderboardTable').innerHTML.includes("returnSubtab: 'leaderboard'"));
+    assert.ok(elements.get('dbReactionLeaderboardTable').innerHTML.includes('mobile-reaction-ranking'));
+    assert.ok(elements.get('dbReactionLeaderboardTable').innerHTML.includes('reaction-ranking-card'));
 }
 
 function assertBackToListReturnsToLeaderboard() {
