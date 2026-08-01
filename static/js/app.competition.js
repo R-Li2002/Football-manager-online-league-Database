@@ -3510,22 +3510,38 @@ function renderMatchEventEditor(match) {
     const events = Array.isArray(match.events) ? match.events : [];
     const scorerEvents = events.filter(event => event.event_type !== 'mvp');
     const mvpEvent = events.find(event => event.event_type === 'mvp') || {event_type: 'mvp'};
+    const eventSummary = scorerEvents.length
+        ? `${scorerEvents.length} 条进球 / 助攻明细${mvpEvent.player_name ? ' · 已选本场最佳' : ''}`
+        : (mvpEvent.player_name ? '已选本场最佳' : '尚未添加比赛事件');
     return `
-        <div class="match-event-editor" id="match-events-${match.id}">
-            <div class="match-event-head">
-                <span>进球 / 助攻明细</span>
-                <button type="button" class="match-event-add" onclick="addMatchEventRow(${Number(match.id)})">添加</button>
-            </div>
-            <div class="match-event-list">
-                ${scorerEvents.map(event => renderMatchEventRow(match, event)).join('')}
-            </div>
-            <div class="match-mvp-editor">
+        <details class="match-event-editor" id="match-events-${match.id}">
+            <summary class="match-event-toggle">
+                <span class="match-event-toggle-copy">
+                    <strong>进球、助攻与本场最佳</strong>
+                    <small>${escapeHtml(eventSummary)}</small>
+                </span>
+                <span class="match-event-toggle-action" aria-hidden="true">
+                    <span class="match-event-toggle-closed">展开编辑</span>
+                    <span class="match-event-toggle-open">收起</span>
+                    <span class="match-event-toggle-chevron"></span>
+                </span>
+            </summary>
+            <div class="match-event-editor-body">
                 <div class="match-event-head">
-                    <span>本场最佳</span>
+                    <span>进球 / 助攻明细</span>
+                    <button type="button" class="match-event-add" onclick="addMatchEventRow(${Number(match.id)})">添加</button>
                 </div>
-                ${renderMatchEventRow(match, mvpEvent, {mode: 'mvp'})}
+                <div class="match-event-list">
+                    ${scorerEvents.map(event => renderMatchEventRow(match, event)).join('')}
+                </div>
+                <div class="match-mvp-editor">
+                    <div class="match-event-head">
+                        <span>本场最佳</span>
+                    </div>
+                    ${renderMatchEventRow(match, mvpEvent, {mode: 'mvp'})}
+                </div>
             </div>
-        </div>
+        </details>
     `;
 }
 

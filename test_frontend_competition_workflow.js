@@ -26,6 +26,9 @@ assert.match(
     'typing a scorer name should update suggestions without triggering an immediate auto-save',
 );
 assert.match(competitionCode, /<option value="own_goal"[^>]*>乌龙球<\/option>/, 'match events should offer an own-goal entry');
+assert.match(competitionCode, /<details class="match-event-editor"/, 'match-event editing should use a native collapsible region');
+assert.match(competitionCode, /<summary class="match-event-toggle">/, 'collapsed match-event editing should keep a clear accessible toggle');
+assert.doesNotMatch(competitionCode, /<details class="match-event-editor"[^>]*\sopen(?:\s|>)/, 'match-event editing should default to collapsed so schedule cards stay aligned');
 assert.match(competitionCode, /isOwnGoal \? null : findMatchEventPlayer/, 'own goals should not require a player lookup');
 assert.match(competitionCode, /\['goal', 'own_goal'\]\.includes\(event\.event_type\)/, 'mobile match totals should include own goals');
 assert.doesNotMatch(
