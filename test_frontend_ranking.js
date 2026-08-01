@@ -34,6 +34,8 @@ assert.match(ratingBoard.innerHTML, /排位积分榜/);
 assert.match(ratingBoard.innerHTML, /基础分/);
 assert.match(ratingBoard.innerHTML, /总分/);
 assert.match(ratingBoard.innerHTML, /Alpha FC/);
+assert.match(ratingBoard.innerHTML, /<small>超级<\/small>/);
+assert.doesNotMatch(ratingBoard.innerHTML, /超级级/);
 assert.match(ratingBoard.innerHTML, /添加排位比赛/);
 assert.match(ratingBoard.innerHTML, /2<\/b><i>:\s*<\/i><b>1/);
 assert.match(ratingBoard.innerHTML, /deleteRankingMatch\(8\)/);

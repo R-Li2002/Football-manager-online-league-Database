@@ -537,7 +537,7 @@ function renderRankingBoard() {
                         <tbody>${rows.map(row => `
                             <tr class="${Number(row.rank) <= 3 ? `is-podium is-rank-${Number(row.rank)}` : ''}">
                                 <td><span class="ranking-position">${Number(row.rank)}</span></td>
-                                <td><div class="ranking-team-cell"><span class="ranking-team-mark ${row.logo_path ? 'has-logo' : ''}">${getRankingTeamMark(row)}</span><div><strong>${escapeHtml(row.team_name)}</strong><small>${escapeHtml(row.level)}级</small></div></div></td>
+                                <td><div class="ranking-team-cell"><span class="ranking-team-mark ${row.logo_path ? 'has-logo' : ''}">${getRankingTeamMark(row)}</span><div><strong>${escapeHtml(row.team_name)}</strong><small>${escapeHtml(row.level)}</small></div></div></td>
                                 <td><strong class="ranking-base-points" title="${Number(row.base_points).toFixed(4)}">${formatRankingPoints(row.base_points)}</strong></td>
                                 <td><strong class="ranking-total-points" title="${Number(row.total_points).toFixed(4)}">${formatRankingPoints(row.total_points)}</strong></td>
                                 <td>${Number(row.matches)}</td><td>${Number(row.wins)}</td><td>${Number(row.losses)}</td>

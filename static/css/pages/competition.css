@@ -5193,7 +5193,7 @@ body:not(.light-mode) .competition-level-section {
 
 #competition .competition-primary-tabs {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 5px;
     padding: 5px;
     border-radius: 17px;
