@@ -44,6 +44,13 @@ assert(team.includes("openTeamDetail(decodeURIComponent('${encodedName}'))"), 'l
 assert(team.includes('/api/attributes/power-ranking?shape=all&limit=all&team=${encoded}'), 'all growth shapes should be loaded for CA estimation');
 assert(team.includes('/api/teams/${team.id}/lineup'), 'saved team lineup should be loaded');
 assert(team.includes('/api/teams/${team.id}/cup-outlook'), 'team cup outlook should be loaded');
+assert(team.includes("fetchJsonOrThrow('/api/site-notes')"), 'team center should load suspension update markers');
+assert(team.includes('function teamDetailSuspensionFreshness('), 'team center should compare the effective suspension round with the next fixture');
+assert(team.includes('teamNote || levelNote'), 'a team-specific suspension round should override its level marker');
+assert(team.includes('updatedRound < nextRound - 1'), 'a suspension marker should be stale only when it does not cover the next fixture');
+assert(team.includes('与下一场第 ${nextRound} 轮匹配'), 'a round-two marker should be shown as matching a round-three fixture');
+assert(team.includes('已覆盖下一场第 ${nextRound} 轮'), 'a newer marker should describe an earlier postponed fixture as covered');
+assert(team.includes('伤停轮次未匹配，阵容状态仍需确认'), 'stale data should not claim that the roster is definitively available');
 assert(team.includes("fetchJsonOrThrow('/api/teams/power-summaries')"), 'level-wide team power summaries should be loaded');
 assert(team.includes('renderRosterFormationPreview({teamName: team.name'), 'team center should render an eleven-player pitch preview');
 assert(players.includes('...Object.keys(picks)'), 'saved free-position lineup slots should remain visible in the team preview');
@@ -100,6 +107,7 @@ assert(css.includes('.team-next-series-list'), 'merged upcoming fixture styling 
 assert(css.includes('.team-journey-tabs'), 'competition journey tabs should be styled');
 assert(css.includes('.team-cup-opponent-row'), 'cup opponent progress should be styled');
 assert(css.includes('.team-power-summary-values'), 'the dual HEIGO average card should be styled');
+assert(css.includes('.team-discipline-freshness.is-stale'), 'stale suspension coverage should have a dedicated warning style');
 assert(css.includes('.team-power-heigo small'), 'HEIGO percentile should have a dedicated label style');
 assert(css.includes('.team-roster-export-card'), 'roster image export styling should exist');
 assert(css.includes('.team-roster-view-switch'), 'team roster should have a dedicated three-way view switch');

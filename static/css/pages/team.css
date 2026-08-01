@@ -1294,6 +1294,76 @@ body.light-mode .team-detail-player-link {
     background: color-mix(in srgb, #2ecc71 9%, transparent);
 }
 
+.team-discipline-freshness {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+    border-radius: 11px;
+    background: var(--bg-tertiary);
+}
+
+.team-discipline-freshness > span {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--text-secondary) 18%, transparent);
+    color: var(--text-secondary);
+    font-weight: 900;
+}
+
+.team-discipline-freshness div {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.team-discipline-freshness strong {
+    font-size: .78rem;
+}
+
+.team-discipline-freshness small {
+    color: var(--text-secondary);
+    font-size: .68rem;
+    line-height: 1.4;
+}
+
+.team-discipline-freshness.is-current {
+    border-color: color-mix(in srgb, #2ecc71 32%, transparent);
+    background: color-mix(in srgb, #2ecc71 8%, transparent);
+}
+
+.team-discipline-freshness.is-current > span {
+    background: #2ecc71;
+    color: #07180f;
+}
+
+.team-discipline-freshness.is-stale {
+    border-color: color-mix(in srgb, #f39c12 42%, transparent);
+    background: color-mix(in srgb, #f39c12 10%, transparent);
+}
+
+.team-discipline-freshness.is-stale > span {
+    background: #f39c12;
+    color: #241500;
+}
+
+.team-discipline-clear.is-stale,
+.team-discipline-clear.is-unknown {
+    background: color-mix(in srgb, #f39c12 7%, transparent);
+}
+
+.team-discipline-clear.is-stale > span,
+.team-discipline-clear.is-unknown > span {
+    background: #f39c12;
+    color: #241500;
+}
+
 .team-discipline-clear > span {
     width: 38px;
     height: 38px;

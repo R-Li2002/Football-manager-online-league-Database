@@ -339,16 +339,64 @@ function teamDetailPowerCore(items) {
     </article>`).join('')}</div>`;
 }
 
-function teamDetailDiscipline(teamSuspensions) {
-    if (!teamSuspensions) return '<div class="team-detail-empty-inline">暂无纪律数据。</div>';
+function teamDetailSuspensionFreshness(team, siteNotesPayload, nextMatch) {
+    const notes = Array.isArray(siteNotesPayload) ? siteNotesPayload : [];
+    const teamKey = `competition.suspensions.team.${Number(team?.id)}`;
+    const levelKey = `competition.suspensions.${String(team?.level || '')}`;
+    const teamNote = notes.find(item => item?.key === teamKey && item.round_no !== null && item.round_no !== undefined);
+    const levelNote = notes.find(item => item?.key === levelKey && item.round_no !== null && item.round_no !== undefined);
+    const marker = teamNote || levelNote;
+    const updatedRound = marker ? Number(marker.round_no) : null;
+    const nextRound = nextMatch ? teamDetailSafeNumber(nextMatch.round_no) : null;
+    const hasUpdatedRound = Number.isInteger(updatedRound) && updatedRound >= 0;
+
+    if (!hasUpdatedRound) {
+        return {
+            state: 'unknown',
+            title: '伤停轮次待确认',
+            detail: nextRound ? `下一场为第 ${nextRound} 轮，尚未标注伤停核对轮次` : '尚未标注伤停核对轮次',
+        };
+    }
+    if (!nextRound) {
+        return {
+            state: 'current',
+            title: updatedRound > 0 ? `伤停已核对至第 ${updatedRound} 轮` : '已完成赛季初伤停确认',
+            detail: '当前没有待进行的联赛比赛',
+        };
+    }
+    if (updatedRound < nextRound - 1) {
+        return {
+            state: 'stale',
+            title: `伤停仅核对至第 ${updatedRound} 轮`,
+            detail: `下一场为第 ${nextRound} 轮，落后 ${nextRound - updatedRound - 1} 轮未确认`,
+        };
+    }
+    const detail = updatedRound === nextRound - 1
+        ? `与下一场第 ${nextRound} 轮匹配`
+        : `已覆盖下一场第 ${nextRound} 轮`;
+    return {
+        state: 'current',
+        title: updatedRound > 0 ? `伤停已核对至第 ${updatedRound} 轮` : '已完成赛季初伤停确认',
+        detail,
+    };
+}
+
+function teamDetailDiscipline(teamSuspensions, freshness) {
+    const status = freshness || {state: 'unknown', title: '伤停轮次待确认', detail: '暂时无法判断数据时效'};
+    const freshnessMarkup = `<div class="team-discipline-freshness is-${escapeHtml(status.state)}"><span aria-hidden="true">${status.state === 'current' ? '✓' : status.state === 'stale' ? '!' : '?'}</span><div><strong>${escapeHtml(status.title)}</strong><small>${escapeHtml(status.detail)}</small></div></div>`;
+    if (!teamSuspensions) return `${freshnessMarkup}<div class="team-detail-empty-inline">暂无纪律数据。</div>`;
     const sections = [
         ['停赛', teamSuspensions.suspended || [], 'danger'],
         ['两黄', teamSuspensions.two_yellows || [], 'warning'],
         ['一黄', teamSuspensions.one_yellow || [], 'neutral'],
     ];
     const hasAny = sections.some(([, items]) => items.length);
-    if (!hasAny) return '<div class="team-discipline-clear"><span>✓</span><div><strong>阵容可用</strong><small>暂无黄牌累积或停赛记录</small></div></div>';
-    return `<div class="team-discipline-list">${sections.map(([label, items, tone]) => `<div class="team-discipline-row is-${tone}"><span>${label}</span><strong>${items.length}</strong><p>${items.map(item => escapeHtml(item.player_name || item.name || String(item))).join('、') || '无'}</p></div>`).join('')}</div>`;
+    if (!hasAny) {
+        const clearTitle = status.state === 'current' ? '阵容可用' : '暂无已登记伤停';
+        const clearDetail = status.state === 'current' ? '暂无黄牌累积或停赛记录' : '伤停轮次未匹配，阵容状态仍需确认';
+        return `${freshnessMarkup}<div class="team-discipline-clear is-${escapeHtml(status.state)}"><span>${status.state === 'current' ? '✓' : '!'}</span><div><strong>${clearTitle}</strong><small>${clearDetail}</small></div></div>`;
+    }
+    return `${freshnessMarkup}<div class="team-discipline-list">${sections.map(([label, items, tone]) => `<div class="team-discipline-row is-${tone}"><span>${label}</span><strong>${items.length}</strong><p>${items.map(item => escapeHtml(item.player_name || item.name || String(item))).join('、') || '无'}</p></div>`).join('')}</div>`;
 }
 
 function teamDetailRoster(players, powerByUid) {
@@ -851,7 +899,7 @@ function renderTeamCenterLanding() {
 function renderTeamDetailLoaded(data) {
     const root = document.getElementById('teamDetailRoot');
     if (!root || data.team.name !== currentTeamDetailName) return;
-    const {team, players, standings, matchesPayload, suspensionsPayload, powerPayload, lineupPayload, teamPowerSummaries, cupOutlookPayload} = data;
+    const {team, players, standings, matchesPayload, suspensionsPayload, powerPayload, lineupPayload, teamPowerSummaries, cupOutlookPayload, siteNotesPayload} = data;
     const allPowerItems = Array.isArray(powerPayload?.items) ? powerPayload.items : [];
     const powerByUid = teamDetailSelectPowerShapes(players, allPowerItems);
     const powerItems = [...powerByUid.values()].sort((a, b) => teamDetailSafeNumber(b.heigo_power) - teamDetailSafeNumber(a.heigo_power));
@@ -863,6 +911,7 @@ function renderTeamDetailLoaded(data) {
     const playedSeries = teamDetailGroupMatchSeries(playedMatches, team, 'desc');
     const upcomingFourSeries = teamDetailGroupMatchSeries(upcomingMatches.slice(0, 4), team, 'asc');
     const teamSuspensions = (Array.isArray(suspensionsPayload?.teams) ? suspensionsPayload.teams : []).find(item => item.team_name === team.name);
+    const suspensionFreshness = teamDetailSuspensionFreshness(team, siteNotesPayload, upcomingMatches[0]);
     const estimatedRosterAverage = powerItems.length ? powerItems.reduce((sum, item) => sum + teamDetailSafeNumber(item.heigo_power), 0) / powerItems.length : null;
     const wageCap = teamDetailGetWageCap(team);
     const lineupPlayers = teamDetailPlayersWithPower(players, powerByUid, team.name);
@@ -904,7 +953,7 @@ function renderTeamDetailLoaded(data) {
         <section class="team-panel team-lineup-panel surface-card"><div class="team-panel-header"><div><span class="panel-kicker">Starting XI</span><h2>11 人阵容预览</h2><p class="team-lineup-explain">${lineupPayload?.is_saved ? '主教练自定义阵容' : '当前展示系统推荐阵容，主教练可保存自定义阵型与首发。'}</p></div><div class="team-panel-actions"><button class="team-panel-link team-lineup-action team-lineup-copy" type="button" onclick="copyTeamLineupImage()">复制阵容图</button><button class="team-panel-link team-lineup-action team-lineup-edit" type="button" onclick="openTeamLineupEditor()">${lineupPayload?.can_edit ? '编辑阵容' : '查看阵容'} →</button></div></div>${renderRosterFormationPreview({teamName: team.name, players: lineupPlayers, formation: lineupPayload?.formation || '4-3-3', picks: lineupPayload?.picks || {}})}</section>
         <aside class="team-detail-side-stack">
             ${teamDetailJourneyPanel(team, upcomingFourSeries, cupOutlookPayload)}
-            <section class="team-panel surface-card"><div class="team-panel-header"><div><span class="panel-kicker">Availability</span><h2>纪律状态</h2></div></div>${teamDetailDiscipline(teamSuspensions)}</section>
+            <section class="team-panel surface-card"><div class="team-panel-header"><div><span class="panel-kicker">Availability</span><h2>纪律状态</h2></div></div>${teamDetailDiscipline(teamSuspensions, suspensionFreshness)}</section>
         </aside>
     </div>
     <div class="team-detail-secondary-grid">
@@ -928,6 +977,7 @@ async function loadTeamDetailData(teamName, options = {}) {
         fetchJsonOrThrow(`/api/teams/${team.id}/lineup`),
         loadTeamPowerSummaries(),
         fetchJsonOrThrow(`/api/teams/${team.id}/cup-outlook`),
+        fetchJsonOrThrow('/api/site-notes'),
     ]);
     const value = index => results[index].status === 'fulfilled' ? results[index].value : null;
     const data = {
@@ -940,6 +990,7 @@ async function loadTeamDetailData(teamName, options = {}) {
         lineupPayload: value(5) || {team_id: team.id, team_name: team.name, formation: '4-3-3', picks: {}, is_saved: false, can_edit: false},
         teamPowerSummaries: value(6),
         cupOutlookPayload: value(7) || {team_id: team.id, team_name: team.name, competitions: []},
+        siteNotesPayload: Array.isArray(value(8)) ? value(8) : [],
     };
     teamDetailCache.set(teamName, data);
     return data;
