@@ -9,6 +9,7 @@ from models import (
     CandidateList,
     Coach,
     CoachAccount,
+    CupMatch,
     DataFeedbackReport,
     OperationAudit,
 )
@@ -27,6 +28,7 @@ from services import auth_service, coach_service, competition_work_service, data
 CAPABILITY_LABELS = {
     "schedule.write": "赛程维护",
     "match_events.write": "比赛事件",
+    "cup_standings.write": "杯赛积分榜",
     "suspensions.write": "伤停维护",
     "candidate_lists.write": "候选名单",
     "roster.write": "球员操作",
@@ -43,6 +45,7 @@ CAPABILITY_LABELS = {
 FULL_ADMIN_CAPABILITIES = list(CAPABILITY_LABELS)
 WORK_CAPABILITIES = {
     "schedule": ("schedule.write", "match_events.write"),
+    "cup_standings": ("cup_standings.write",),
     "suspensions": ("suspensions.write",),
     "candidate_lists": ("candidate_lists.write",),
 }
@@ -58,6 +61,8 @@ def _admin_capabilities(role: str | None) -> list[str]:
     capabilities: list[str] = []
     if auth_service.can_manage_schedule(role):
         capabilities.extend(WORK_CAPABILITIES["schedule"])
+    if auth_service.can_manage_cup_standings(role):
+        capabilities.extend(WORK_CAPABILITIES["cup_standings"])
     if auth_service.can_manage_suspensions(role):
         capabilities.extend(WORK_CAPABILITIES["suspensions"])
     if auth_service.can_manage_candidate_lists(role):
@@ -69,6 +74,8 @@ def _coach_capabilities(account: CoachAccount) -> list[str]:
     capabilities = ["coach_profile.write_self"]
     if account.can_manage_schedule:
         capabilities.extend(WORK_CAPABILITIES["schedule"])
+    if account.can_manage_cup_standings:
+        capabilities.extend(WORK_CAPABILITIES["cup_standings"])
     if account.can_manage_suspensions:
         capabilities.extend(WORK_CAPABILITIES["suspensions"])
     if account.can_manage_candidate_lists:
@@ -170,6 +177,14 @@ def get_workspace_dashboard(db: Session, identity: WorkspaceIdentityResponse) ->
         metrics.append(_metric("schedule", "当前轮次待录结果", pending_matches, "当前工作轮次尚未确认结果的比赛", "competition", "schedule"))
         metrics.append(_metric("match_events", "当前轮次待补事件", missing_events, "当前工作轮次缺少进球、助攻或最佳球员", "competition", "schedule"))
         metrics.append(_metric("data_issues", "比赛数据异常", invalid_matches, "比分与比赛事件不一致的比赛", "competition", "schedule"))
+    if "cup_standings.write" in capabilities:
+        pending_cup_matches = (
+            db.query(func.count(CupMatch.id))
+            .filter(CupMatch.stage.like("group_%"), CupMatch.status != "played")
+            .scalar()
+            or 0
+        )
+        metrics.append(_metric("cup_standings", "杯赛待录比分", pending_cup_matches, "按小组逐对录入主客场比分，积分榜自动计算", "competition", "schedule"))
     if "suspensions.write" in capabilities:
         pending_confirmations = sum(
             1 for item in suspension_levels if item.total_matches > 0 and not item.suspension_confirmed

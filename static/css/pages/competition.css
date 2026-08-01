@@ -1574,6 +1574,204 @@ body:not(.light-mode) .standings-table tbody tr.is-relegation-zone {
     gap: 14px;
 }
 
+.cup-group-results-workbench {
+    display: grid;
+    gap: 12px;
+}
+
+.cup-group-results-tabs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid color-mix(in srgb, var(--cup-phase-color) 18%, var(--border-color));
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
+}
+
+.cup-group-results-tabs button {
+    min-height: 48px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.cup-group-results-tabs button:hover,
+.cup-group-results-tabs button:focus-visible {
+    border-color: color-mix(in srgb, var(--cup-phase-color) 34%, var(--border-color));
+    outline: 0;
+}
+
+.cup-group-results-tabs button.active {
+    border-color: color-mix(in srgb, var(--cup-phase-color) 48%, var(--border-color));
+    background: color-mix(in srgb, var(--cup-phase-soft) 74%, var(--surface-strong));
+    color: var(--text-primary);
+    box-shadow: inset 3px 0 0 var(--cup-phase-color);
+}
+
+.cup-group-results-tabs strong {
+    font-size: .76rem;
+}
+
+.cup-group-results-tabs small {
+    color: var(--cup-phase-color);
+    font: 800 .62rem/1 var(--font-data);
+}
+
+.cup-group-pair-add {
+    padding: 14px;
+    display: grid;
+    grid-template-columns: minmax(180px, .7fr) minmax(360px, 1.3fr);
+    gap: 14px;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    background: color-mix(in srgb, var(--cup-phase-soft) 34%, var(--surface-muted));
+}
+
+.cup-group-pair-add label {
+    display: grid;
+    gap: 3px;
+}
+
+.cup-group-pair-add label span {
+    font-size: .78rem;
+    font-weight: 800;
+}
+
+.cup-group-pair-add label small {
+    color: var(--text-secondary);
+    font-size: .66rem;
+}
+
+.cup-group-pair-add > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+}
+
+.cup-group-pair-add select {
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--surface-strong);
+    color: var(--text-primary);
+}
+
+.cup-group-pair-list {
+    padding: 12px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.cup-group-pair-card {
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--surface-strong) 96%, transparent);
+}
+
+.cup-group-pair-card.is-complete {
+    border-color: color-mix(in srgb, var(--state-success) 36%, var(--border-color));
+}
+
+.cup-group-pair-card > header {
+    min-height: 50px;
+    padding: 9px 11px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid var(--border-color);
+    background: color-mix(in srgb, var(--cup-phase-soft) 38%, var(--surface-muted));
+}
+
+.cup-group-pair-card > header div {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+}
+
+.cup-group-pair-card > header span {
+    color: var(--cup-phase-color);
+    font: 800 .56rem/1 var(--font-data);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.cup-group-pair-card > header strong {
+    overflow: hidden;
+    font-size: .74rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cup-group-pair-card > header em {
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+    font: 800 .6rem/1 var(--font-data);
+    font-style: normal;
+}
+
+.cup-group-pair-legs {
+    position: relative;
+    display: grid;
+}
+
+.cup-group-pair-legs::before {
+    content: '';
+    width: 2px;
+    position: absolute;
+    top: 16px;
+    bottom: 16px;
+    left: 39px;
+    z-index: 1;
+    background: color-mix(in srgb, var(--cup-phase-color) 28%, var(--border-color));
+}
+
+.cup-group-pair-leg {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 68px minmax(0, 1fr);
+    align-items: stretch;
+}
+
+.cup-group-pair-leg + .cup-group-pair-leg {
+    border-top: 1px solid var(--border-color);
+}
+
+.cup-group-pair-round {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    color: var(--cup-phase-color);
+    font: 800 .58rem/1.2 var(--font-data);
+}
+
+.cup-group-pair-leg .cup-group-match-row {
+    min-height: 58px;
+    border-left: 1px solid var(--border-color);
+}
+
+.cup-group-pair-complete {
+    padding: 11px 14px;
+    border-top: 1px solid var(--border-color);
+    color: var(--state-success);
+    font-size: .7rem;
+    font-weight: 700;
+    text-align: center;
+}
+
 .cup-group-results-card {
     overflow: hidden;
     padding: 0;
@@ -1946,6 +2144,20 @@ body:not(.light-mode) .standings-table tbody tr.is-relegation-zone {
     color: var(--text-secondary);
     font-size: .78rem;
     text-align: center;
+}
+
+.cup-group-results-empty strong,
+.cup-group-results-empty span {
+    display: block;
+}
+
+.cup-group-results-empty strong {
+    color: var(--text-primary);
+    font-size: .82rem;
+}
+
+.cup-group-results-empty span {
+    margin-top: 6px;
 }
 
 .cup-group-suggestions-floating {

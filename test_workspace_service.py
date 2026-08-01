@@ -44,6 +44,7 @@ class WorkspaceServiceTests(unittest.TestCase):
                 is_active=1,
                 must_change_password=0,
                 can_manage_schedule=1,
+                can_manage_cup_standings=1,
                 can_manage_suspensions=1,
                 can_manage_candidate_lists=0,
             ),
@@ -78,6 +79,7 @@ class WorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(coach_identity.account_type, "coach_worker")
         self.assertEqual(coach_identity.display_name, "大直塞")
         self.assertIn("schedule.write", coach_identity.capabilities)
+        self.assertIn("cup_standings.write", coach_identity.capabilities)
         self.assertIn("suspensions.write", coach_identity.capabilities)
         self.assertNotIn("candidate_lists.write", coach_identity.capabilities)
 

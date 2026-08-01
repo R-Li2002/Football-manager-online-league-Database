@@ -94,6 +94,7 @@ class AuthStatusResponse(BaseModel):
     role: Optional[str] = None
     can_manage_admin: bool = False
     can_manage_schedule: bool = False
+    can_manage_cup_standings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
 
@@ -953,6 +954,7 @@ class CoachAccountPublicResponse(BaseModel):
     team_name: Optional[str] = None
     must_change_password: bool = False
     can_manage_schedule: bool = False
+    can_manage_cup_standings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
 
@@ -964,6 +966,7 @@ class CoachAccountAdminResponse(BaseModel):
     is_active: bool = False
     must_change_password: bool = False
     can_manage_schedule: bool = False
+    can_manage_cup_standings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
     last_login_at: Optional[datetime] = None

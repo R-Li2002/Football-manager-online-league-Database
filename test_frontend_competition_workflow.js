@@ -5,6 +5,10 @@ const vm = require('node:vm');
 
 const competitionCode = fs.readFileSync(path.join(__dirname, 'static/js/app.competition.js'), 'utf8');
 const appCode = fs.readFileSync(path.join(__dirname, 'static/app.js'), 'utf8');
+const adminCode = fs.readFileSync(path.join(__dirname, 'static/js/app.admin.js'), 'utf8');
+const coachesCode = fs.readFileSync(path.join(__dirname, 'static/js/app.coaches.js'), 'utf8');
+const coreCode = fs.readFileSync(path.join(__dirname, 'static/js/app.core.js'), 'utf8');
+const competitionCss = fs.readFileSync(path.join(__dirname, 'static/css/pages/competition.css'), 'utf8');
 
 assert.match(
     appCode,
@@ -17,6 +21,17 @@ assert.match(
     'competition must load league players before rendering match-event and suspension suggestions',
 );
 assert.match(competitionCode, /function invalidateCompetitionPlayerCaches\(\)/, 'competition player caches should be reset when the roster dataset changes');
+assert.match(competitionCode, /function getCupGroupMatchPairs\(group\)/, 'cup results should combine both legs against one opponent');
+assert.match(competitionCode, /function addCupGroupResultPair\(groupNo\)/, 'cup score entry should add one home-and-away pair at a time');
+assert.match(competitionCode, /currentCupResultsGroupNo/, 'cup score entry should preserve the selected group');
+assert.match(competitionCode, /canManageCurrentCupStandings\(\)/, 'cup standings writes should use their own capability');
+assert.match(competitionCode, /添加一组主客场对阵/, 'cup score entry should expose an incremental pair action');
+assert.match(competitionCode, /cup-group-results-tabs/, 'cup score entry should split fixtures by group');
+assert.match(coreCode, /var canManageCupStandings = false;/, 'cup standings capability should have independent frontend state');
+assert.match(adminCode, /id="workspaceEditCupStandings"/, 'workspace account editor should expose cup standings as a separate permission');
+assert.match(adminCode, /can_manage_cup_standings: Boolean/, 'workspace account updates should persist the cup standings permission');
+assert.match(coachesCode, /id="coachAccountCupStandings"/, 'legacy coach account editor should expose the same permission');
+assert.match(competitionCss, /\.cup-group-pair-legs::before/, 'paired legs should use a visual home-and-away connector');
 assert.match(competitionCode, /competition\.suspensions\.team\.\$\{Number\(teamId\)\}/);
 assert.match(competitionCode, /\/api\/export\/suspensions\.xlsx\?level=/);
 assert.match(competitionCode, /导出 Excel/);
@@ -125,6 +140,7 @@ vm.createContext(context);
 vm.runInContext(competitionCode, context, {filename: 'app.competition.js'});
 
 context.canManageSchedule = true;
+context.canManageCupStandings = true;
 context.canManageSuspensions = true;
 context.currentCompetitionLevel = '超级';
 context.competitionWorkData = {
@@ -322,6 +338,30 @@ async function assertCupInitializationUsesExplicitResetAndFeedback() {
     assert.equal(initializeButton.textContent, '初始化冠军杯');
 }
 
+function assertCupGroupScoreEntryUsesIncrementalPairs() {
+    context.currentCompetitionLevel = '冠军杯';
+    context.canManageCupStandings = true;
+    const group = {
+        group_no: 1,
+        group_name: 'A',
+        matches: [
+            {id: 501, round_no: 1, home_team_id: 10, home_team_name: 'Alpha', away_team_id: 20, away_team_name: 'Beta', status: 'scheduled', home_score: null, away_score: null},
+            {id: 502, round_no: 2, home_team_id: 20, home_team_name: 'Beta', away_team_id: 10, away_team_name: 'Alpha', status: 'scheduled', home_score: null, away_score: null},
+        ],
+    };
+    const pairs = context.getCupGroupMatchPairs(group);
+    assert.equal(pairs.length, 1);
+    assert.equal(pairs[0].matches.length, 2, 'both legs should share one score-entry card');
+    let html = context.renderCupGroupResults({groups: [group]}, true);
+    assert.match(html, /添加一组主客场对阵/);
+    assert.doesNotMatch(html, /cup-group-score-501-home/, 'unstarted pairs should stay hidden until explicitly added');
+    context.cupGroupVisiblePairKeys.add(pairs[0].key);
+    html = context.renderCupGroupResults({groups: [group]}, true);
+    assert.match(html, /cup-group-score-501-home/);
+    assert.match(html, /cup-group-score-502-home/);
+    assert.equal(context.canManageCurrentCupStandings(), true);
+}
+
 async function main() {
     assertWorkPanelShowsActionableRoundProgress();
     assertReviewActionsFollowBackendCapabilities();
@@ -330,6 +370,7 @@ async function main() {
     assertMatchEventMatrixUsesRosterAndExistingValues();
     await assertResponsibilityDialogRefreshesEligibleAccounts();
     await assertCupInitializationUsesExplicitResetAndFeedback();
+    assertCupGroupScoreEntryUsesIncrementalPairs();
 }
 
 main().catch(error => {

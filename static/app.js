@@ -1073,6 +1073,7 @@ async function init() {
         currentAdminRole = adminData.role || '';
         isAdmin = Boolean(adminData.authenticated && adminData.can_manage_admin);
         canManageSchedule = Boolean(adminData.authenticated && adminData.can_manage_schedule);
+        canManageCupStandings = Boolean(adminData.authenticated && adminData.can_manage_cup_standings);
         canManageSuspensions = Boolean(adminData.authenticated && adminData.can_manage_suspensions);
         canManageCandidateLists = Boolean(adminData.authenticated && adminData.can_manage_candidate_lists);
         workspaceSessionState = workspaceSession || workspaceSessionState;
@@ -1081,6 +1082,7 @@ async function init() {
         if (!adminData.authenticated && workspaceSessionState.authenticated && workspaceSessionState.identity) {
             const capabilities = new Set(workspaceSessionState.identity.capabilities || []);
             canManageSchedule = capabilities.has('schedule.write');
+            canManageCupStandings = capabilities.has('cup_standings.write');
             canManageSuspensions = capabilities.has('suspensions.write');
             canManageCandidateLists = capabilities.has('candidate_lists.write');
         }

@@ -18,6 +18,7 @@ let workspaceAdminOperationsLoaded = false;
 const WORKSPACE_CAPABILITY_LABELS = {
     'schedule.write': '赛程维护',
     'match_events.write': '比赛事件',
+    'cup_standings.write': '杯赛积分榜',
     'suspensions.write': '伤停维护',
     'candidate_lists.write': '候选名单',
     'roster.write': '球员操作',
@@ -57,6 +58,7 @@ async function loadWorkspaceSession(options = {}) {
     if (identity) {
         const capabilities = new Set(identity.capabilities || []);
         canManageSchedule = capabilities.has('schedule.write');
+        canManageCupStandings = capabilities.has('cup_standings.write');
         canManageSuspensions = capabilities.has('suspensions.write');
         canManageCandidateLists = capabilities.has('candidate_lists.write');
         if (identity.source === 'coach_account') {
@@ -69,6 +71,7 @@ async function loadWorkspaceSession(options = {}) {
                 coach_uid: identity.coach_uid,
                 team_name: identity.team_name,
                 can_manage_schedule: canManageSchedule,
+                can_manage_cup_standings: canManageCupStandings,
                 can_manage_suspensions: canManageSuspensions,
                 can_manage_candidate_lists: canManageCandidateLists,
             };
@@ -505,6 +508,11 @@ async function openWorkspaceMetric(tabName, subtab, key) {
         return;
     }
     await openWorkspaceTask(tabName, subtab);
+    if (key === 'cup_standings' && typeof setCompetitionLevel === 'function') {
+        setCompetitionLevel('冠军杯');
+        if (typeof setCupGroupScheduleView === 'function') setCupGroupScheduleView('results');
+        return;
+    }
     if (tabName === 'competition' && subtab === 'schedule' && typeof openCompetitionWorkQueue === 'function') {
         if (typeof loadCompetitionWorkSummary === 'function') {
             await loadCompetitionWorkSummary();
@@ -657,6 +665,7 @@ function showWorkspaceAccountEditor(coachUid) {
                 <fieldset class="workspace-permission-grid">
                     <legend>联赛工作权限</legend>
                     <label><input id="workspaceEditSchedule" type="checkbox" ${capabilities.has('schedule.write') ? 'checked' : ''}>赛程与比赛事件</label>
+                    <label><input id="workspaceEditCupStandings" type="checkbox" ${capabilities.has('cup_standings.write') ? 'checked' : ''}>杯赛积分榜</label>
                     <label><input id="workspaceEditSuspensions" type="checkbox" ${capabilities.has('suspensions.write') ? 'checked' : ''}>纪律与伤停</label>
                     <label><input id="workspaceEditCandidates" type="checkbox" ${capabilities.has('candidate_lists.write') ? 'checked' : ''}>候选名单</label>
                 </fieldset>
@@ -756,6 +765,7 @@ async function saveWorkspaceAccount(coachUid) {
         password: document.getElementById('workspaceEditPassword')?.value || null,
         is_active: Boolean(document.getElementById('workspaceEditActive')?.checked),
         can_manage_schedule: Boolean(document.getElementById('workspaceEditSchedule')?.checked),
+        can_manage_cup_standings: Boolean(document.getElementById('workspaceEditCupStandings')?.checked),
         can_manage_suspensions: Boolean(document.getElementById('workspaceEditSuspensions')?.checked),
         can_manage_candidate_lists: Boolean(document.getElementById('workspaceEditCandidates')?.checked),
     };
@@ -1154,8 +1164,8 @@ async function workspaceCoachLogin() {
 }
 
 async function finishWorkspaceCoachLogin(data) {
-    if (!(data.can_manage_schedule || data.can_manage_suspensions || data.can_manage_candidate_lists)) {
-        showModal('没有工作权限', '该教练账号可以使用个人中心，但尚未获得联赛工作权限。');
+    if (!(data.can_manage_schedule || data.can_manage_cup_standings || data.can_manage_suspensions || data.can_manage_candidate_lists)) {
+        showModal('没有工作权限', '该教练账号可以使用个人中心，但尚未获得数据工作权限。');
         return;
     }
     workspaceSessionData = null;
@@ -1202,6 +1212,7 @@ function enterAdminLoggedOutState(options = {}) {
     isAdmin = false;
     currentAdminRole = '';
     canManageSchedule = false;
+    canManageCupStandings = false;
     canManageSuspensions = false;
     canManageCandidateLists = false;
     if (typeof endCandidateListMaintenance === 'function') {
@@ -1244,7 +1255,7 @@ function isCoachWorkAccountActive() {
     return Boolean(
         !currentAdminRole
         && coachAccount?.authenticated
-        && (canManageSchedule || canManageSuspensions || canManageCandidateLists)
+        && (canManageSchedule || canManageCupStandings || canManageSuspensions || canManageCandidateLists)
     );
 }
 
@@ -1254,6 +1265,7 @@ async function handleCoachWorkUnauthorized(message = '工作账号登录已失�
     } else {
         currentCoachAccount = {authenticated: false};
         canManageSchedule = false;
+        canManageCupStandings = false;
         canManageSuspensions = false;
         canManageCandidateLists = false;
     }
@@ -1323,6 +1335,7 @@ async function syncAdminAuthStatus(options = {}) {
     currentAdminRole = data.role || '';
     isAdmin = Boolean(data.authenticated && data.can_manage_admin);
     canManageSchedule = Boolean(data.authenticated && data.can_manage_schedule);
+    canManageCupStandings = Boolean(data.authenticated && data.can_manage_cup_standings);
     canManageSuspensions = Boolean(data.authenticated && data.can_manage_suspensions);
     canManageCandidateLists = Boolean(data.authenticated && data.can_manage_candidate_lists);
     syncAdminTabVisibility();

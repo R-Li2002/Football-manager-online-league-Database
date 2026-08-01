@@ -441,6 +441,7 @@ class CoachAccount(Base):
     is_active = Column(Integer, nullable=False, default=1)
     must_change_password = Column(Integer, nullable=False, default=1)
     can_manage_schedule = Column(Integer, nullable=False, default=0)
+    can_manage_cup_standings = Column(Integer, nullable=False, default=0)
     can_manage_suspensions = Column(Integer, nullable=False, default=0)
     can_manage_candidate_lists = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.now)

@@ -15,6 +15,7 @@ class LoginResponse(BaseModel):
     role: str = "admin"
     can_manage_admin: bool = False
     can_manage_schedule: bool = False
+    can_manage_cup_standings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
 
@@ -201,6 +202,7 @@ class CoachAccountUpsertRequest(BaseModel):
     password: Optional[str] = None
     is_active: bool = True
     can_manage_schedule: bool = False
+    can_manage_cup_standings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
 

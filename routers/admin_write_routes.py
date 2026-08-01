@@ -70,6 +70,7 @@ def build_admin_write_router(
     verify_admin,
     verify_schedule_editor,
     verify_schedule_manager,
+    verify_cup_standings_manager,
     verify_suspension_manager,
     verify_candidate_list_manager,
     set_session_cookie,
@@ -727,7 +728,7 @@ def build_admin_write_router(
         match_id: int,
         request: CupGroupMatchResultUpdateRequest,
         db: Session = Depends(get_db),
-        admin: str = Depends(verify_schedule_manager),
+        admin: str = Depends(verify_cup_standings_manager),
     ):
         return admin_write_service.update_cup_group_match_result(db, admin, competition, match_id, request, write_to_log)
 

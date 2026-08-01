@@ -405,6 +405,7 @@ def _get_coach_account(db: Session, coach_uid: str) -> CoachAccount | None:
 def _coach_account_work_permissions(account: CoachAccount | None) -> dict[str, bool]:
     return {
         "can_manage_schedule": bool(getattr(account, "can_manage_schedule", 0)) if account else False,
+        "can_manage_cup_standings": bool(getattr(account, "can_manage_cup_standings", 0)) if account else False,
         "can_manage_suspensions": bool(getattr(account, "can_manage_suspensions", 0)) if account else False,
         "can_manage_candidate_lists": bool(getattr(account, "can_manage_candidate_lists", 0)) if account else False,
     }
@@ -459,6 +460,7 @@ def upsert_coach_account(
     account.username = username
     account.is_active = 1 if request.is_active else 0
     account.can_manage_schedule = 1 if request.can_manage_schedule else 0
+    account.can_manage_cup_standings = 1 if request.can_manage_cup_standings else 0
     account.can_manage_suspensions = 1 if request.can_manage_suspensions else 0
     account.can_manage_candidate_lists = 1 if request.can_manage_candidate_lists else 0
     account.updated_at = now

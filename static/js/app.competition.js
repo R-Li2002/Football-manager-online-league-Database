@@ -12,6 +12,8 @@ var currentCupGroupScheduleView = 'groups';
 var cupGroupScoreSaveTimers = new Map();
 var cupGroupScoreSaveVersions = new Map();
 var cupGroupScoreSaveInFlight = new Set();
+var currentCupResultsGroupNo = null;
+var cupGroupVisiblePairKeys = new Set();
 var competitionDataLoaded = false;
 var currentPlayerRankingType = 'goals';
 var activeSuspensionEditorTeamId = null;
@@ -79,7 +81,7 @@ function renderCompetitionDataStatus() {
             ? (currentCupGroupScheduleView === 'results' ? '填写小组赛比分后，积分与跨组晋级顺位自动更新' : '维护小组球队名单；输入球队名的几个字母即可自动补全')
             : (currentCupPhase === 'group' ? '查看各组积分、跨组顺位和当前晋级去向' : '查看淘汰赛对阵、比分与晋级关系'))
         : (item?.message || `${moduleLabel}会随当前赛事数据自动更新`);
-    const compactForWorker = !isCupCompetitionLevel() && hasCompetitionWorkAccess();
+    const compactForWorker = !isCupCompetitionLevel() && hasLeagueCompetitionWorkAccess();
     container.hidden = false;
     container.innerHTML = `
         <section class="competition-module-status is-${escapeHtml(status)} ${compactForWorker ? 'is-worker-compact' : ''}" aria-label="${escapeHtml(headline)}数据摘要">
@@ -543,6 +545,10 @@ function syncCompetitionLevelTabs(options = {}) {
 }
 
 function hasCompetitionWorkAccess() {
+    return Boolean(canManageSchedule || canManageCupStandings || canManageSuspensions);
+}
+
+function hasLeagueCompetitionWorkAccess() {
     return Boolean(canManageSchedule || canManageSuspensions);
 }
 
@@ -551,6 +557,10 @@ function canManageCurrentCompetitionSchedule() {
     if (isCupCompetitionLevel()) return true;
     const summary = getCompetitionWorkSummary();
     return Boolean(isCompetitionWorkAdmin() || summary?.is_my_schedule_task);
+}
+
+function canManageCurrentCupStandings() {
+    return Boolean(isCupCompetitionLevel() && canManageCupStandings);
 }
 
 function canManageCurrentCompetitionSuspensions() {
@@ -691,7 +701,7 @@ function renderCompetitionWorkTaskPreview(tasks) {
 function renderCompetitionWorkPanel() {
     const container = document.getElementById('competitionWorkPanel');
     if (!container) return;
-    if (!hasCompetitionWorkAccess() || isCupCompetitionLevel()) {
+    if (!hasLeagueCompetitionWorkAccess() || isCupCompetitionLevel()) {
         container.hidden = true;
         container.innerHTML = '';
         return;
@@ -764,7 +774,7 @@ function renderCompetitionWorkPanel() {
 }
 
 async function loadCompetitionWorkSummary(options = {}) {
-    if (!hasCompetitionWorkAccess()) {
+    if (!hasLeagueCompetitionWorkAccess()) {
         competitionWorkData = null;
         renderCompetitionWorkPanel();
         return null;
@@ -1022,7 +1032,7 @@ function renderCompetitionAdminActions() {
         return;
     }
     container.innerHTML = `
-        ${cupConfig && currentCupPhase === 'knockout' ? `<button class="btn btn-secondary" id="initializeCupBracketButton" type="button" onclick="initializeCupBracket()">${escapeHtml(cupConfig.initializeLabel)}</button>` : ''}
+        ${canManageSchedule && cupConfig && currentCupPhase === 'knockout' ? `<button class="btn btn-secondary" id="initializeCupBracketButton" type="button" onclick="initializeCupBracket()">${escapeHtml(cupConfig.initializeLabel)}</button>` : ''}
         ${renderCompetitionAccountMenu()}
     `;
 }
@@ -1674,7 +1684,7 @@ function setCupGroupScoreSaveState(matchId, state, message) {
 }
 
 function queueCupGroupScoreSave(matchId, immediate = false) {
-    if (!canManageCurrentCompetitionSchedule()) return;
+    if (!canManageCurrentCupStandings()) return;
     const numericId = Number(matchId);
     const payload = getCupGroupScorePayload(numericId);
     if (!payload) return;
@@ -1810,30 +1820,102 @@ function renderCupGroupMatchRow(match, editable) {
     `;
 }
 
+function getCupGroupPairKey(group, match) {
+    const teamIds = [Number(match.home_team_id), Number(match.away_team_id)].sort((a, b) => a - b);
+    return `${getCurrentCupConfig()?.key || 'cup'}:${Number(group.group_no)}:${teamIds.join('-')}`;
+}
+
+function getCupGroupMatchPairs(group) {
+    const pairs = new Map();
+    (group.matches || []).forEach(match => {
+        const key = getCupGroupPairKey(group, match);
+        if (!pairs.has(key)) pairs.set(key, {key, matches: []});
+        pairs.get(key).matches.push(match);
+    });
+    return [...pairs.values()].map(pair => {
+        pair.matches.sort((a, b) => Number(a.round_no) - Number(b.round_no));
+        const first = pair.matches[0] || {};
+        pair.teamNames = [first.home_team_name || '-', first.away_team_name || '-'].sort((a, b) => String(a).localeCompare(String(b), 'zh-CN'));
+        pair.playedLegs = pair.matches.filter(match => match.status === 'played').length;
+        return pair;
+    }).sort((a, b) => a.teamNames.join(' ').localeCompare(b.teamNames.join(' '), 'zh-CN'));
+}
+
+function renderCupGroupPairCard(pair, editable) {
+    return `
+        <section class="cup-group-pair-card ${pair.playedLegs === pair.matches.length ? 'is-complete' : ''}" data-cup-pair-key="${escapeHtml(pair.key)}">
+            <header>
+                <div><span>主客场对阵</span><strong>${pair.teamNames.map(name => escapeHtml(name)).join(' × ')}</strong></div>
+                <em>${pair.playedLegs}/${pair.matches.length} 已录</em>
+            </header>
+            <div class="cup-group-pair-legs">
+                ${pair.matches.map(match => `<div class="cup-group-pair-leg"><span class="cup-group-pair-round">第 ${Number(match.round_no)} 轮</span>${renderCupGroupMatchRow(match, editable)}</div>`).join('')}
+            </div>
+        </section>
+    `;
+}
+
+function setCupResultsGroup(groupNo) {
+    currentCupResultsGroupNo = Number(groupNo);
+    renderCupGroupStageBoard();
+}
+
+function addCupGroupResultPair(groupNo) {
+    const select = document.getElementById(`cup-group-pair-select-${Number(groupNo)}`);
+    const pairKey = String(select?.value || '');
+    if (!pairKey) return;
+    cupGroupVisiblePairKeys.add(pairKey);
+    renderCupGroupStageBoard();
+    window.requestAnimationFrame(() => {
+        document.querySelector(`[data-cup-pair-key="${pairKey}"] input[id^="cup-group-score-"]`)?.focus();
+    });
+}
+
 function renderCupGroupResultsCard(group, editable) {
     const matches = group.matches || [];
     const played = matches.filter(match => match.status === 'played').length;
     if (!matches.length) {
-        return `<article class="cup-group-results-card surface-card"><header><div><span>${escapeHtml(group.group_name)}</span><strong>${escapeHtml(group.group_name)} 组</strong></div><em>等待分组</em></header><div class="cup-group-results-empty">完成 6 支球队分组后，将自动生成 10 轮、30 场主客场双循环赛程。</div></article>`;
+        return `<article class="cup-group-results-card surface-card"><header><div><span>${escapeHtml(group.group_name)}</span><strong>${escapeHtml(group.group_name)} 组</strong></div><em>等待分组</em></header><div class="cup-group-results-empty">完成 6 支球队分组后，将自动生成主客场双循环赛程。</div></article>`;
     }
-    const roundNumbers = [...new Set(matches.map(match => Number(match.round_no)).filter(Boolean))].sort((a, b) => a - b);
+    const pairs = getCupGroupMatchPairs(group);
+    const visiblePairs = editable
+        ? pairs.filter(pair => pair.playedLegs > 0 || cupGroupVisiblePairKeys.has(pair.key))
+        : pairs;
+    const pendingPairs = editable
+        ? pairs.filter(pair => pair.playedLegs === 0 && !cupGroupVisiblePairKeys.has(pair.key))
+        : [];
     return `
-        <article class="cup-group-results-card surface-card">
-            <header><div><span>${escapeHtml(group.group_name)}</span><strong>${escapeHtml(group.group_name)} 组</strong></div><em id="cup-group-progress-${Number(group.group_no)}">${played}/${matches.length} 已赛</em></header>
-            <div class="cup-group-results-layout is-fixtures-only">
-                <div class="cup-group-fixtures-wrap">
-                    <div class="cup-group-section-label"><span>赛况</span><small>仅填写双方进球数</small></div>
-                    <div class="cup-group-round-list">
-                        ${roundNumbers.map(roundNo => `<section class="cup-group-round"><h4>第 ${roundNo} 轮</h4>${matches.filter(match => Number(match.round_no) === roundNo).map(match => renderCupGroupMatchRow(match, editable)).join('')}</section>`).join('')}
-                    </div>
-                </div>
+        <article class="cup-group-results-card cup-group-ledger surface-card">
+            <header><div><span>${escapeHtml(group.group_name)}</span><strong>${escapeHtml(group.group_name)} 组记分簿</strong></div><em id="cup-group-progress-${Number(group.group_no)}">${played}/${matches.length} 已赛</em></header>
+            ${editable && pendingPairs.length ? `<div class="cup-group-pair-add">
+                <label for="cup-group-pair-select-${Number(group.group_no)}"><span>添加一组主客场对阵</span><small>选择对手后，一次展开两个回合</small></label>
+                <div><select id="cup-group-pair-select-${Number(group.group_no)}">${pendingPairs.map(pair => `<option value="${escapeHtml(pair.key)}">${pair.teamNames.map(name => escapeHtml(name)).join(' × ')}</option>`).join('')}</select><button class="btn btn-primary" type="button" onclick="addCupGroupResultPair(${Number(group.group_no)})">添加对阵</button></div>
+            </div>` : ''}
+            <div class="cup-group-pair-list">
+                ${visiblePairs.map(pair => renderCupGroupPairCard(pair, editable)).join('') || `<div class="cup-group-results-empty"><strong>本组还没有录入比分</strong><span>${editable ? '从上方选择一组对手，主客场两个回合会一起出现。' : '等待比赛结果录入。'}</span></div>`}
             </div>
+            ${editable && !pendingPairs.length ? '<div class="cup-group-pair-complete">本组全部主客场对阵均已加入记分簿</div>' : ''}
         </article>
     `;
 }
 
 function renderCupGroupResults(stage, editable) {
-    return `<div class="cup-group-results-grid">${(stage.groups || []).map(group => renderCupGroupResultsCard(group, editable)).join('')}</div>`;
+    const groups = stage.groups || [];
+    if (!groups.length) return '<div class="cup-group-results-empty">当前没有可录入的小组。</div>';
+    const selected = groups.find(group => Number(group.group_no) === Number(currentCupResultsGroupNo)) || groups[0];
+    currentCupResultsGroupNo = Number(selected.group_no);
+    return `
+        <div class="cup-group-results-workbench">
+            <nav class="cup-group-results-tabs" aria-label="选择杯赛小组">
+                ${groups.map(group => {
+                    const matches = group.matches || [];
+                    const played = matches.filter(match => match.status === 'played').length;
+                    return `<button class="${Number(group.group_no) === Number(selected.group_no) ? 'active' : ''}" type="button" onclick="setCupResultsGroup(${Number(group.group_no)})"><strong>${escapeHtml(group.group_name)} 组</strong><small>${played}/${matches.length || 0}</small></button>`;
+                }).join('')}
+            </nav>
+            ${renderCupGroupResultsCard(selected, editable)}
+        </div>
+    `;
 }
 
 async function saveCupGroup(groupNo) {
@@ -1905,7 +1987,8 @@ function renderCupGroupStageBoard() {
     }
     const totalSlots = Number(stage.group_count) * Number(stage.teams_per_group);
     const assigned = Number(stage.assigned_team_count || 0);
-    const editable = canManageCurrentCompetitionSchedule();
+    const groupEditable = canManageCurrentCompetitionSchedule();
+    const resultsEditable = canManageCurrentCupStandings();
     container.innerHTML = `
         <section class="cup-group-stage-shell ${escapeHtml(cupConfig.className)}">
             <div class="cup-group-stage-head surface-card">
@@ -1913,8 +1996,8 @@ function renderCupGroupStageBoard() {
                 <em>${currentCupGroupScheduleView === 'results' ? '比分自动计分' : (assigned === totalSlots ? '分组已完整' : `已分配 ${assigned}/${totalSlots}`)}</em>
             </div>
             ${currentCupGroupScheduleView === 'groups'
-                ? `${editable ? '<div class="cup-group-edit-note surface-card">输入球队名的几个字母即可筛选现有球队；同一球队在本项杯赛中只能进入一个小组。修改完成后按组保存。</div>' : ''}<div class="cup-group-grid">${(stage.groups || []).map(group => renderCupGroupCard(group, Number(stage.teams_per_group), editable)).join('')}</div>`
-                : `${editable ? '<div class="cup-group-edit-note surface-card">只填写双方进球数即可，比分完整后自动保存；平局直接按 1 分计入积分榜。</div>' : ''}${renderCupGroupResults(stage, editable)}`}
+                ? `${groupEditable ? '<div class="cup-group-edit-note surface-card">输入球队名的几个字母即可筛选现有球队；同一球队在本项杯赛中只能进入一个小组。修改完成后按组保存。</div>' : ''}<div class="cup-group-grid">${(stage.groups || []).map(group => renderCupGroupCard(group, Number(stage.teams_per_group), groupEditable)).join('')}</div>`
+                : `${resultsEditable ? '<div class="cup-group-edit-note surface-card">先选组别，再逐对添加主客场双方；两个回合放在同一张卡中，比分完整后自动保存并更新积分榜。</div>' : ''}${renderCupGroupResults(stage, resultsEditable)}`}
         </section>
     `;
 }
@@ -4692,7 +4775,7 @@ function renderScheduleBoard() {
 async function loadCompetitionData(options = {}) {
     renderCompetitionAdminActions();
     if (typeof loadDataStatus === 'function') loadDataStatus({force: options.force === true});
-    if (hasCompetitionWorkAccess()) loadCompetitionWorkSummary({force: options.force === true});
+    if (hasLeagueCompetitionWorkAccess()) loadCompetitionWorkSummary({force: options.force === true});
     if (competitionDataLoaded && options.force !== true) {
         renderCompetitionPrimaryBoard();
         renderScheduleBoard();

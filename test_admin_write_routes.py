@@ -36,6 +36,7 @@ class AdminWriteRoutesTest(unittest.TestCase):
             lambda: "HEIGO01",
             lambda: "HEIGO01",
             lambda: "HEIGO01",
+            lambda: "HEIGO01",
             lambda *_args, **_kwargs: None,
             lambda *_args, **_kwargs: None,
             lambda *_args: None,

@@ -61,6 +61,10 @@ def can_manage_schedule(role: str | None) -> bool:
     return normalize_admin_role(role) in {FULL_ADMIN_ROLE, SCHEDULE_EDITOR_ROLE}
 
 
+def can_manage_cup_standings(role: str | None) -> bool:
+    return normalize_admin_role(role) in {FULL_ADMIN_ROLE, SCHEDULE_EDITOR_ROLE}
+
+
 def can_manage_suspensions(role: str | None) -> bool:
     return normalize_admin_role(role) in {FULL_ADMIN_ROLE, SCHEDULE_EDITOR_ROLE}
 
@@ -71,6 +75,7 @@ def can_manage_candidate_lists(role: str | None) -> bool:
 
 COACH_WORK_PERMISSION_FIELDS = {
     "schedule": "can_manage_schedule",
+    "cup_standings": "can_manage_cup_standings",
     "suspensions": "can_manage_suspensions",
     "candidate_lists": "can_manage_candidate_lists",
 }
@@ -155,6 +160,7 @@ def login_admin(
         role=role,
         can_manage_admin=can_manage_admin(role),
         can_manage_schedule=can_manage_schedule(role),
+        can_manage_cup_standings=can_manage_cup_standings(role),
         can_manage_suspensions=can_manage_suspensions(role),
         can_manage_candidate_lists=can_manage_candidate_lists(role),
     )
@@ -211,6 +217,7 @@ def get_auth_status(db: Session, username: str | None) -> AuthStatusResponse:
         role=role,
         can_manage_admin=can_manage_admin(role),
         can_manage_schedule=can_manage_schedule(role),
+        can_manage_cup_standings=can_manage_cup_standings(role),
         can_manage_suspensions=can_manage_suspensions(role),
         can_manage_candidate_lists=can_manage_candidate_lists(role),
     )
