@@ -26,9 +26,18 @@ assert.match(
     'typing a scorer name should update suggestions without triggering an immediate auto-save',
 );
 assert.match(competitionCode, /<option value="own_goal"[^>]*>乌龙球<\/option>/, 'match events should offer an own-goal entry');
-assert.match(competitionCode, /<details class="match-event-editor"/, 'match-event editing should use a native collapsible region');
-assert.match(competitionCode, /<summary class="match-event-toggle">/, 'collapsed match-event editing should keep a clear accessible toggle');
-assert.doesNotMatch(competitionCode, /<details class="match-event-editor"[^>]*\sopen(?:\s|>)/, 'match-event editing should default to collapsed so schedule cards stay aligned');
+assert.match(competitionCode, /class="schedule-event-summary-bar"[^>]+openMatchEventEditor/, 'the fixed event summary should launch the match data dialog directly');
+assert.doesNotMatch(competitionCode, /<details class="match-event-editor"/, 'match-event editing should no longer expand inside schedule cards');
+assert.match(competitionCode, /function renderMatchEventEditorDialog\(match\)/, 'schedule editors should use a dedicated match data dialog');
+assert.match(competitionCode, /data-match-event-team-tab="\$\{side\}"/, 'the dialog should switch between the home and away teams');
+assert.match(competitionCode, /localeCompare\(String\(b\.name \|\| ''\), 'en', \{sensitivity: 'base', numeric: true\}\)/, 'team players should be sorted alphabetically');
+assert.match(competitionCode, /data-event-count="goal"/, 'each player row should expose a direct goal count');
+assert.match(competitionCode, /data-event-count="assist"/, 'each player row should expose a direct assist count');
+assert.match(competitionCode, /type="checkbox"[^>]+data-match-event-mvp/, 'each player row should allow selecting the match MVP');
+assert.match(competitionCode, /data-match-own-goals/, 'the matrix editor should preserve own-goal reporting');
+assert.match(competitionCode, /renderScheduleCompactMatchRow[\s\S]*?renderScheduleMatchEventSummary\(match\)/, 'desktop schedule cards should use a fixed-height event summary instead of full event lists');
+assert.match(competitionCode, /mobile-schedule-edit-actions[\s\S]*?比分与状态[\s\S]*?球员数据/, 'mobile cards should provide direct score and player-data actions');
+assert.match(competitionCode, /function readMatchScorePayload\(matchId, eventOverride = null\)/, 'dialog event data should save without resetting scores that are not rendered on mobile');
 assert.match(competitionCode, /isOwnGoal \? null : findMatchEventPlayer/, 'own goals should not require a player lookup');
 assert.match(competitionCode, /\['goal', 'own_goal'\]\.includes\(event\.event_type\)/, 'mobile match totals should include own goals');
 assert.doesNotMatch(
@@ -216,6 +225,42 @@ function assertSaveStateIsVisibleAndRetryable() {
     assert.equal(saveBadge.role, 'button');
 }
 
+function assertMatchEventMatrixUsesRosterAndExistingValues() {
+    context.teams = [
+        {id: 1, name: 'Alpha'},
+        {id: 2, name: 'Beta'},
+    ];
+    context.allPlayers = [
+        {uid: 12, name: 'Zed Forward', position: 'ST', team_id: 1, team_name: 'Alpha'},
+        {uid: 11, name: 'Aaron Midfielder', position: 'MC', team_id: 1, team_name: 'Alpha'},
+        {uid: 21, name: 'Bob Defender', position: 'DC', team_id: 2, team_name: 'Beta'},
+    ];
+    context.uiIconSvg = () => '';
+    context.formatMatchScore = () => '-';
+    context.isScheduleForfeitStatus = () => false;
+    const html = context.renderMatchEventEditorDialog({
+        id: 101,
+        home_team_id: 1,
+        home_team_name: 'Alpha',
+        away_team_id: 2,
+        away_team_name: 'Beta',
+        home_score: 2,
+        away_score: 1,
+        status: 'played',
+        events: [
+            {team_name: 'Alpha', player_uid: 12, player_name: 'Zed Forward', event_type: 'goal', quantity: 2},
+            {team_name: 'Alpha', player_uid: 11, player_name: 'Aaron Midfielder', event_type: 'assist', quantity: 1},
+            {team_name: 'Beta', player_uid: 21, player_name: 'Bob Defender', event_type: 'mvp', quantity: 1},
+        ],
+    });
+    assert.ok(html.indexOf('Aaron Midfielder') < html.indexOf('Zed Forward'), 'home players should render A-Z');
+    assert.match(html, /data-player-name="Zed Forward"[\s\S]*?data-event-count="goal"/);
+    assert.match(html, /value="2" placeholder="0" data-event-count="goal"/);
+    assert.match(html, /data-player-name="Bob Defender"[\s\S]*?type="checkbox" checked data-match-event-mvp/);
+    assert.match(html, /data-match-event-team-tab="home"/);
+    assert.match(html, /data-match-event-team-tab="away"/);
+}
+
 async function assertResponsibilityDialogRefreshesEligibleAccounts() {
     let fetchCalls = 0;
     let modalPayload = null;
@@ -282,6 +327,7 @@ async function main() {
     assertReviewActionsFollowBackendCapabilities();
     assertTaskFiltersUseBackendIssueCodes();
     assertSaveStateIsVisibleAndRetryable();
+    assertMatchEventMatrixUsesRosterAndExistingValues();
     await assertResponsibilityDialogRefreshesEligibleAccounts();
     await assertCupInitializationUsesExplicitResetAndFeedback();
 }

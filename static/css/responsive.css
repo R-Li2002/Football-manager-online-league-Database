@@ -5404,6 +5404,18 @@
         cursor: pointer;
     }
 
+    .mobile-schedule-edit-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 7px;
+    }
+
+    .mobile-schedule-edit-trigger.is-player-data {
+        border-color: color-mix(in srgb, #27ae60 32%, var(--border-color));
+        background: color-mix(in srgb, rgba(39, 174, 96, 0.14) 74%, transparent);
+        color: #1f8b4c;
+    }
+
     .mobile-schedule-editor-overlay {
         position: fixed;
         inset: 0;
@@ -5526,69 +5538,130 @@
         min-height: 40px;
     }
 
-    .mobile-schedule-editor-body .match-event-editor {
-        padding: 0;
+    .match-event-suggestions-floating {
+        max-height: min(380px, 48vh);
     }
 
-    .mobile-schedule-editor-body .match-event-toggle {
-        min-height: 48px;
-        padding: 9px 11px;
+    .match-event-modal-overlay {
+        place-items: end stretch;
+        padding: 20px 0 0;
+        backdrop-filter: blur(4px);
     }
 
-    .mobile-schedule-editor-body .match-event-editor-body {
-        gap: 8px;
-        padding: 0 9px 9px;
-    }
-
-    .mobile-schedule-editor-body .match-event-row,
-    .mobile-schedule-editor-body .match-event-row.match-mvp-row {
-        grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.45fr) 38px;
-        gap: 6px;
-        align-items: start;
-    }
-
-    .mobile-schedule-editor-body .match-event-row select,
-    .mobile-schedule-editor-body .match-event-row input,
-    .mobile-schedule-editor-body .match-event-player-select {
-        min-height: 38px;
-        font-size: 0.82rem;
-    }
-
-    .mobile-schedule-editor-body .match-event-player-field {
-        grid-column: 2 / -1;
-    }
-
-    .mobile-schedule-editor-body .match-event-type {
-        grid-column: 1 / 2;
-    }
-
-    .mobile-schedule-editor-body .match-event-quantity {
-        grid-column: 2 / 3;
-    }
-
-    .mobile-schedule-editor-body .match-event-remove {
-        grid-column: 3 / 4;
+    .match-event-modal,
+    .match-event-viewer-modal {
         width: 100%;
-        height: 38px;
+        max-height: calc(100dvh - 20px);
+        border-right: 0;
+        border-bottom: 0;
+        border-left: 0;
+        border-radius: 22px 22px 0 0;
     }
 
-    .mobile-schedule-editor-body .match-mvp-row .match-event-player-field {
-        grid-column: 2 / 3;
+    .match-event-modal-head {
+        padding: 14px 12px 12px;
     }
 
-    .mobile-schedule-editor-body .match-mvp-row .match-mvp-clear {
-        grid-column: 3 / 4;
-        min-width: 0;
-        padding: 0 6px;
+    .match-event-modal-head h3 {
+        font-size: 0.98rem;
     }
 
-    .mobile-schedule-editor-body .match-event-player-input-row {
-        grid-template-columns: minmax(0, 1fr) 38px;
+    .match-event-modal-head h3 em {
+        margin: 0 5px;
+        font-size: 1.08rem;
+    }
+
+    .match-event-modal-summary > span {
+        display: grid;
+        justify-items: center;
+        gap: 2px;
+        padding: 7px 5px;
+    }
+
+    .match-event-team-tabs {
+        gap: 6px;
+        padding: 9px 10px;
+    }
+
+    .match-event-team-tab {
+        min-height: 50px;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 4px 8px;
+        padding: 7px 9px;
+    }
+
+    .match-event-team-tab > span {
+        grid-column: 1 / -1;
+    }
+
+    .match-event-team-tab > strong {
+        font-size: 0.8rem;
+    }
+
+    .match-event-modal-body {
+        padding: 0 8px 10px;
+    }
+
+    .match-event-matrix-columns,
+    .match-event-matrix-row {
+        grid-template-columns: minmax(118px, 1fr) 52px 52px 42px;
         gap: 5px;
     }
 
-    .match-event-suggestions-floating {
-        max-height: min(380px, 48vh);
+    .match-event-matrix-columns {
+        padding: 0 5px;
+        font-size: 0.62rem;
+    }
+
+    .match-event-matrix-row {
+        min-height: 56px;
+        padding: 6px 5px;
+    }
+
+    .match-event-matrix-player strong {
+        font-size: 0.78rem;
+    }
+
+    .match-event-matrix-player small {
+        font-size: 0.61rem;
+    }
+
+    .match-event-matrix-number input,
+    .match-event-own-goal-field input {
+        min-height: 40px;
+        padding-inline: 3px;
+        font-size: 0.86rem;
+    }
+
+    .match-event-matrix-mvp > span[aria-hidden="true"] {
+        width: 36px;
+        height: 36px;
+    }
+
+    .match-event-own-goal-field {
+        grid-template-columns: minmax(0, 1fr) 52px;
+        gap: 8px;
+        padding: 8px 5px;
+    }
+
+    .match-event-modal-footer {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 10px);
+    }
+
+    .match-event-modal-footer > div {
+        display: grid;
+        grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    }
+
+    .match-event-modal-footer .btn {
+        min-height: 44px;
+    }
+
+    .match-event-viewer-body {
+        padding: 12px;
     }
 }
 

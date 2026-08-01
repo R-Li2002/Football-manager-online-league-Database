@@ -23,6 +23,9 @@ var activeMatchEventSuggestionContext = null;
 var activeSuspensionSuggestionContext = null;
 var activeCupGroupSuggestionContext = null;
 var activeMobileScheduleEditMatchId = null;
+var activeMatchEventEditorMatchId = null;
+var matchEventEditorDirty = false;
+var matchEventEditorReturnFocus = null;
 var matchEventRowDomIdSeed = 0;
 var scheduleAutoSaveTimers = new Map();
 var scheduleMatchSaveStates = new Map();
@@ -3235,6 +3238,31 @@ function renderScheduleMatchEvents(match) {
     `;
 }
 
+function getScheduleMatchEventSummary(match) {
+    const events = Array.isArray(match?.events) ? match.events : [];
+    const goals = events
+        .filter(event => ['goal', 'own_goal'].includes(event.event_type))
+        .reduce((total, event) => total + Number(event.quantity || 0), 0);
+    const assists = events
+        .filter(event => event.event_type === 'assist')
+        .reduce((total, event) => total + Number(event.quantity || 0), 0);
+    const mvp = events.find(event => event.event_type === 'mvp');
+    return {goals, assists, mvpName: String(mvp?.player_name || '')};
+}
+
+function renderScheduleMatchEventSummary(match) {
+    const summary = getScheduleMatchEventSummary(match);
+    const actionLabel = canManageCurrentCompetitionSchedule() ? '球员数据' : '查看明细';
+    return `
+        <button class="schedule-event-summary-bar" type="button" onclick="openMatchEventEditor(${Number(match.id)})" aria-label="${escapeHtml(actionLabel)}：${escapeHtml(match.home_team_name || '-')} 对 ${escapeHtml(match.away_team_name || '-')}">
+            <span class="schedule-event-summary-stat"><em>进球</em><strong>${summary.goals}</strong></span>
+            <span class="schedule-event-summary-stat"><em>助攻</em><strong>${summary.assists}</strong></span>
+            <span class="schedule-event-summary-mvp ${summary.mvpName ? 'is-ready' : ''}"><em>最佳</em><strong>${escapeHtml(summary.mvpName || '待评选')}</strong></span>
+            <span class="schedule-event-summary-action">${escapeHtml(actionLabel)}<span aria-hidden="true">›</span></span>
+        </button>
+    `;
+}
+
 function renderScheduleRoundNavigator(rounds, currentRound, matches) {
     const roundPairs = buildRoundPairs(rounds);
     const currentPairStart = getRoundPairStart(currentRound);
@@ -3317,7 +3345,7 @@ function renderScheduleCompactMatchRow(match, options = {}) {
                 </div>
                 ${renderScheduleCompactTeam(match, 'away')}
             </div>
-            ${renderScheduleMatchEvents(match)}
+            ${renderScheduleMatchEventSummary(match)}
             ${renderCompetitionWorkMatchIssue(match.id)}
             ${canManageCurrentCompetitionSchedule() && includeAdmin ? `<div class="schedule-match-admin">${buildAdminMatchControlGroup(match)}</div>` : ''}
         </article>
@@ -3506,44 +3534,362 @@ function renderMatchEventRow(match, event = {}, options = {}) {
     `;
 }
 
-function renderMatchEventEditor(match) {
-    const events = Array.isArray(match.events) ? match.events : [];
-    const scorerEvents = events.filter(event => event.event_type !== 'mvp');
-    const mvpEvent = events.find(event => event.event_type === 'mvp') || {event_type: 'mvp'};
-    const eventSummary = scorerEvents.length
-        ? `${scorerEvents.length} 条进球 / 助攻明细${mvpEvent.player_name ? ' · 已选本场最佳' : ''}`
-        : (mvpEvent.player_name ? '已选本场最佳' : '尚未添加比赛事件');
+function getMatchEventEditorPlayers(match, team) {
+    const rosterPlayers = getMatchTeamPlayers(match, team.team_name).map(player => ({
+        uid: Number(player.uid || 0),
+        name: String(player.name || ''),
+        position: String(player.position || ''),
+        isRosterPlayer: true,
+    }));
+    const playersByKey = new Map(rosterPlayers.map(player => [player.uid ? `uid:${player.uid}` : `name:${player.name.toLowerCase()}`, player]));
+    (match.events || [])
+        .filter(event => event.event_type !== 'own_goal' && matchTeamOptionMatchesEvent(team, event))
+        .forEach(event => {
+            const uid = Number(event.player_uid || 0);
+            const name = String(event.player_name || '').trim();
+            if (!uid && !name) return;
+            const key = uid ? `uid:${uid}` : `name:${name.toLowerCase()}`;
+            if (!playersByKey.has(key)) {
+                playersByKey.set(key, {uid, name, position: '', isRosterPlayer: false});
+            }
+        });
+    return [...playersByKey.values()].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'en', {sensitivity: 'base', numeric: true}));
+}
+
+function getMatchEventPlayerQuantity(match, team, player, eventType) {
+    return (match.events || [])
+        .filter(event => event.event_type === eventType && matchTeamOptionMatchesEvent(team, event))
+        .filter(event => player.uid
+            ? Number(event.player_uid || 0) === Number(player.uid)
+            : String(event.player_name || '').trim() === String(player.name || '').trim())
+        .reduce((total, event) => total + Number(event.quantity || 0), 0);
+}
+
+function isMatchEventMvp(match, team, player) {
+    return (match.events || []).some(event => event.event_type === 'mvp'
+        && matchTeamOptionMatchesEvent(team, event)
+        && (player.uid
+            ? Number(event.player_uid || 0) === Number(player.uid)
+            : String(event.player_name || '').trim() === String(player.name || '').trim()));
+}
+
+function getMatchOwnGoalQuantity(match, team) {
+    return (match.events || [])
+        .filter(event => event.event_type === 'own_goal' && matchTeamOptionMatchesEvent(team, event))
+        .reduce((total, event) => total + Number(event.quantity || 0), 0);
+}
+
+function renderMatchEventMatrixPlayer(match, team, player) {
+    const goals = getMatchEventPlayerQuantity(match, team, player, 'goal');
+    const assists = getMatchEventPlayerQuantity(match, team, player, 'assist');
+    const isMvp = isMatchEventMvp(match, team, player);
     return `
-        <details class="match-event-editor" id="match-events-${match.id}">
-            <summary class="match-event-toggle">
-                <span class="match-event-toggle-copy">
-                    <strong>进球、助攻与本场最佳</strong>
-                    <small>${escapeHtml(eventSummary)}</small>
-                </span>
-                <span class="match-event-toggle-action" aria-hidden="true">
-                    <span class="match-event-toggle-closed">展开编辑</span>
-                    <span class="match-event-toggle-open">收起</span>
-                    <span class="match-event-toggle-chevron"></span>
-                </span>
-            </summary>
-            <div class="match-event-editor-body">
-                <div class="match-event-head">
-                    <span>进球 / 助攻明细</span>
-                    <button type="button" class="match-event-add" onclick="addMatchEventRow(${Number(match.id)})">添加</button>
-                </div>
-                <div class="match-event-list">
-                    ${scorerEvents.map(event => renderMatchEventRow(match, event)).join('')}
-                </div>
-                <div class="match-mvp-editor">
-                    <div class="match-event-head">
-                        <span>本场最佳</span>
-                    </div>
-                    ${renderMatchEventRow(match, mvpEvent, {mode: 'mvp'})}
-                </div>
-            </div>
-        </details>
+        <div class="match-event-matrix-row ${player.isRosterPlayer ? '' : 'is-unmatched'}" data-match-event-matrix-row data-team-name="${escapeHtml(team.team_name)}" data-player-uid="${Number(player.uid || 0)}" data-player-name="${escapeHtml(player.name)}">
+            <span class="match-event-matrix-player">
+                <strong>${escapeHtml(player.name || '-')}</strong>
+                <small>${escapeHtml(player.position || (player.isRosterPlayer ? '' : '历史事件球员'))}</small>
+            </span>
+            <label class="match-event-matrix-number">
+                <span class="sr-only">${escapeHtml(player.name)}进球数</span>
+                <input type="number" min="0" step="1" inputmode="numeric" value="${goals || ''}" placeholder="0" data-event-count="goal" oninput="markMatchEventEditorDirty()">
+            </label>
+            <label class="match-event-matrix-number">
+                <span class="sr-only">${escapeHtml(player.name)}助攻数</span>
+                <input type="number" min="0" step="1" inputmode="numeric" value="${assists || ''}" placeholder="0" data-event-count="assist" oninput="markMatchEventEditorDirty()">
+            </label>
+            <label class="match-event-matrix-mvp" title="本场最佳">
+                <input type="checkbox" ${isMvp ? 'checked' : ''} data-match-event-mvp onchange="selectMatchEventMvp(this)">
+                <span aria-hidden="true">★</span>
+                <span class="sr-only">选择${escapeHtml(player.name)}为本场最佳</span>
+            </label>
+        </div>
     `;
 }
+
+function renderMatchEventMatrixTeam(match, team, side) {
+    const players = getMatchEventEditorPlayers(match, team);
+    const ownGoals = getMatchOwnGoalQuantity(match, team);
+    return `
+        <section class="match-event-matrix-team" data-match-event-team-panel="${side}" ${side === 'home' ? '' : 'hidden'}>
+            <div class="match-event-matrix-columns" aria-hidden="true">
+                <span>球员 · A–Z</span><span>进球</span><span>助攻</span><span>最佳</span>
+            </div>
+            <div class="match-event-matrix-list">
+                ${players.length ? players.map(player => renderMatchEventMatrixPlayer(match, team, player)).join('') : '<div class="match-event-matrix-empty">当前球队没有可用球员名单</div>'}
+            </div>
+            <label class="match-event-own-goal-field">
+                <span><strong>乌龙球</strong><small>计入当前球队比分，不关联具体球员</small></span>
+                <input type="number" min="0" step="1" inputmode="numeric" value="${ownGoals || ''}" placeholder="0" data-match-own-goals data-team-name="${escapeHtml(team.team_name)}" oninput="markMatchEventEditorDirty()">
+            </label>
+        </section>
+    `;
+}
+
+function renderMatchEventEditorDialog(match) {
+    const teams = getMatchTeamOptions(match);
+    const summary = getScheduleMatchEventSummary(match);
+    return `
+        <div class="match-event-modal-overlay" id="matchEventEditorModal" data-match-id="${Number(match.id)}" data-home-score="${match.home_score ?? ''}" data-away-score="${match.away_score ?? ''}" role="presentation" onclick="if (event.target === this) closeMatchEventEditor()">
+            <section class="match-event-modal" role="dialog" aria-modal="true" aria-labelledby="matchEventModalTitle" tabindex="-1">
+                <header class="match-event-modal-head">
+                    <div>
+                        <span>比赛数据上报</span>
+                        <h3 id="matchEventModalTitle">${escapeHtml(match.home_team_name || '-')} <em>${escapeHtml(getScheduleMatchScoreText(match))}</em> ${escapeHtml(match.away_team_name || '-')}</h3>
+                    </div>
+                    <button type="button" class="match-event-modal-close" onclick="closeMatchEventEditor()" aria-label="关闭比赛数据窗口">${uiIconSvg('close')}</button>
+                </header>
+                <div class="match-event-modal-summary">
+                    <span><small>进球</small><strong data-match-event-summary-goals>${summary.goals}</strong></span>
+                    <span><small>助攻</small><strong data-match-event-summary-assists>${summary.assists}</strong></span>
+                    <span><small>本场最佳</small><strong data-match-event-summary-mvp>${escapeHtml(summary.mvpName || '待评选')}</strong></span>
+                </div>
+                <div class="match-event-team-tabs" role="tablist" aria-label="切换球队">
+                    ${teams.map((team, index) => {
+                        const side = index === 0 ? 'home' : 'away';
+                        const teamEvents = (match.events || []).filter(event => matchTeamOptionMatchesEvent(team, event));
+                        const teamGoals = teamEvents.filter(event => ['goal', 'own_goal'].includes(event.event_type)).reduce((total, event) => total + Number(event.quantity || 0), 0);
+                        return `<button type="button" class="match-event-team-tab ${index === 0 ? 'active' : ''}" data-match-event-team-tab="${side}" role="tab" aria-selected="${index === 0 ? 'true' : 'false'}" onclick="switchMatchEventEditorTeam('${side}')"><span>${index === 0 ? '主队' : '客队'}</span><strong>${escapeHtml(team.match_team_name || team.team_name)}</strong><em data-match-event-team-total="${side}">${teamGoals} 球</em></button>`;
+                    }).join('')}
+                </div>
+                <div class="match-event-modal-body">
+                    ${teams.map((team, index) => renderMatchEventMatrixTeam(match, team, index === 0 ? 'home' : 'away')).join('')}
+                </div>
+                <footer class="match-event-modal-footer">
+                    <span class="match-event-modal-status" id="matchEventModalStatus" role="status" aria-live="polite">填写数字后统一保存</span>
+                    <div>
+                        <button type="button" class="btn btn-secondary" onclick="closeMatchEventEditor()">取消</button>
+                        <button type="button" class="btn btn-primary" id="matchEventModalSave" onclick="saveMatchEventEditor()">保存比赛数据</button>
+                    </div>
+                </footer>
+            </section>
+        </div>
+    `;
+}
+
+function renderMatchEventViewerDialog(match) {
+    return `
+        <div class="match-event-modal-overlay" id="matchEventEditorModal" data-match-id="${Number(match.id)}" role="presentation" onclick="if (event.target === this) closeMatchEventEditor(true)">
+            <section class="match-event-modal match-event-viewer-modal" role="dialog" aria-modal="true" aria-labelledby="matchEventModalTitle" tabindex="-1">
+                <header class="match-event-modal-head">
+                    <div><span>比赛明细</span><h3 id="matchEventModalTitle">${escapeHtml(match.home_team_name || '-')} <em>${escapeHtml(getScheduleMatchScoreText(match))}</em> ${escapeHtml(match.away_team_name || '-')}</h3></div>
+                    <button type="button" class="match-event-modal-close" onclick="closeMatchEventEditor(true)" aria-label="关闭比赛明细">${uiIconSvg('close')}</button>
+                </header>
+                <div class="match-event-viewer-body">${renderScheduleMatchEvents(match)}</div>
+                <footer class="match-event-modal-footer"><span></span><div><button type="button" class="btn btn-primary" onclick="closeMatchEventEditor(true)">关闭</button></div></footer>
+            </section>
+        </div>
+    `;
+}
+
+function openMatchEventEditor(matchId) {
+    const match = findScheduleMatchById(matchId);
+    if (!match) return;
+    closeMatchEventEditor(true);
+    activeMatchEventEditorMatchId = Number(matchId);
+    matchEventEditorDirty = false;
+    matchEventEditorReturnFocus = document.activeElement;
+    const host = document.createElement('div');
+    host.innerHTML = canManageCurrentCompetitionSchedule() ? renderMatchEventEditorDialog(match) : renderMatchEventViewerDialog(match);
+    const modal = host.firstElementChild;
+    if (!modal) return;
+    document.body.appendChild(modal);
+    document.body.classList.add('match-event-modal-open');
+    window.requestAnimationFrame(() => modal.querySelector('.match-event-modal')?.focus());
+}
+
+function closeMatchEventEditor(force = false) {
+    if (!force && matchEventEditorDirty && !confirm('尚未保存比赛数据，确认关闭吗？')) return;
+    document.getElementById('matchEventEditorModal')?.remove();
+    document.body.classList.remove('match-event-modal-open');
+    activeMatchEventEditorMatchId = null;
+    matchEventEditorDirty = false;
+    const returnFocus = matchEventEditorReturnFocus;
+    matchEventEditorReturnFocus = null;
+    if (returnFocus?.isConnected) returnFocus.focus();
+}
+
+function switchMatchEventEditorTeam(side) {
+    const modal = document.getElementById('matchEventEditorModal');
+    if (!modal) return;
+    modal.querySelectorAll('[data-match-event-team-tab]').forEach(button => {
+        const active = button.dataset.matchEventTeamTab === side;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    modal.querySelectorAll('[data-match-event-team-panel]').forEach(panel => {
+        panel.hidden = panel.dataset.matchEventTeamPanel !== side;
+    });
+    modal.querySelector(`[data-match-event-team-panel="${side}"] input`)?.focus();
+}
+
+function markMatchEventEditorDirty() {
+    matchEventEditorDirty = true;
+    updateMatchEventEditorTotals();
+}
+
+function updateMatchEventEditorTotals() {
+    const modal = document.getElementById('matchEventEditorModal');
+    if (!modal) return;
+    let totalGoals = 0;
+    let totalAssists = 0;
+    let mvpName = '';
+    const teamGoals = {home: 0, away: 0};
+    modal.querySelectorAll('[data-match-event-team-panel]').forEach(panel => {
+        const side = panel.dataset.matchEventTeamPanel;
+        panel.querySelectorAll('[data-match-event-matrix-row]').forEach(row => {
+            const goals = Math.max(0, Number(row.querySelector('[data-event-count="goal"]')?.value || 0) || 0);
+            const assists = Math.max(0, Number(row.querySelector('[data-event-count="assist"]')?.value || 0) || 0);
+            teamGoals[side] += goals;
+            totalGoals += goals;
+            totalAssists += assists;
+            if (row.querySelector('[data-match-event-mvp]')?.checked) mvpName = String(row.dataset.playerName || '');
+        });
+        const ownGoals = Math.max(0, Number(panel.querySelector('[data-match-own-goals]')?.value || 0) || 0);
+        teamGoals[side] += ownGoals;
+        totalGoals += ownGoals;
+    });
+    const goalsOutput = modal.querySelector('[data-match-event-summary-goals]');
+    const assistsOutput = modal.querySelector('[data-match-event-summary-assists]');
+    const mvpOutput = modal.querySelector('[data-match-event-summary-mvp]');
+    if (goalsOutput) goalsOutput.textContent = String(totalGoals);
+    if (assistsOutput) assistsOutput.textContent = String(totalAssists);
+    if (mvpOutput) mvpOutput.textContent = mvpName || '待评选';
+    Object.entries(teamGoals).forEach(([side, total]) => {
+        const output = modal.querySelector(`[data-match-event-team-total="${side}"]`);
+        if (output) output.textContent = `${total} 球`;
+    });
+    const status = document.getElementById('matchEventModalStatus');
+    if (status && matchEventEditorDirty) {
+        const homeScore = String(modal.dataset.homeScore || '').trim();
+        const awayScore = String(modal.dataset.awayScore || '').trim();
+        const scoreMismatch = homeScore !== '' && awayScore !== ''
+            && (teamGoals.home !== Number(homeScore) || teamGoals.away !== Number(awayScore));
+        status.textContent = scoreMismatch ? '有未保存修改 · 进球合计与比分不一致' : '有未保存修改';
+        status.classList.toggle('is-warning', scoreMismatch);
+    }
+}
+
+function selectMatchEventMvp(input) {
+    if (input?.checked) {
+        document.querySelectorAll('#matchEventEditorModal [data-match-event-mvp]').forEach(item => {
+            if (item !== input) item.checked = false;
+        });
+    }
+    markMatchEventEditorDirty();
+}
+
+function readMatchEventMatrixCount(input, label) {
+    const raw = String(input?.value || '').trim();
+    if (!raw) return 0;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 0) throw new Error(`${label}必须是 0 或正整数。`);
+    return value;
+}
+
+function readMatchEventMatrixPayload(matchId) {
+    const modal = document.getElementById('matchEventEditorModal');
+    const match = findScheduleMatchById(matchId);
+    if (!modal || !match || Number(modal.dataset.matchId || 0) !== Number(matchId)) throw new Error('比赛数据窗口已失效，请重新打开。');
+    const validTeams = new Set(getMatchTeamOptions(match).map(team => team.team_name));
+    const events = [];
+    modal.querySelectorAll('[data-match-event-matrix-row]').forEach(row => {
+        const teamName = String(row.dataset.teamName || '');
+        const playerUid = Number(row.dataset.playerUid || 0);
+        const playerName = String(row.dataset.playerName || '');
+        if (!validTeams.has(teamName)) throw new Error('球员所属球队与本场比赛不一致。');
+        const goals = readMatchEventMatrixCount(row.querySelector('[data-event-count="goal"]'), `${playerName}的进球数`);
+        const assists = readMatchEventMatrixCount(row.querySelector('[data-event-count="assist"]'), `${playerName}的助攻数`);
+        if (goals) events.push({team_name: teamName, player_uid: playerUid || null, player_name: playerName, event_type: 'goal', quantity: goals});
+        if (assists) events.push({team_name: teamName, player_uid: playerUid || null, player_name: playerName, event_type: 'assist', quantity: assists});
+        if (row.querySelector('[data-match-event-mvp]')?.checked) events.push({team_name: teamName, player_uid: playerUid || null, player_name: playerName, event_type: 'mvp', quantity: 1});
+    });
+    modal.querySelectorAll('[data-match-own-goals]').forEach(input => {
+        const teamName = String(input.dataset.teamName || '');
+        const quantity = readMatchEventMatrixCount(input, `${teamName}的乌龙球数`);
+        if (quantity) events.push({team_name: teamName, player_uid: null, player_name: '乌龙球', event_type: 'own_goal', quantity});
+    });
+    if (events.filter(event => event.event_type === 'mvp').length > 1) throw new Error('本场最佳只能选择一名球员。');
+    return events;
+}
+
+async function saveMatchEventEditor() {
+    const matchId = Number(activeMatchEventEditorMatchId || 0);
+    const status = document.getElementById('matchEventModalStatus');
+    const saveButton = document.getElementById('matchEventModalSave');
+    if (!matchId || !saveButton) return;
+    let payload;
+    try {
+        payload = readMatchScorePayload(matchId, readMatchEventMatrixPayload(matchId));
+    } catch (error) {
+        if (status) status.textContent = error.message || '比赛数据填写不完整';
+        return;
+    }
+    if (scheduleMatchSaveInFlight.has(matchId)) {
+        if (status) status.textContent = '比分正在保存，请稍后再保存球员数据';
+        return;
+    }
+    if (scheduleAutoSaveTimers.has(matchId)) {
+        window.clearTimeout(scheduleAutoSaveTimers.get(matchId));
+        scheduleAutoSaveTimers.delete(matchId);
+    }
+    scheduleMatchSaveVersions.set(matchId, Number(scheduleMatchSaveVersions.get(matchId) || 0) + 1);
+    scheduleMatchSaveInFlight.add(matchId);
+    setScheduleMatchSaveState(matchId, 'saving');
+    saveButton.disabled = true;
+    saveButton.textContent = '保存中...';
+    if (status) status.textContent = '正在保存比赛数据';
+    try {
+        const result = await adminJsonRequest('/api/admin/matches/batch', {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({matches: [payload]}),
+        });
+        if (!result) throw new Error('保存请求失败');
+        const {response, data} = result;
+        if (!response.ok || !data.success) throw new Error(data.detail || data.message || '保存比赛数据失败');
+        applyMatchPayloadLocally(payload);
+        setScheduleMatchSaveState(matchId, 'saved');
+        matchEventEditorDirty = false;
+        closeMatchEventEditor(true);
+        renderScheduleBoard();
+        competitionDataLoaded = false;
+        await refreshPlayerRankingsData();
+        await refreshCompetitionWorkSummary({renderBoards: false});
+        renderCompetitionDataStatus();
+        if (typeof showUiToast === 'function') showUiToast('比赛数据已保存', {tone: 'success'});
+    } catch (error) {
+        setScheduleMatchSaveState(matchId, 'error', error.message || '保存失败，点击重试');
+        if (status) status.textContent = error.message || '保存失败，请重试';
+        saveButton.disabled = false;
+        saveButton.textContent = '重新保存';
+    } finally {
+        scheduleMatchSaveInFlight.delete(matchId);
+    }
+}
+
+function handleMatchEventEditorKeydown(event) {
+    const modal = document.getElementById('matchEventEditorModal');
+    if (!modal) return;
+    if (event.key === 'Escape') {
+        closeMatchEventEditor();
+        return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(modal.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'))
+        .filter(item => !item.closest('[hidden]'));
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
+}
+
+document.addEventListener('keydown', handleMatchEventEditorKeydown);
 
 function addMatchEventRow(matchId) {
     const match = findScheduleMatchById(matchId);
@@ -3795,7 +4141,6 @@ function buildAdminMatchControlGroup(match) {
                 ${renderScheduleMatchSaveState(match.id)}
             </div>
             <div class="match-forfeit-note" ${isForfeit ? '' : 'hidden'}>判负状态会按规则自动锁定比分，保存后不记录进球、助攻和本场最佳。</div>
-            ${renderMatchEventEditor(match)}
         </div>
     `;
 }
@@ -3966,10 +4311,16 @@ function renderMobileScheduleMatchCard(match) {
             ${expanded ? `<div class="mobile-schedule-card-events" id="${detailsId}">${renderScheduleMatchEvents(match)}</div>` : ''}
             ${renderCompetitionWorkMatchIssue(match.id)}
             ${canManageCurrentCompetitionSchedule() ? `
-                <button class="mobile-schedule-edit-trigger" type="button" onclick="openMobileScheduleEditDrawer(${Number(match.id)})">
-                    <span>编辑事件</span>
-                    <span aria-hidden="true">›</span>
-                </button>
+                <div class="mobile-schedule-edit-actions">
+                    <button class="mobile-schedule-edit-trigger" type="button" onclick="openMobileScheduleEditDrawer(${Number(match.id)})">
+                        <span>比分与状态</span>
+                        <span aria-hidden="true">›</span>
+                    </button>
+                    <button class="mobile-schedule-edit-trigger is-player-data" type="button" onclick="openMatchEventEditor(${Number(match.id)})">
+                        <span>球员数据</span>
+                        <span aria-hidden="true">›</span>
+                    </button>
+                </div>
             ` : ''}
         </article>
     `;
@@ -4288,6 +4639,7 @@ async function saveCompetitionImage(kind, level = currentCompetitionLevel) {
 
 function renderScheduleBoard() {
     closeMatchEventSuggestions();
+    if (document.getElementById('matchEventEditorModal')) closeMatchEventEditor(true);
     const container = document.getElementById('scheduleBoard');
     const groupContainer = document.getElementById('cupGroupStageBoard');
     const filters = document.getElementById('competitionScheduleFilters');
@@ -4477,11 +4829,12 @@ async function uploadScheduleImportFile(file) {
     `);
 }
 
-function readMatchScorePayload(matchId) {
+function readMatchScorePayload(matchId, eventOverride = null) {
     const homeInput = document.getElementById(`match-home-${matchId}`);
     const awayInput = document.getElementById(`match-away-${matchId}`);
     const statusSelect = document.getElementById(`match-status-${matchId}`);
-    const selectedStatus = String(statusSelect?.value || '').trim();
+    const match = findScheduleMatchById(matchId);
+    const selectedStatus = String(statusSelect?.value || match?.status || '').trim();
     const forcedScore = getForfeitScoreForStatus(selectedStatus);
     if (forcedScore) {
         if (homeInput) homeInput.value = forcedScore.home_score;
@@ -4494,8 +4847,8 @@ function readMatchScorePayload(matchId) {
             events: [],
         };
     }
-    const homeRaw = String(homeInput?.value ?? '').trim();
-    const awayRaw = String(awayInput?.value ?? '').trim();
+    const homeRaw = String(homeInput ? homeInput.value : (match?.home_score ?? '')).trim();
+    const awayRaw = String(awayInput ? awayInput.value : (match?.away_score ?? '')).trim();
     if ((homeRaw === '') !== (awayRaw === '')) {
         throw new Error('请填写完整的双方比分，或清空双方比分后再保存。');
     }
@@ -4507,8 +4860,7 @@ function readMatchScorePayload(matchId) {
     ) {
         throw new Error('比分必须是 0 或正整数。');
     }
-    const match = findScheduleMatchById(matchId);
-    const events = readMatchEventPayload(matchId, match);
+    const events = Array.isArray(eventOverride) ? eventOverride : readMatchEventPayload(matchId, match);
     return {
         match_id: Number(matchId),
         home_score: homeScore,
@@ -4520,6 +4872,13 @@ function readMatchScorePayload(matchId) {
 
 function readMatchEventPayload(matchId, match) {
     const rows = Array.from(document.querySelectorAll(`#match-events-${matchId} [data-match-event-row]`));
+    if (!rows.length) return (match?.events || []).map(event => ({
+        team_name: String(event.team_name || ''),
+        player_uid: event.player_uid === null || event.player_uid === undefined ? null : Number(event.player_uid || 0),
+        player_name: String(event.player_name || ''),
+        event_type: String(event.event_type || ''),
+        quantity: Number(event.quantity || 1),
+    }));
     return rows.map(row => {
         const teamName = String(row.querySelector('.match-event-team')?.value || '').trim();
         const playerInput = String(row.querySelector('.match-event-player')?.value || '').trim();
