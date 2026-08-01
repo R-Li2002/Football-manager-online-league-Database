@@ -129,8 +129,7 @@ class MatchBatchUpdateRequest(BaseModel):
 class RankingMatchCreateRequest(BaseModel):
     home_team_id: int
     away_team_id: int
-    home_score: int = Field(ge=0, le=99)
-    away_score: int = Field(ge=0, le=99)
+    result: Literal["home", "draw", "away"]
 
 
 class CupMatchTeamsUpdateRequest(BaseModel):

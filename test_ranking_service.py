@@ -36,7 +36,7 @@ class RankingServiceTests(unittest.TestCase):
         payload = ranking_service.create_ranking_match(
             self.db,
             "operator",
-            RankingMatchCreateRequest(home_team_id=1, away_team_id=2, home_score=2, away_score=1),
+            RankingMatchCreateRequest(home_team_id=1, away_team_id=2, result="home"),
             lambda *_args: None,
         )
 
@@ -76,7 +76,7 @@ class RankingServiceTests(unittest.TestCase):
         payload = ranking_service.create_ranking_match(
             self.db,
             "operator",
-            RankingMatchCreateRequest(home_team_id=1, away_team_id=2, home_score=1, away_score=1),
+            RankingMatchCreateRequest(home_team_id=1, away_team_id=2, result="draw"),
             lambda *_args: None,
         )
 
@@ -89,11 +89,11 @@ class RankingServiceTests(unittest.TestCase):
 
     def test_delete_recalculates_all_following_matches(self):
         first = ranking_service.create_ranking_match(
-            self.db, "operator", RankingMatchCreateRequest(home_team_id=1, away_team_id=2, home_score=2, away_score=0), lambda *_args: None
+            self.db, "operator", RankingMatchCreateRequest(home_team_id=1, away_team_id=2, result="home"), lambda *_args: None
         )
         first_id = first.matches[0].id
         ranking_service.create_ranking_match(
-            self.db, "operator", RankingMatchCreateRequest(home_team_id=2, away_team_id=1, home_score=1, away_score=0), lambda *_args: None
+            self.db, "operator", RankingMatchCreateRequest(home_team_id=2, away_team_id=1, result="home"), lambda *_args: None
         )
 
         payload = ranking_service.delete_ranking_match(self.db, "operator", first_id, lambda *_args: None)

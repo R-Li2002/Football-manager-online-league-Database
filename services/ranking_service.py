@@ -96,8 +96,6 @@ def get_rankings(db: Session) -> RankingsResponse:
             home_team_name=str(match.home_team_name),
             away_team_id=int(match.away_team_id),
             away_team_name=str(match.away_team_name),
-            home_score=int(match.home_score),
-            away_score=int(match.away_score),
             result=_result_label(match),
             played_at=match.played_at,
         )
@@ -131,20 +129,27 @@ def create_ranking_match(
     away = teams.get(request.away_team_id)
     if not home or not away:
         raise HTTPException(status_code=400, detail="排位比赛只能选择当前三级联赛球队")
+    score_by_result = {
+        "home": (1, 0),
+        "draw": (0, 0),
+        "away": (0, 1),
+    }
+    home_score, away_score = score_by_result[request.result]
     match = RankingMatch(
         home_team_id=home.id,
         home_team_name=home.name,
         away_team_id=away.id,
         away_team_name=away.name,
-        home_score=int(request.home_score),
-        away_score=int(request.away_score),
+        home_score=home_score,
+        away_score=away_score,
         created_by=operator,
         played_at=datetime.now(),
         created_at=datetime.now(),
     )
     db.add(match)
     db.commit()
-    write_to_log("排位比赛录入", f"{home.name} {match.home_score}:{match.away_score} {away.name}", operator)
+    result_label = {"home": "主队胜", "draw": "平局", "away": "客队胜"}[request.result]
+    write_to_log("排位比赛录入", f"{home.name} vs {away.name} · {result_label}", operator)
     return get_rankings(db)
 
 
@@ -157,7 +162,8 @@ def delete_ranking_match(
     match = db.query(RankingMatch).filter(RankingMatch.id == match_id).first()
     if not match:
         raise HTTPException(status_code=404, detail="排位比赛不存在")
-    detail = f"{match.home_team_name} {match.home_score}:{match.away_score} {match.away_team_name}"
+    result_label = {"home": "主队胜", "draw": "平局", "away": "客队胜"}[_result_label(match)]
+    detail = f"{match.home_team_name} vs {match.away_team_name} · {result_label}"
     db.delete(match)
     db.commit()
     write_to_log("排位比赛撤销", detail, operator)

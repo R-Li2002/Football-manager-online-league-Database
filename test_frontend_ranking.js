@@ -26,7 +26,7 @@ context.rankingData = {
     transfer_rate: 0.1,
     total_matches: 1,
     rows: [{rank: 1, team_id: 1, team_name: 'Alpha FC', level: '超级', logo_path: '', base_points: 1100, total_points: 1120, matches: 1, wins: 1, draws: 0, losses: 0}],
-    matches: [{id: 8, home_team_name: 'Alpha FC', away_team_name: 'Beta FC', home_score: 2, away_score: 1}],
+    matches: [{id: 8, home_team_name: 'Alpha FC', away_team_name: 'Beta FC', result: 'home'}],
 };
 context.renderRankingBoard();
 
@@ -37,7 +37,8 @@ assert.match(ratingBoard.innerHTML, /Alpha FC/);
 assert.match(ratingBoard.innerHTML, /<small>超级<\/small>/);
 assert.doesNotMatch(ratingBoard.innerHTML, /超级级/);
 assert.match(ratingBoard.innerHTML, /添加排位比赛/);
-assert.match(ratingBoard.innerHTML, /2<\/b><i>:\s*<\/i><b>1/);
+assert.match(ratingBoard.innerHTML, /主胜/);
+assert.doesNotMatch(ratingBoard.innerHTML, /ranking-score-entry/);
 assert.match(ratingBoard.innerHTML, /deleteRankingMatch\(8\)/);
 
 context.canManageRankings = false;

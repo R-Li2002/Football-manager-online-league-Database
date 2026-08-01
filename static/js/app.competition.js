@@ -479,7 +479,7 @@ function getRankingTeamMark(row) {
 
 function renderRankingEntryForm() {
     if (!canManageRankingMatches()) {
-        return '<div class="ranking-entry-locked"><strong>比赛记录</strong><span>拥有“排位统计”权限后可在这里添加比分。</span></div>';
+        return '<div class="ranking-entry-locked"><strong>比赛记录</strong><span>拥有“排位统计”权限后可在这里添加胜平负结果。</span></div>';
     }
     const options = (rankingData.rows || [])
         .slice()
@@ -490,11 +490,12 @@ function renderRankingEntryForm() {
         <form class="ranking-entry-form" onsubmit="event.preventDefault(); saveRankingMatch();">
             <div class="ranking-entry-heading"><div><span>NEW RESULT</span><strong>添加排位比赛</strong></div><small>保存后即时重算</small></div>
             <label><span>主队</span><select id="rankingHomeTeam" required><option value="">选择球队</option>${options}</select></label>
-            <div class="ranking-score-entry" aria-label="录入比分">
-                <input id="rankingHomeScore" type="number" min="0" max="99" inputmode="numeric" placeholder="0" required aria-label="主队比分">
-                <span>:</span>
-                <input id="rankingAwayScore" type="number" min="0" max="99" inputmode="numeric" placeholder="0" required aria-label="客队比分">
-            </div>
+            <fieldset class="ranking-result-entry">
+                <legend>比赛结果</legend>
+                <label><input type="radio" name="rankingResult" value="home" required><span>主队胜</span></label>
+                <label><input type="radio" name="rankingResult" value="draw" required><span>平局</span></label>
+                <label><input type="radio" name="rankingResult" value="away" required><span>客队胜</span></label>
+            </fieldset>
             <label><span>客队</span><select id="rankingAwayTeam" required><option value="">选择球队</option>${options}</select></label>
             <button class="btn btn-primary" id="rankingSaveButton" type="submit">记入排位</button>
         </form>
@@ -504,12 +505,13 @@ function renderRankingEntryForm() {
 function renderRankingMatches() {
     const matches = rankingData.matches || [];
     if (!matches.length) {
-        return '<div class="ranking-matches-empty"><strong>暂无逐场比分</strong><span>Excel 导入的是累计积分；从现在录入的比赛会显示在这里。</span></div>';
+        return '<div class="ranking-matches-empty"><strong>暂无逐场赛果</strong><span>Excel 导入的是累计积分；从现在录入的胜平负会显示在这里。</span></div>';
     }
-    return `<div class="ranking-match-list" aria-label="排位比赛比分">${matches.map(match => `
+    const resultLabels = {home: '主胜', draw: '平局', away: '客胜'};
+    return `<div class="ranking-match-list" aria-label="排位比赛结果">${matches.map(match => `
         <article class="ranking-match-ticket">
             <div class="ranking-ticket-team"><span>${escapeHtml(getScheduleTeamInitials(match.home_team_name))}</span><strong title="${escapeHtml(match.home_team_name)}">${escapeHtml(getCupTeamDisplayName(match.home_team_name))}</strong></div>
-            <div class="ranking-ticket-score"><b>${Number(match.home_score)}</b><i>:</i><b>${Number(match.away_score)}</b></div>
+            <div class="ranking-ticket-result is-${escapeHtml(match.result)}">${escapeHtml(resultLabels[match.result] || '赛果')}</div>
             <div class="ranking-ticket-team is-away"><strong title="${escapeHtml(match.away_team_name)}">${escapeHtml(getCupTeamDisplayName(match.away_team_name))}</strong><span>${escapeHtml(getScheduleTeamInitials(match.away_team_name))}</span></div>
             ${canManageRankingMatches() ? `<button class="ranking-ticket-delete" type="button" onclick="deleteRankingMatch(${Number(match.id)})" aria-label="撤销 ${escapeHtml(match.home_team_name)} 对 ${escapeHtml(match.away_team_name)} 的比赛">×</button>` : ''}
         </article>
@@ -548,7 +550,7 @@ function renderRankingBoard() {
             </div>
             <aside class="ranking-results-panel">
                 ${renderRankingEntryForm()}
-                <div class="ranking-results-heading"><div><span>RESULT LOG</span><strong>比赛比分</strong></div><b>${Number(rankingData.total_matches || 0)} 场</b></div>
+                <div class="ranking-results-heading"><div><span>RESULT LOG</span><strong>比赛结果</strong></div><b>${Number(rankingData.total_matches || 0)} 场</b></div>
                 ${renderRankingMatches()}
             </aside>
         </section>
@@ -559,10 +561,9 @@ async function saveRankingMatch() {
     if (!canManageRankingMatches() || rankingMatchMutationBusy) return;
     const homeTeamId = Number(document.getElementById('rankingHomeTeam')?.value || 0);
     const awayTeamId = Number(document.getElementById('rankingAwayTeam')?.value || 0);
-    const homeScore = Number(document.getElementById('rankingHomeScore')?.value);
-    const awayScore = Number(document.getElementById('rankingAwayScore')?.value);
-    if (!homeTeamId || !awayTeamId || !Number.isInteger(homeScore) || !Number.isInteger(awayScore) || homeScore < 0 || awayScore < 0) {
-        showModal('比分未填写完整', '请选择主客队，并填写双方的非负整数比分。');
+    const resultValue = document.querySelector('input[name="rankingResult"]:checked')?.value || '';
+    if (!homeTeamId || !awayTeamId || !['home', 'draw', 'away'].includes(resultValue)) {
+        showModal('比赛结果未填写完整', '请选择主客队，并选择主队胜、平局或客队胜。');
         return;
     }
     if (homeTeamId === awayTeamId) {
@@ -575,7 +576,7 @@ async function saveRankingMatch() {
     try {
         const result = await adminJsonRequest('/api/admin/rankings/matches', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({home_team_id: homeTeamId, away_team_id: awayTeamId, home_score: homeScore, away_score: awayScore}),
+            body: JSON.stringify({home_team_id: homeTeamId, away_team_id: awayTeamId, result: resultValue}),
         });
         if (!result) return;
         if (!result.response.ok) {
@@ -592,7 +593,8 @@ async function saveRankingMatch() {
 async function deleteRankingMatch(matchId) {
     if (!canManageRankingMatches() || rankingMatchMutationBusy) return;
     const match = (rankingData.matches || []).find(item => Number(item.id) === Number(matchId));
-    if (!match || !confirm(`确认撤销 ${match.home_team_name} ${match.home_score}:${match.away_score} ${match.away_team_name}？后续积分会按比赛顺序重新计算。`)) return;
+    const resultLabel = {home: '主队胜', draw: '平局', away: '客队胜'}[match?.result] || '已录赛果';
+    if (!match || !confirm(`确认撤销 ${match.home_team_name} vs ${match.away_team_name}（${resultLabel}）？后续积分会按比赛顺序重新计算。`)) return;
     rankingMatchMutationBusy = true;
     try {
         const result = await adminJsonRequest(`/api/admin/rankings/matches/${Number(matchId)}`, {method: 'DELETE'});

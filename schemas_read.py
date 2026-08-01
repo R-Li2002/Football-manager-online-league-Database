@@ -705,8 +705,6 @@ class RankingMatchResponse(BaseModel):
     home_team_name: str
     away_team_id: int
     away_team_name: str
-    home_score: int
-    away_score: int
     result: Literal["home", "draw", "away"]
     played_at: datetime
 

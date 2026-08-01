@@ -5270,6 +5270,10 @@ body:not(.light-mode) .competition-level-section {
     overflow: hidden;
 }
 
+.competition-selector[hidden] {
+    display: none !important;
+}
+
 .competition-selector-head {
     min-height: 42px;
     display: grid;
@@ -5571,9 +5575,13 @@ body:not(.light-mode) #competitionLevelWumingjianCup {
 .ranking-entry-form select { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--surface-muted); color: var(--text-primary); font-size: .74rem; }
 .ranking-entry-form .btn { min-height: 42px; }
 
-.ranking-score-entry { display: grid; grid-template-columns: 1fr 18px 1fr; align-items: center; gap: 5px; }
-.ranking-score-entry input { width: 100%; min-width: 0; height: 48px; padding: 6px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--surface-muted); color: var(--text-primary); font-size: 1.15rem; font-weight: 850; text-align: center; font-variant-numeric: tabular-nums; }
-.ranking-score-entry span { color: var(--text-tertiary); font-size: 1rem; font-weight: 800; text-align: center; }
+.ranking-result-entry { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.ranking-result-entry legend { grid-column: 1 / -1; margin-bottom: 5px; color: var(--text-tertiary); font-size: .64rem; font-weight: 700; }
+.ranking-result-entry label { position: relative; display: block; cursor: pointer; }
+.ranking-result-entry input { position: absolute; opacity: 0; pointer-events: none; }
+.ranking-result-entry span { display: grid; place-items: center; min-height: 40px; padding: 6px 4px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--surface-muted); color: var(--text-secondary); font-size: .68rem; font-weight: 800; transition: border-color .16s ease, background .16s ease, color .16s ease; }
+.ranking-result-entry input:checked + span { border-color: color-mix(in srgb, var(--accent-primary) 36%, var(--border-color)); background: color-mix(in srgb, var(--accent-primary) 12%, var(--surface-strong)); color: var(--accent-primary); }
+.ranking-result-entry input:focus-visible + span { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 .ranking-entry-locked { display: grid; gap: 4px; padding: 16px; border-bottom: 1px solid var(--border-color); }
 .ranking-entry-locked strong { color: var(--text-primary); font-size: .9rem; }
@@ -5587,9 +5595,10 @@ body:not(.light-mode) #competitionLevelWumingjianCup {
 .ranking-ticket-team.is-away { justify-content: flex-end; text-align: right; }
 .ranking-ticket-team span { display: grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px; border-radius: 7px; background: var(--surface-strong); color: var(--text-tertiary); font-size: .48rem; font-weight: 800; }
 .ranking-ticket-team strong { overflow: hidden; color: var(--text-primary); font-size: .66rem; text-overflow: ellipsis; white-space: nowrap; }
-.ranking-ticket-score { display: flex; align-items: center; gap: 4px; color: var(--text-primary); font-variant-numeric: tabular-nums; }
-.ranking-ticket-score b { font-size: .9rem; }
-.ranking-ticket-score i { color: var(--text-tertiary); font-size: .7rem; font-style: normal; }
+.ranking-ticket-result { min-width: 38px; padding: 5px 6px; border-radius: 8px; background: var(--surface-strong); color: var(--text-secondary); font-size: .62rem; font-weight: 850; text-align: center; }
+.ranking-ticket-result.is-home { color: #2587bd; }
+.ranking-ticket-result.is-draw { color: var(--text-secondary); }
+.ranking-ticket-result.is-away { color: var(--accent-primary); }
 .ranking-ticket-delete { position: absolute; top: -5px; right: -5px; display: grid; place-items: center; width: 19px; height: 19px; padding: 0; border: 1px solid color-mix(in srgb, #d84c4c 30%, var(--border-color)); border-radius: 50%; background: var(--surface-strong); color: #c84646; cursor: pointer; font-size: .74rem; opacity: 0; transition: opacity .16s ease; }
 .ranking-match-ticket:hover .ranking-ticket-delete,
 .ranking-ticket-delete:focus-visible { opacity: 1; }
