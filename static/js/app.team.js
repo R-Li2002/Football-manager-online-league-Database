@@ -1,5 +1,6 @@
 let currentTeamDetailName = '';
 let teamDetailLoadSequence = 0;
+let teamDetailAbortController = null;
 let currentTeamDetailData = null;
 let teamRosterExportBusy = false;
 let teamLineupExportBusy = false;
@@ -9,9 +10,31 @@ let teamCenterCoachAuthPromise = null;
 let teamRosterCopyToastTimer = null;
 let currentTeamJourneyView = 'league';
 const teamDetailCache = new Map();
+const TEAM_DETAIL_CACHE_TTL_MS = 60 * 1000;
 const TEAM_ROSTER_VIEW_MODES = new Set(['compact', 'detail', 'cards']);
 const teamCenterExpandedLevels = new Set();
 let teamCenterExpandedInitialized = false;
+
+function getCachedTeamDetail(teamName) {
+    const cached = teamDetailCache.get(teamName);
+    if (!cached) return null;
+    if (Date.now() - Number(cached.cachedAt || 0) > TEAM_DETAIL_CACHE_TTL_MS) {
+        teamDetailCache.delete(teamName);
+        return null;
+    }
+    return cached.data || null;
+}
+
+function setCachedTeamDetail(teamName, data) {
+    teamDetailCache.set(teamName, {data, cachedAt: Date.now()});
+    return data;
+}
+
+function invalidateTeamDetailCache(teamName = '') {
+    const normalizedName = String(teamName || '').trim();
+    if (normalizedName) teamDetailCache.delete(normalizedName);
+    else teamDetailCache.clear();
+}
 
 function teamDetailSafeNumber(value, fallback = 0) {
     const number = Number(value);
@@ -608,12 +631,12 @@ function openTeamLineupEditor() {
 function teamDetailHandleLineupSaved(payload) {
     if (!currentTeamDetailData || Number(payload?.team_id) !== Number(currentTeamDetailData.team.id)) return;
     currentTeamDetailData.lineupPayload = payload;
-    teamDetailCache.set(currentTeamDetailData.team.name, currentTeamDetailData);
+    setCachedTeamDetail(currentTeamDetailData.team.name, currentTeamDetailData);
     renderTeamDetailLoaded(currentTeamDetailData);
     loadTeamPowerSummaries({force: true}).then(powerSummaries => {
         if (!currentTeamDetailData || Number(payload?.team_id) !== Number(currentTeamDetailData.team.id)) return;
         currentTeamDetailData.teamPowerSummaries = powerSummaries;
-        teamDetailCache.set(currentTeamDetailData.team.name, currentTeamDetailData);
+        setCachedTeamDetail(currentTeamDetailData.team.name, currentTeamDetailData);
         renderTeamDetailLoaded(currentTeamDetailData);
     }).catch(error => console.warn('Failed to refresh team power summaries:', error));
 }
@@ -967,54 +990,51 @@ function renderTeamDetailLoaded(data) {
 }
 
 async function loadTeamDetailData(teamName, options = {}) {
-    if (teamDetailCache.has(teamName) && options.force !== true) return teamDetailCache.get(teamName);
+    const cached = options.force === true ? null : getCachedTeamDetail(teamName);
+    if (cached) return cached;
     const team = teams.find(item => item.name === teamName);
     if (!team) throw new Error(`未找到球队：${teamName}`);
-    const encoded = encodeURIComponent(teamName);
-    const results = await Promise.allSettled([
-        fetchJsonOrThrow(`/api/players/team/${encoded}`),
-        fetchJsonOrThrow('/api/standings'),
-        fetchJsonOrThrow('/api/matches'),
-        fetchJsonOrThrow('/api/suspensions'),
-        fetchJsonOrThrow(`/api/attributes/power-ranking?shape=all&limit=all&team=${encoded}`),
-        fetchJsonOrThrow(`/api/teams/${team.id}/lineup`),
-        loadTeamPowerSummaries(),
-        fetchJsonOrThrow(`/api/teams/${team.id}/cup-outlook`),
-    ]);
-    const value = index => results[index].status === 'fulfilled' ? results[index].value : null;
+    const payload = await fetchJsonOrThrow(`/api/teams/${team.id}/center`, {signal: options.signal});
     const data = {
-        team,
-        players: Array.isArray(value(0)) ? value(0) : [],
-        standings: value(1),
-        matchesPayload: value(2),
-        suspensionsPayload: value(3),
-        powerPayload: value(4),
-        lineupPayload: value(5) || {team_id: team.id, team_name: team.name, formation: '4-3-3', picks: {}, is_saved: false, can_edit: false},
-        teamPowerSummaries: value(6),
-        cupOutlookPayload: value(7) || {team_id: team.id, team_name: team.name, competitions: []},
+        team: payload.team || team,
+        players: Array.isArray(payload.players) ? payload.players : [],
+        standings: payload.standings,
+        matchesPayload: payload.matches,
+        suspensionsPayload: payload.suspensions,
+        powerPayload: payload.power,
+        lineupPayload: payload.lineup || {team_id: team.id, team_name: team.name, formation: '4-3-3', picks: {}, is_saved: false, can_edit: false},
+        teamPowerSummaries: payload.team_power_summaries,
+        cupOutlookPayload: payload.cup_outlook || {team_id: team.id, team_name: team.name, competitions: []},
     };
-    teamDetailCache.set(teamName, data);
-    return data;
+    return setCachedTeamDetail(teamName, data);
 }
 
 async function renderTeamDetail(options = {}) {
     const root = document.getElementById('teamDetailRoot');
     if (!root) return;
     if (!currentTeamDetailName) {
+        teamDetailAbortController?.abort();
+        teamDetailAbortController = null;
         await ensureTeamCenterCoachAuth();
         renderTeamCenterLanding();
         return;
     }
+    teamDetailAbortController?.abort();
+    const abortController = new AbortController();
+    teamDetailAbortController = abortController;
     const sequence = ++teamDetailLoadSequence;
     root.innerHTML = `<div class="team-detail-skeleton" aria-label="正在加载 ${escapeHtml(currentTeamDetailName)}"><div class="team-skeleton-hero"></div><div class="team-skeleton-stats"></div><div class="team-skeleton-grid"><span></span><span></span></div></div>`;
     try {
-        const data = await loadTeamDetailData(currentTeamDetailName, options);
+        const data = await loadTeamDetailData(currentTeamDetailName, {...options, signal: abortController.signal});
         if (sequence !== teamDetailLoadSequence) return;
         renderTeamDetailLoaded(data);
     } catch (error) {
+        if (error?.name === 'AbortError') return;
         console.error('球队详情加载失败:', error);
         if (sequence !== teamDetailLoadSequence) return;
         root.innerHTML = renderUiState({tone: 'danger', title: '球队详情暂时无法加载', message: error.message || '请稍后重试。', actionLabel: '重新加载', actionClass: 'btn-primary', actionOnclick: 'renderTeamDetail({force:true})'});
+    } finally {
+        if (teamDetailAbortController === abortController) teamDetailAbortController = null;
     }
 }
 

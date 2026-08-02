@@ -154,6 +154,10 @@ def save_team_lineup(
     db.commit()
     db.refresh(record)
 
+    from services.player_power_ranking_service import invalidate_power_caches
+
+    invalidate_power_caches()
+
     if write_to_log:
         write_to_log("阵容", f"保存 {team.name} {formation} 首发阵容（{len(normalized_picks)} 人）", operator)
 

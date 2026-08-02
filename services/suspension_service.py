@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from models import Match, Player, PlayerSuspensionRecord, SiteNote, Team
@@ -201,28 +202,44 @@ def _build_suspension_progress(
     )
 
 
-def get_suspensions(db: Session) -> SuspensionsResponse:
-    teams = db.query(Team).filter(Team.level.in_(LEAGUE_LEVELS)).all()
+def get_suspensions(db: Session, *, team_id: int | None = None) -> SuspensionsResponse:
+    team_query = db.query(Team).filter(Team.level.in_(LEAGUE_LEVELS))
+    if team_id is not None:
+        team_query = team_query.filter(Team.id == team_id)
+    teams = team_query.all()
     teams = sorted(teams, key=_team_sort_key)
+    if team_id is not None and not teams:
+        raise HTTPException(status_code=404, detail="球队不存在")
+    response_levels = sorted({team.level for team in teams}, key=lambda level: LEAGUE_LEVELS.index(level))
     team_ids = {team.id for team in teams}
     team_name_to_id = {team.name: team.id for team in teams}
-    matches = db.query(Match).filter(Match.level.in_(LEAGUE_LEVELS)).order_by(Match.round_no, Match.id).all()
+    match_query = db.query(Match).filter(Match.level.in_(response_levels))
+    if team_id is not None:
+        team_names = set(team_name_to_id)
+        match_query = match_query.filter(
+            or_(
+                Match.home_team_id.in_(team_ids),
+                Match.away_team_id.in_(team_ids),
+                Match.home_team_name.in_(team_names),
+                Match.away_team_name.in_(team_names),
+            )
+        )
+    matches = match_query.order_by(Match.round_no, Match.id).all()
+    note_keys = [f"{SUSPENSION_NOTE_PREFIX}.{level}" for level in response_levels]
+    note_keys.extend(f"{SUSPENSION_TEAM_NOTE_PREFIX}.{item.id}" for item in teams)
     note_rows = (
         db.query(SiteNote)
-        .filter(
-            (SiteNote.key.in_([f"{SUSPENSION_NOTE_PREFIX}.{level}" for level in LEAGUE_LEVELS]))
-            | (SiteNote.key.like(f"{SUSPENSION_TEAM_NOTE_PREFIX}.%"))
-        )
+        .filter(SiteNote.key.in_(note_keys))
         .all()
     )
     notes_by_key = {note.key: note for note in note_rows if note.round_no is not None}
 
-    records = (
-        db.query(PlayerSuspensionRecord)
-        .filter(PlayerSuspensionRecord.level.in_(LEAGUE_LEVELS))
-        .order_by(PlayerSuspensionRecord.team_name, PlayerSuspensionRecord.player_name)
-        .all()
-    )
+    record_query = db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.level.in_(response_levels))
+    if team_id is not None:
+        record_query = record_query.filter(
+            or_(PlayerSuspensionRecord.team_id.in_(team_ids), PlayerSuspensionRecord.team_name.in_(set(team_name_to_id)))
+        )
+    records = record_query.order_by(PlayerSuspensionRecord.team_name, PlayerSuspensionRecord.player_name).all()
 
     grouped: dict[int, dict[str, list[SuspensionPlayerResponse] | list[str]]] = {
         team.id: {"one_yellow": [], "two_yellows": [], "suspended": [], "notes": []} for team in teams
@@ -232,7 +249,7 @@ def get_suspensions(db: Session) -> SuspensionsResponse:
         for player in db.query(Player).filter(Player.uid.in_([record.player_uid for record in records])).all()
     }
     orphaned_by_level: dict[str, dict[str, list[SuspensionPlayerResponse] | list[str]]] = {
-        level: {"one_yellow": [], "two_yellows": [], "suspended": [], "notes": []} for level in LEAGUE_LEVELS
+        level: {"one_yellow": [], "two_yellows": [], "suspended": [], "notes": []} for level in response_levels
     }
     for record in records:
         team_id = record.team_id if record.team_id in team_ids else team_name_to_id.get(record.team_name)
@@ -269,12 +286,12 @@ def get_suspensions(db: Session) -> SuspensionsResponse:
             suspended=orphaned_by_level[level]["suspended"],
             notes=orphaned_by_level[level]["notes"],
         )
-        for index, level in enumerate(LEAGUE_LEVELS)
+        for index, level in enumerate(response_levels)
         if any(orphaned_by_level[level][key] for key in ("one_yellow", "two_yellows", "suspended"))
     ]
 
     return SuspensionsResponse(
-        levels=LEAGUE_LEVELS,
+        levels=response_levels,
         teams=[
             SuspensionTeamResponse(
                 team_id=team.id,

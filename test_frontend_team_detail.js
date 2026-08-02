@@ -28,7 +28,10 @@ assert(html.includes('id="teamDetailRoot"'), 'team detail root should exist');
 assert(html.includes('class="nav-tab-icon team-nav-icon"'), 'team center should use its own jersey navigation icon');
 assert(html.includes('class="mobile-bottom-nav-icon team-nav-icon"'), 'mobile team navigation should reuse the jersey icon');
 
-assert(team.includes('/api/players/team/${encoded}'), 'team roster API should be loaded');
+assert(team.includes('/api/teams/${team.id}/center'), 'team center should use its aggregate API');
+assert(team.includes('const TEAM_DETAIL_CACHE_TTL_MS = 60 * 1000'), 'team detail cache should expire instead of remaining stale indefinitely');
+assert(team.includes('new AbortController()'), 'team switching should cancel the previous aggregate request');
+assert(team.includes("error?.name === 'AbortError'"), 'cancelled team requests should not render as user-facing failures');
 assert(team.includes('function renderTeamCenterLanding()'), 'team center landing page should render before a team is selected');
 assert(team.includes('id="teamCenterSearchInput"'), 'team center landing should include club and coach search');
 assert(team.includes('team-center-coach-access'), 'team center welcome should include a coach login shortcut');
@@ -43,9 +46,9 @@ assert(team.includes('teamCenterExpandedInitialized'), 'the default league group
 assert(team.includes('aria-controls="${contentId}"'), 'league group toggles should expose their controlled directory');
 assert(team.includes("linkedTeam?.level || '超级'"), 'mobile team directory should prefer the linked team league and otherwise open super league');
 assert(team.includes("openTeamDetail(decodeURIComponent('${encodedName}'))"), 'landing team cards should open team detail');
-assert(team.includes('/api/attributes/power-ranking?shape=all&limit=all&team=${encoded}'), 'all growth shapes should be loaded for CA estimation');
-assert(team.includes('/api/teams/${team.id}/lineup'), 'saved team lineup should be loaded');
-assert(team.includes('/api/teams/${team.id}/cup-outlook'), 'team cup outlook should be loaded');
+assert(team.includes('powerPayload: payload.power'), 'aggregate power data should feed the existing team renderer');
+assert(team.includes('lineupPayload: payload.lineup'), 'aggregate lineup data should feed the existing team renderer');
+assert(team.includes('cupOutlookPayload: payload.cup_outlook'), 'aggregate cup outlook should feed the existing team renderer');
 assert(!team.includes("fetchJsonOrThrow('/api/site-notes')"), 'team center should receive unified progress with suspension data instead of loading raw markers');
 assert(team.includes('function teamDetailSuspensionFreshness(teamSuspensions)'), 'team center should display backend suspension progress');
 assert(team.includes('teamSuspensions?.progress'), 'team center should use the canonical team progress object');
@@ -101,7 +104,8 @@ assert(team.includes('sorted.map(player =>'), 'team center should render the com
 assert(team.includes('teamDetailFormatNumber(item.heigo_power, 2)'), 'HEIGO power should use two decimals');
 assert(team.includes('<span>加权战力</span>'), 'power core should label weighted power explicitly');
 assert(team.includes('<span>HEIGO 战力</span><small>前 '), 'power percentile should be visually bound to HEIGO power');
-assert(team.includes('Promise.allSettled'), 'partial API failure should not break the whole page');
+assert(!team.includes('Promise.allSettled'), 'team center should no longer fan out eight independent requests');
+assert(team.includes("title: '球队详情暂时无法加载'"), 'aggregate request failures should have a visible retry state');
 
 assert(css.includes('.team-detail-primary-grid'), 'desktop team layout should exist');
 assert.match(css, /\.team-detail-side-stack\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-rows:\s*auto auto;[\s\S]*?align-content:\s*start;/, 'team journey and discipline cards should keep natural height instead of stretching to the lineup');

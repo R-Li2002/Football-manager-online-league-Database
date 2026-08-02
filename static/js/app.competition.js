@@ -5038,6 +5038,7 @@ function invalidateCompetitionSections(sections = Object.keys(COMPETITION_SECTIO
         competitionSectionLoadPromises.delete(section);
     });
     competitionDataLoaded = competitionLoadedSections.size > 0;
+    if (typeof invalidateTeamDetailCache === 'function') invalidateTeamDetailCache();
 }
 
 function renderCompetitionSection(section) {

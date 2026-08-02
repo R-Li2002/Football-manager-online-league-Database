@@ -3,9 +3,11 @@ from __future__ import annotations
 import heapq
 import json
 import re
+import time
 from bisect import bisect_right
 from dataclasses import dataclass
 from statistics import median
+from threading import Lock
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -44,6 +46,11 @@ TACTICAL_SLOT_ROLES = {
     "def_l": ("DL", "LWB", "WBL"), "def_lc": ("DC", "CB", "DL"), "def_c": ("DC", "CB"),
     "def_rc": ("DC", "CB", "DR"), "def_r": ("DR", "RWB", "WBR"), "gk": ("GK",),
 }
+POWER_CALIBRATION_CACHE_TTL_SECONDS = 300
+TEAM_POWER_SUMMARY_CACHE_TTL_SECONDS = 120
+_POWER_CACHE_LOCK = Lock()
+_POWER_CALIBRATION_CACHE: dict[tuple[int, str], tuple[float, PowerCalibration]] = {}
+_TEAM_POWER_SUMMARY_CACHE: dict[tuple[int, str], tuple[float, TeamPowerSummariesResponse]] = {}
 
 
 @dataclass(frozen=True)
@@ -73,6 +80,38 @@ class _RankingCandidate:
     club: str
 
 
+def _power_cache_key(db: Session, data_version: str) -> tuple[int, str]:
+    try:
+        namespace = id(db.get_bind())
+    except (AttributeError, TypeError):
+        namespace = id(db)
+    return namespace, data_version
+
+
+def invalidate_power_caches() -> None:
+    with _POWER_CACHE_LOCK:
+        _POWER_CALIBRATION_CACHE.clear()
+        _TEAM_POWER_SUMMARY_CACHE.clear()
+
+
+def _read_timed_cache(cache: dict, key: tuple[int, str], ttl_seconds: int):
+    now = time.monotonic()
+    with _POWER_CACHE_LOCK:
+        cached = cache.get(key)
+        if not cached:
+            return None
+        created_at, value = cached
+        if now - created_at > ttl_seconds:
+            cache.pop(key, None)
+            return None
+        return value
+
+
+def _write_timed_cache(cache: dict, key: tuple[int, str], value) -> None:
+    with _POWER_CACHE_LOCK:
+        cache[key] = (time.monotonic(), value)
+
+
 def eligible_growth_steps(ca: int, pa: int, shape: str = "all") -> list[tuple[int, int]]:
     gap = max(0, int(pa or 0) - int(ca or 0))
     candidates = [(0, 0)] + [
@@ -99,6 +138,10 @@ def _candidate_heap_key(candidate: _RankingCandidate) -> tuple[float, int, int, 
 
 def get_power_calibration(db: Session, *, data_version: str | None = None) -> PowerCalibration:
     resolved_version = resolve_attribute_version(db, data_version)
+    cache_key = _power_cache_key(db, resolved_version)
+    cached = _read_timed_cache(_POWER_CALIBRATION_CACHE, cache_key, POWER_CALIBRATION_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return cached
     team_map = map_player_uid_to_team_name(db)
     eligible_uids = set(team_map)
     scores: list[float] = []
@@ -111,18 +154,21 @@ def get_power_calibration(db: Session, *, data_version: str | None = None) -> Po
 
     sorted_scores = tuple(sorted(scores))
     if not sorted_scores:
-        return PowerCalibration(resolved_version, 0, 0.0, 0.0, 1.0, ())
-    median_score = float(median(sorted_scores))
-    mad = float(median(abs(score - median_score) for score in sorted_scores))
-    robust_scale = max(1.0, 1.4826 * mad)
-    return PowerCalibration(
-        data_version=resolved_version,
-        player_count=len(sorted_scores),
-        median_score=round(median_score, 2),
-        mad=round(mad, 4),
-        robust_scale=round(robust_scale, 4),
-        sorted_scores=sorted_scores,
-    )
+        calibration = PowerCalibration(resolved_version, 0, 0.0, 0.0, 1.0, ())
+    else:
+        median_score = float(median(sorted_scores))
+        mad = float(median(abs(score - median_score) for score in sorted_scores))
+        robust_scale = max(1.0, 1.4826 * mad)
+        calibration = PowerCalibration(
+            data_version=resolved_version,
+            player_count=len(sorted_scores),
+            median_score=round(median_score, 2),
+            mad=round(mad, 4),
+            robust_scale=round(robust_scale, 4),
+            sorted_scores=sorted_scores,
+        )
+    _write_timed_cache(_POWER_CALIBRATION_CACHE, cache_key, calibration)
+    return calibration
 
 
 def calculate_heigo_metrics(weighted_power: float, calibration: PowerCalibration) -> tuple[float, float]:
@@ -305,6 +351,10 @@ def _average(values: list[float]) -> float | None:
 
 def get_team_power_summaries(db: Session, *, data_version: str | None = None) -> TeamPowerSummariesResponse:
     resolved_version = resolve_attribute_version(db, data_version)
+    cache_key = _power_cache_key(db, resolved_version)
+    cached = _read_timed_cache(_TEAM_POWER_SUMMARY_CACHE, cache_key, TEAM_POWER_SUMMARY_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return cached.model_copy(deep=True)
     teams = db.query(Team).filter(Team.level.in_(TEAM_POWER_LEVELS)).order_by(Team.level, Team.name).all()
     team_by_id = {int(team.id): team for team in teams}
     team_by_name = {str(team.name): team for team in teams}
@@ -362,7 +412,7 @@ def get_team_power_summaries(db: Session, *, data_version: str | None = None) ->
             for rank, row in enumerate(level_rows, start=1):
                 row[rank_field] = rank
 
-    return TeamPowerSummariesResponse(
+    response = TeamPowerSummariesResponse(
         data_version=resolved_version,
         items=[
             TeamPowerSummaryItemResponse(
@@ -379,3 +429,5 @@ def get_team_power_summaries(db: Session, *, data_version: str | None = None) ->
             for row in rows
         ],
     )
+    _write_timed_cache(_TEAM_POWER_SUMMARY_CACHE, cache_key, response)
+    return response.model_copy(deep=True)

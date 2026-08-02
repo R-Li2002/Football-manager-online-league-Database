@@ -1125,6 +1125,18 @@ class TeamPowerSummariesResponse(BaseModel):
     items: list[TeamPowerSummaryItemResponse] = Field(default_factory=list)
 
 
+class TeamCenterResponse(BaseModel):
+    team: TeamResponse
+    players: list[PlayerResponse] = Field(default_factory=list)
+    standings: StandingsResponse
+    matches: ScheduleResponse
+    suspensions: SuspensionsResponse
+    power: PlayerPowerRankingResponse
+    lineup: TeamLineupResponse
+    team_power_summaries: TeamPowerSummariesResponse
+    cup_outlook: TeamCupOutlookResponse
+
+
 class PlayerPowerCalibrationResponse(BaseModel):
     data_version: str
     player_count: int

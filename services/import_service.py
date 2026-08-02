@@ -137,6 +137,9 @@ def import_current_league_data(
         f"workbook={Path(report.workbook_path).name}; backup={backup_path or 'none'}; cleaned_players={removed_player_count}; cleaned_teams={removed_team_count}; skip_attributes={skipped_attributes}; attributes_version={imported_attribute_version or 'unknown'}",
         admin,
     )
+    from services.player_power_ranking_service import invalidate_power_caches
+
+    invalidate_power_caches()
     return AdminImportResponse(
         success=True,
         message=message,
@@ -207,6 +210,9 @@ def import_player_attributes_data(
         f"source={Path(report.attributes_csv_path).name}; version={data_version or 'unknown'}; backup={backup_path or 'none'}",
         admin,
     )
+    from services.player_power_ranking_service import invalidate_power_caches
+
+    invalidate_power_caches()
     return AdminImportResponse(
         success=True,
         message=message,

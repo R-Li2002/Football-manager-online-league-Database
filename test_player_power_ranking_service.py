@@ -14,6 +14,7 @@ from services.player_power_ranking_service import (
     eligible_growth_steps,
     get_player_power_ranking,
     get_team_power_summaries,
+    invalidate_power_caches,
 )
 from weighted_power import WEIGHTED_POWER_ACTIVE_WEIGHTS
 
@@ -36,6 +37,12 @@ def make_player(uid, *, ca=100, pa=190, value=10, pos_gk=1, name="测试球员")
 
 
 class PlayerPowerRankingServiceTests(unittest.TestCase):
+    def setUp(self):
+        invalidate_power_caches()
+
+    def tearDown(self):
+        invalidate_power_caches()
+
     def test_heigo_power_and_top_percent_share_the_same_relative_baseline(self):
         calibration = PowerCalibration(
             data_version="2630",
@@ -123,11 +130,14 @@ class PlayerPowerRankingServiceTests(unittest.TestCase):
             calibration.return_value = PowerCalibration("2630", 22, 50.0, 1.0, 10.0, tuple(range(22)))
 
             result = get_team_power_summaries(db)
+            cached_result = get_team_power_summaries(db)
             by_name = {item.team_name: item for item in result.items}
             self.assertEqual(by_name["强队"].roster_rank, 1)
             self.assertEqual(by_name["强队"].lineup_rank, 1)
             self.assertEqual(by_name["弱队"].roster_rank, 2)
             self.assertEqual(by_name["强队"].lineup_player_count, 11)
+            self.assertEqual(cached_result, result)
+            self.assertEqual(iter_rows.call_count, 1)
         finally:
             db.close()
             engine.dispose()

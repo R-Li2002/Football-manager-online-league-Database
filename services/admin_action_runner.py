@@ -161,6 +161,10 @@ def run_admin_mutation(
     else:
         db.commit()
 
+    from services.player_power_ranking_service import invalidate_power_caches
+
+    invalidate_power_caches()
+
     write_to_log(result.log_action, result.log_detail, operator)
 
     payload = {"success": True, "message": result.message}

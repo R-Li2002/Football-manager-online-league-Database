@@ -30,6 +30,7 @@ from schemas_read import (
     PlayerPowerCalibrationResponse,
     PlayerPowerRankingResponse,
     TeamPowerSummariesResponse,
+    TeamCenterResponse,
     TeamCupOutlookResponse,
     PlayerAttributeDetailResponse,
     PlayerRankingsResponse,
@@ -45,7 +46,7 @@ from schemas_read import (
     WageDetailResponse,
 )
 from schemas_write import AdvancedAttributeSearchRequest, AttributeBatchLookupRequest, DataFeedbackRequest
-from services import candidate_list_service, coach_service, cup_service, data_feedback_service, data_status_service, export_service, home_promotion_service, home_service, player_ranking_service, project_update_service, ranking_export_service, ranking_service, read_service, reaction_service, site_note_service, site_visit_service, suspension_service, team_lineup_service
+from services import candidate_list_service, coach_service, cup_service, data_feedback_service, data_status_service, export_service, home_promotion_service, home_service, player_ranking_service, project_update_service, ranking_export_service, ranking_service, read_service, reaction_service, site_note_service, site_visit_service, suspension_service, team_center_service, team_lineup_service
 
 REACTION_VISITOR_COOKIE_NAME = "heigo_reaction_visitor"
 ADMIN_SESSION_COOKIE_NAME = "session_token"
@@ -104,6 +105,20 @@ def build_public_router(get_db):
         db: Session = Depends(get_db),
     ):
         return team_lineup_service.get_team_lineup(
+            db,
+            team_id,
+            admin_session_token=admin_session_token,
+            coach_session_token=coach_session_token,
+        )
+
+    @router.get("/api/teams/{team_id}/center", response_model=TeamCenterResponse)
+    def get_team_center(
+        team_id: int,
+        admin_session_token: str | None = Cookie(None, alias=ADMIN_SESSION_COOKIE_NAME),
+        coach_session_token: str | None = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        return team_center_service.get_team_center(
             db,
             team_id,
             admin_session_token=admin_session_token,
