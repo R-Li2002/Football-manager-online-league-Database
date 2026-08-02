@@ -16,6 +16,8 @@ var cupGroupScoreSaveInFlight = new Set();
 var currentCupResultsGroupNo = null;
 var cupGroupVisiblePairKeys = new Set();
 var competitionDataLoaded = false;
+var competitionLoadedSections = new Set();
+var competitionSectionLoadPromises = new Map();
 var currentPlayerRankingType = 'goals';
 var activeSuspensionEditorTeamId = null;
 var competitionImageExportBusy = false;
@@ -448,16 +450,11 @@ function showCompetitionSubtab(subtab) {
     renderCompetitionAdminActions();
     renderCompetitionWorkPanel();
     renderCompetitionDataStatus();
-    if (currentCompetitionSubtab === 'schedule') {
-        renderScheduleBoard();
-    } else if (currentCompetitionSubtab === 'playerRankings') {
-        renderPlayerRankingsBoard();
-    } else if (currentCompetitionSubtab === 'rating') {
-        renderRankingBoard();
-    } else if (currentCompetitionSubtab === 'suspensions') {
-        renderSuspensionsBoard();
+    if (competitionLoadedSections.has(currentCompetitionSubtab)) {
+        renderCompetitionSection(currentCompetitionSubtab);
     } else {
-        renderCompetitionPrimaryBoard();
+        renderCompetitionSectionLoading(currentCompetitionSubtab);
+        loadCompetitionSection(currentCompetitionSubtab);
     }
     if (typeof syncAppHistory === 'function') {
         syncAppHistory('replace');
@@ -473,8 +470,19 @@ function formatRankingPoints(value) {
 }
 
 function getRankingTeamMark(row) {
-    if (row?.logo_path) return `<img src="${escapeHtml(row.logo_path)}" alt="">`;
+    if (row?.logo_path) return `<img src="${escapeHtml(row.logo_path)}" alt="" loading="lazy" decoding="async">`;
     return escapeHtml(getScheduleTeamInitials(row?.team_name || '—'));
+}
+
+function renderMobileRankingList(rows) {
+    return `<ol class="mobile-ranking-list" aria-label="排位积分榜">${rows.map(row => `
+        <li class="${Number(row.rank) <= 3 ? `is-podium is-rank-${Number(row.rank)}` : ''}">
+            <span class="mobile-ranking-position">${String(Number(row.rank)).padStart(2, '0')}</span>
+            <span class="ranking-team-mark ${row.logo_path ? 'has-logo' : ''}">${getRankingTeamMark(row)}</span>
+            <span class="mobile-ranking-team"><strong>${escapeHtml(row.team_name)}</strong><small>${escapeHtml(row.level)} · 基础 ${formatRankingPoints(row.base_points)} · ${Number(row.matches)}场 · ${Number(row.wins)}胜 ${Number(row.draws || 0)}平 ${Number(row.losses)}负</small></span>
+            <strong class="mobile-ranking-points">${formatRankingPoints(row.total_points)}</strong>
+        </li>
+    `).join('')}</ol>`;
 }
 
 function renderRankingEntryForm() {
@@ -527,7 +535,7 @@ function renderRankingBoard() {
         return;
     }
     container.innerHTML = `
-        <section class="ranking-desk">
+        <section class="ranking-desk ${canManageRankingMatches() ? 'is-manager' : ''}">
             <div class="ranking-leaderboard-panel exportable-panel" data-export-view="rankings-HEIGO">
                 <header class="ranking-board-head">
                     <div><span class="panel-kicker">HEIGO RATING DESK</span><h2>排位积分榜</h2><p>胜者取得败者赛前基础分的 10%；每完成一场，总分另加 ${formatRankingPoints(rankingData.appearance_bonus)}。</p></div>
@@ -553,6 +561,7 @@ function renderRankingBoard() {
                         `).join('')}</tbody>
                     </table>
                 </div>
+                ${renderMobileRankingList(rows)}
             </div>
             <aside class="ranking-results-panel">
                 ${renderRankingEntryForm()}
@@ -2130,7 +2139,7 @@ async function saveCupGroup(groupNo) {
         showModal('保存失败', escapeHtml(data.detail || data.message || '保存杯赛小组失败'));
         return;
     }
-    competitionDataLoaded = false;
+    invalidateCompetitionSections();
     await loadCompetitionData({force: true});
     showUiToast(data.message || '杯赛小组已保存', 'success');
 }
@@ -2959,7 +2968,7 @@ async function saveSuspensionPayload(payload) {
         showModal('保存失败', escapeHtml(data.detail || data.message || '保存伤停记录失败'));
         return false;
     }
-    competitionDataLoaded = false;
+    invalidateCompetitionSections();
     await loadCompetitionData({force: true});
     await refreshCompetitionWorkSummary();
     return true;
@@ -4104,7 +4113,7 @@ async function saveMatchEventEditor() {
         matchEventEditorDirty = false;
         closeMatchEventEditor(true);
         renderScheduleBoard();
-        competitionDataLoaded = false;
+        invalidateCompetitionSections(['standings', 'playerRankings', 'suspensions']);
         await refreshPlayerRankingsData();
         await refreshCompetitionWorkSummary({renderBoards: false});
         renderCompetitionDataStatus();
@@ -4891,14 +4900,21 @@ async function saveCompetitionImage(kind, level = currentCompetitionLevel) {
         return;
     }
 
+    const exportButtons = Array.from(document.querySelectorAll('.competition-image-btn'));
     competitionImageExportBusy = true;
+    exportButtons.forEach(button => {
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+    });
     target.classList.add('is-exporting');
     try {
         if (document.fonts?.ready) await document.fonts.ready;
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const blob = await window.htmlToImage.toBlob(target, {
             cacheBust: true,
-            pixelRatio: Math.max(2, Math.min(3, window.devicePixelRatio || 1)),
+            pixelRatio: kind === 'rankings'
+                ? Math.max(1.5, Math.min(2, window.devicePixelRatio || 1))
+                : Math.max(2, Math.min(3, window.devicePixelRatio || 1)),
             filter: node => !(node?.classList && node.classList.contains('capture-exclude')),
         });
         if (!blob) throw new Error('capture-blob-empty');
@@ -4910,6 +4926,10 @@ async function saveCompetitionImage(kind, level = currentCompetitionLevel) {
         target.classList.remove('is-exporting');
         suspensionCapture?.host.remove();
         competitionImageExportBusy = false;
+        exportButtons.forEach(button => {
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+        });
     }
 }
 
@@ -4965,71 +4985,150 @@ function renderScheduleBoard() {
     renderCompetitionDataStatus();
 }
 
+const COMPETITION_SECTION_CONTAINERS = {
+    standings: 'standingsBoard',
+    schedule: 'scheduleBoard',
+    playerRankings: 'playerRankingsBoard',
+    rating: 'ratingBoard',
+    suspensions: 'suspensionsBoard',
+};
+
+const COMPETITION_SECTION_LABELS = {
+    standings: '积分榜',
+    schedule: '赛程',
+    playerRankings: '球员榜',
+    rating: '排位',
+    suspensions: '伤停',
+};
+
+function invalidateCompetitionSections(sections = Object.keys(COMPETITION_SECTION_CONTAINERS)) {
+    const targets = Array.isArray(sections) ? sections : [sections];
+    targets.forEach(section => {
+        competitionLoadedSections.delete(section);
+        competitionSectionLoadPromises.delete(section);
+    });
+    competitionDataLoaded = competitionLoadedSections.size > 0;
+}
+
+function renderCompetitionSection(section) {
+    if (section === 'schedule') renderScheduleBoard();
+    else if (section === 'playerRankings') renderPlayerRankingsBoard();
+    else if (section === 'rating') renderRankingBoard();
+    else if (section === 'suspensions') renderSuspensionsBoard();
+    else renderCompetitionPrimaryBoard();
+    renderCompetitionDataStatus();
+}
+
+function renderCompetitionSectionLoading(section) {
+    const containerId = section === 'standings' && isCupCompetitionLevel()
+        ? 'cupBracketBoard'
+        : section === 'schedule' && isCupCompetitionLevel()
+            ? 'cupGroupStageBoard'
+            : COMPETITION_SECTION_CONTAINERS[section];
+    const container = document.getElementById(containerId);
+    if (container) container.style.display = '';
+    if (container) container.innerHTML = renderUiState({tone: 'loading', title: `正在读取${COMPETITION_SECTION_LABELS[section] || '数据'}`, message: '只加载当前模块所需数据。', compact: true});
+}
+
+function renderCompetitionSectionError(section) {
+    const containerId = section === 'standings' && isCupCompetitionLevel()
+        ? 'cupBracketBoard'
+        : section === 'schedule' && isCupCompetitionLevel()
+            ? 'cupGroupStageBoard'
+            : COMPETITION_SECTION_CONTAINERS[section];
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const label = COMPETITION_SECTION_LABELS[section] || '数据';
+    container.innerHTML = renderUiState({tone: 'danger', title: `${label}加载失败`, message: '其他统计模块不受影响，可稍后单独重试。', actionLabel: '重新读取', actionOnclick: `loadCompetitionSection('${section}', {force:true})`, compact: true});
+}
+
+async function fetchCompetitionJson(url, options = {}) {
+    const response = await fetch(url);
+    if (!response.ok && !options.optional) throw new Error(`${url}: HTTP ${response.status}`);
+    if (!response.ok) return null;
+    return response.json();
+}
+
+async function requestCompetitionSection(section) {
+    if (section === 'schedule') {
+        const [matches, championsGroups, leagueGroups] = await Promise.all([
+            fetchCompetitionJson('/api/matches'),
+            fetchCompetitionJson('/api/cups/champions_cup/groups', {optional: true}),
+            fetchCompetitionJson('/api/cups/league_cup/groups', {optional: true}),
+        ]);
+        scheduleData = matches;
+        cupGroupStageData = {...cupGroupStageData, champions_cup: championsGroups, league_cup: leagueGroups};
+        return;
+    }
+    if (section === 'playerRankings') {
+        playerRankingData = await fetchCompetitionJson('/api/player-rankings');
+        return;
+    }
+    if (section === 'rating') {
+        rankingData = await fetchCompetitionJson('/api/rankings');
+        return;
+    }
+    if (section === 'suspensions') {
+        const [suspensions, siteNotes] = await Promise.all([
+            fetchCompetitionJson('/api/suspensions'),
+            fetchCompetitionJson('/api/site-notes'),
+        ]);
+        suspensionData = suspensions;
+        siteNotesData = siteNotes.reduce((acc, note) => {
+            acc[note.key] = note;
+            return acc;
+        }, {});
+        return;
+    }
+    const [standings, championsCup, leagueCup, wumingjianCup, championsGroups, leagueGroups] = await Promise.all([
+        fetchCompetitionJson('/api/standings'),
+        fetchCompetitionJson('/api/cups/champions_cup/bracket'),
+        fetchCompetitionJson('/api/cups/league_cup/bracket'),
+        fetchCompetitionJson('/api/cups/wumingjian_cup/bracket'),
+        fetchCompetitionJson('/api/cups/champions_cup/groups', {optional: true}),
+        fetchCompetitionJson('/api/cups/league_cup/groups', {optional: true}),
+    ]);
+    standingsData = standings;
+    cupBracketData = {champions_cup: championsCup, league_cup: leagueCup, wumingjian_cup: wumingjianCup};
+    cupGroupStageData = {...cupGroupStageData, champions_cup: championsGroups, league_cup: leagueGroups};
+}
+
+async function loadCompetitionSection(section = currentCompetitionSubtab, options = {}) {
+    const normalizedSection = Object.hasOwn(COMPETITION_SECTION_CONTAINERS, section) ? section : 'standings';
+    if (options.force === true) invalidateCompetitionSections(normalizedSection);
+    if (competitionLoadedSections.has(normalizedSection)) {
+        if (normalizedSection === currentCompetitionSubtab) renderCompetitionSection(normalizedSection);
+        return true;
+    }
+    if (competitionSectionLoadPromises.has(normalizedSection)) return competitionSectionLoadPromises.get(normalizedSection);
+    renderCompetitionSectionLoading(normalizedSection);
+    const promise = (async () => {
+        try {
+            await requestCompetitionSection(normalizedSection);
+            competitionLoadedSections.add(normalizedSection);
+            competitionDataLoaded = true;
+            if (normalizedSection === currentCompetitionSubtab) renderCompetitionSection(normalizedSection);
+            return true;
+        } catch (error) {
+            console.error(`Failed to load competition section ${normalizedSection}:`, error);
+            if (normalizedSection === currentCompetitionSubtab) renderCompetitionSectionError(normalizedSection);
+            return false;
+        } finally {
+            competitionSectionLoadPromises.delete(normalizedSection);
+        }
+    })();
+    competitionSectionLoadPromises.set(normalizedSection, promise);
+    return promise;
+}
+
 async function loadCompetitionData(options = {}) {
     renderCompetitionAdminActions();
     if (typeof loadDataStatus === 'function') loadDataStatus({force: options.force === true});
     if (hasLeagueCompetitionWorkAccess()) loadCompetitionWorkSummary({force: options.force === true});
-    if (competitionDataLoaded && options.force !== true) {
-        renderCompetitionPrimaryBoard();
-        renderScheduleBoard();
-        renderRankingBoard();
-        renderSuspensionsBoard();
-        renderCompetitionDataStatus();
-        return;
-    }
-
-    const standingsContainer = document.getElementById('standingsBoard');
-    const scheduleContainer = document.getElementById('scheduleBoard');
-    if (standingsContainer) standingsContainer.innerHTML = '<div class="loading">加载中...</div>';
-    if (scheduleContainer) scheduleContainer.innerHTML = '<div class="loading">加载中...</div>';
-
-    try {
-        const [standingsRes, scheduleRes, playerRankingsRes, rankingsRes, suspensionsRes, siteNotesRes, championsCupRes, leagueCupRes, wumingjianCupRes, championsGroupsRes, leagueGroupsRes] = await Promise.all([
-            fetch('/api/standings'),
-            fetch('/api/matches'),
-            fetch('/api/player-rankings'),
-            fetch('/api/rankings'),
-            fetch('/api/suspensions'),
-            fetch('/api/site-notes'),
-            fetch('/api/cups/champions_cup/bracket'),
-            fetch('/api/cups/league_cup/bracket'),
-            fetch('/api/cups/wumingjian_cup/bracket'),
-            fetch('/api/cups/champions_cup/groups'),
-            fetch('/api/cups/league_cup/groups'),
-        ]);
-        standingsData = await standingsRes.json();
-        scheduleData = await scheduleRes.json();
-        playerRankingData = await playerRankingsRes.json();
-        rankingData = await rankingsRes.json();
-        suspensionData = await suspensionsRes.json();
-        siteNotesData = (await siteNotesRes.json()).reduce((acc, note) => {
-            acc[note.key] = note;
-            return acc;
-        }, {});
-        cupBracketData = {
-            champions_cup: await championsCupRes.json(),
-            league_cup: await leagueCupRes.json(),
-            wumingjian_cup: await wumingjianCupRes.json(),
-        };
-        cupGroupStageData = {
-            champions_cup: championsGroupsRes.ok ? await championsGroupsRes.json() : null,
-            league_cup: leagueGroupsRes.ok ? await leagueGroupsRes.json() : null,
-        };
-        competitionDataLoaded = true;
-    } catch (error) {
-        if (standingsContainer) standingsContainer.innerHTML = renderUiState({tone: 'danger', title: '积分榜加载失败', message: '请检查网络连接后重新读取。', actionLabel: '重新读取', actionOnclick: 'loadCompetitionData({force:true})', compact: true});
-        if (scheduleContainer) scheduleContainer.innerHTML = renderUiState({tone: 'danger', title: '赛程加载失败', message: '请检查网络连接后重新读取。', actionLabel: '重新读取', actionOnclick: 'loadCompetitionData({force:true})', compact: true});
-        return;
-    }
-
+    const loaded = await loadCompetitionSection(currentCompetitionSubtab, options);
     renderCompetitionAdminActions();
-    renderCompetitionPrimaryBoard();
-    renderScheduleBoard();
-    renderPlayerRankingsBoard();
-    renderRankingBoard();
-    renderSuspensionsBoard();
-    renderCompetitionDataStatus();
     renderCompetitionWorkPanel();
+    return loaded;
 }
 
 async function refreshPlayerRankingsData() {
@@ -5064,7 +5163,7 @@ async function importLatestSchedule() {
         showModal('赛程导入失败', escapeHtml(data.detail || data.message || '导入失败'));
         return;
     }
-    competitionDataLoaded = false;
+    invalidateCompetitionSections();
     await loadCompetitionData({force: true});
     const warningHtml = (data.warnings || []).slice(0, 10).map(item => `<li>${escapeHtml(item)}</li>`).join('');
     showModal('赛程导入完成', `
@@ -5099,7 +5198,7 @@ async function uploadScheduleImportFile(file) {
         showModal('赛程更新失败', escapeHtml(data.detail || data.message || '上传或导入失败'));
         return;
     }
-    competitionDataLoaded = false;
+    invalidateCompetitionSections();
     await loadCompetitionData({force: true});
     const warningHtml = (data.warnings || []).slice(0, 10).map(item => `<li>${escapeHtml(item)}</li>`).join('');
     showModal('赛程更新完成', `
@@ -5248,7 +5347,7 @@ async function saveScheduleMatchQuietly(matchId) {
         }
         applyMatchPayloadLocally(payload);
         setScheduleMatchSaveState(numericMatchId, 'saved');
-        competitionDataLoaded = false;
+        invalidateCompetitionSections(['standings', 'playerRankings', 'suspensions']);
         await refreshPlayerRankingsData();
         await refreshCompetitionWorkSummary({renderBoards: false});
         renderCompetitionDataStatus();
@@ -5298,7 +5397,7 @@ async function saveCurrentMatchProgress(matchIds) {
         return;
     }
     matches.forEach(item => setScheduleMatchSaveState(item.match_id, 'saved'));
-    competitionDataLoaded = false;
+    invalidateCompetitionSections();
     await loadCompetitionData({force: true});
     await refreshCompetitionWorkSummary();
 }
@@ -5323,7 +5422,7 @@ async function resetMatchResult(matchId) {
         return;
     }
     setScheduleMatchSaveState(matchId, 'saved', '已重置为未赛');
-    competitionDataLoaded = false;
+    invalidateCompetitionSections();
     await loadCompetitionData({force: true});
     await refreshCompetitionWorkSummary();
 }
@@ -5348,7 +5447,7 @@ async function initializeCupBracket() {
             showModal('初始化失败', escapeHtml(data.detail || data.message || '初始化杯赛失败'));
             return;
         }
-        competitionDataLoaded = false;
+        invalidateCompetitionSections();
         await loadCompetitionData({force: true});
         showModal('初始化完成', escapeHtml(data.message || `${currentCompetitionLevel}已重新初始化`));
     } catch (error) {
@@ -5376,7 +5475,7 @@ async function saveCupMatchTeams(matchId) {
         showModal('保存失败', escapeHtml(data.detail || data.message || '保存杯赛球队失败'));
         return;
     }
-    competitionDataLoaded = false;
+    invalidateCompetitionSections();
     await loadCompetitionData({force: true});
 }
 
@@ -5421,6 +5520,6 @@ async function saveCupMatchResult(matchId) {
         showModal('保存失败', escapeHtml(data.detail || data.message || '保存杯赛比分失败'));
         return;
     }
-    competitionDataLoaded = false;
+    invalidateCompetitionSections();
     await loadCompetitionData({force: true});
 }

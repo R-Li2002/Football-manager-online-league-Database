@@ -6784,7 +6784,7 @@
     }
 
     .suspension-view-filters button {
-        min-height: 34px;
+        min-height: 44px;
     }
 
     .suspension-team-head {
@@ -6792,14 +6792,34 @@
     }
 
     .ranking-desk { grid-template-columns: 1fr; gap: 12px; }
-    .ranking-results-panel { position: static; order: -1; }
+    .ranking-results-panel { position: static; }
+    .ranking-desk.is-manager .ranking-results-panel { order: -1; }
     .ranking-board-head { display: grid; padding: 17px 16px 14px; }
     .ranking-rule-strip { min-width: 0; width: 100%; }
-    .ranking-table { min-width: 650px; }
-    .ranking-table th,
-    .ranking-table td { padding: 9px 8px; }
+    .ranking-table-wrap { display: none; }
+    .mobile-ranking-list { display: grid; margin: 0; padding: 0; list-style: none; }
+    .mobile-ranking-list li { display: grid; grid-template-columns: 30px 34px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 60px; padding: 9px 12px; border-top: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent); }
+    .mobile-ranking-list li.is-podium { background: color-mix(in srgb, #d6a52a 5%, transparent); }
+    .mobile-ranking-position { color: var(--text-tertiary); font-size: .75rem; font-weight: 850; font-variant-numeric: tabular-nums; text-align: center; }
+    .mobile-ranking-team { display: grid; gap: 3px; min-width: 0; }
+    .mobile-ranking-team strong { overflow: hidden; color: var(--text-primary); font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
+    .mobile-ranking-team small { overflow: hidden; color: var(--text-tertiary); font-size: .75rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+    .mobile-ranking-points { color: var(--accent-primary); font-size: .82rem; font-variant-numeric: tabular-nums; }
+    .ranking-entry-form select,
+    .ranking-entry-form .btn,
+    .ranking-result-entry span { min-height: 44px; }
+    .ranking-entry-form label > span,
+    .ranking-result-entry legend,
+    .ranking-result-entry span,
+    .ranking-entry-heading small,
+    .ranking-results-heading span,
+    .ranking-results-heading b,
+    .ranking-ticket-team strong,
+    .ranking-ticket-result,
+    .ranking-matches-empty span { font-size: .75rem; }
     .ranking-match-list { max-height: 360px; }
-    .ranking-ticket-delete { width: 28px; height: 28px; top: -7px; right: -4px; opacity: 1; }
+    .ranking-ticket-delete { width: 44px; height: 44px; top: 2px; right: 2px; border-radius: 10px; opacity: 1; }
+    .ranking-match-ticket:has(.ranking-ticket-delete) { padding-right: 50px; }
 }
 
 /*Final team/overview ownership restores late shared rules that originally

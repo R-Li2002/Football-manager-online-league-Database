@@ -167,6 +167,10 @@ function uiIconSvg(name, className = 'ui-icon') {
         check: '<path d="M5 12.5 9.2 16.5 19 6.5"/>',
         minus: '<path d="M5 12h14"/>',
         'chevron-down': '<path d="m7 10 5 5 5-5"/>',
+        home: '<path d="m4 10 8-6 8 6v9H9v-6h6v6"/>',
+        user: '<circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.5-4 2.7-6 6.5-6s6 2 6.5 6"/>',
+        shield: '<path d="M12 3.5 19 6v5.2c0 4.2-2.5 7.2-7 9.3-4.5-2.1-7-5.1-7-9.3V6l7-2.5Z"/><path d="M9.5 12 11 13.5l3.5-3.5"/>',
+        settings: '<circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2-.7-.7-1.7.9-1.9-2.1-2.1-1.9.9-1.7-.7-.7-2h-3l-.7 2-1.7.7-1.9-.9-2.1 2.1.9 1.9-.7 1.7-2 .7v3l2 .7.7 1.7-.9 1.9 2.1 2.1 1.9-.9 1.7.7.7 2h3l.7-2 1.7-.7 1.9.9 2.1-2.1-.9-1.9.7-1.7 2-.7Z"/>',
         alert: '<path d="M12 8v5M12 16.5h.01"/><path d="M10.2 4.7 3.7 16a2 2 0 0 0 1.7 3h13.2a2 2 0 0 0 1.7-3L13.8 4.7a2 2 0 0 0-3.6 0Z"/>',
     };
     return `<svg class="${escapeHtml(className)}" viewBox="0 0 24 24" focusable="false" aria-hidden="true">${paths[name] || paths.alert}</svg>`;

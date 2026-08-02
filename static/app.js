@@ -110,7 +110,7 @@ function renderGlobalCoachAccount() {
         <button class="global-coach-trigger" type="button" aria-haspopup="menu" aria-expanded="${globalCoachMenuOpen ? 'true' : 'false'}" onclick="toggleGlobalCoachMenu(event)">
             <span class="global-coach-avatar">${avatar}</span>
             <span class="global-coach-copy"><strong>${escapeHtml(account.nickname || account.username || '教练')}</strong><small>${escapeHtml(identityMeta)}</small></span>
-            <span class="global-coach-chevron" aria-hidden="true">⌄</span>
+            <span class="global-coach-chevron" aria-hidden="true">${uiIconSvg('chevron-down', 'ui-icon is-small')}</span>
         </button>
         <div class="global-coach-menu" role="menu" ${globalCoachMenuOpen ? '' : 'hidden'}>
             <div class="global-coach-menu-head">
@@ -119,10 +119,10 @@ function renderGlobalCoachAccount() {
             </div>
             ${(account.must_change_password || !account.qq_number) ? `<button class="global-coach-menu-alert" type="button" role="menuitem" onclick="openGlobalCoachSecurity()"><span>!</span><div><strong>${account.must_change_password ? '请先修改默认密码' : '请先绑定 QQ 号'}</strong><small>完成登录安全设置后才能使用个人功能</small></div></button>` : ''}
             <div class="global-coach-menu-actions">
-                <button type="button" role="menuitem" onclick="openGlobalCoachTeam()"><span aria-hidden="true">⌂</span><div><strong>我的球队</strong><small>${escapeHtml(account.team_name || '查看球队关联')}</small></div></button>
-                <button type="button" role="menuitem" onclick="openGlobalCoachProfile()"><span aria-hidden="true">◎</span><div><strong>个人主页</strong><small>资料、头像与荣誉</small></div></button>
-                <button type="button" role="menuitem" onclick="openGlobalCoachSecurity()"><span aria-hidden="true">◇</span><div><strong>QQ 与登录安全</strong><small>${account.qq_number ? `已绑定 ${escapeHtml(account.qq_number)}` : '绑定主要登录凭证'}</small></div></button>
-                ${hasWork ? '<button type="button" role="menuitem" onclick="openGlobalCoachWorkspace()"><span aria-hidden="true">⚙</span><div><strong>联赛工作台</strong><small>进入已授权工作模块</small></div></button>' : ''}
+                <button type="button" role="menuitem" onclick="openGlobalCoachTeam()"><span aria-hidden="true">${uiIconSvg('home', 'ui-icon is-small')}</span><div><strong>我的球队</strong><small>${escapeHtml(account.team_name || '查看球队关联')}</small></div></button>
+                <button type="button" role="menuitem" onclick="openGlobalCoachProfile()"><span aria-hidden="true">${uiIconSvg('user', 'ui-icon is-small')}</span><div><strong>个人主页</strong><small>资料、头像与荣誉</small></div></button>
+                <button type="button" role="menuitem" onclick="openGlobalCoachSecurity()"><span aria-hidden="true">${uiIconSvg('shield', 'ui-icon is-small')}</span><div><strong>QQ 与登录安全</strong><small>${account.qq_number ? `已绑定 ${escapeHtml(account.qq_number)}` : '绑定主要登录凭证'}</small></div></button>
+                ${hasWork ? `<button type="button" role="menuitem" onclick="openGlobalCoachWorkspace()"><span aria-hidden="true">${uiIconSvg('settings', 'ui-icon is-small')}</span><div><strong>联赛工作台</strong><small>进入已授权工作模块</small></div></button>` : ''}
             </div>
             <button class="global-coach-logout" type="button" role="menuitem" onclick="globalCoachLogout()">退出教练账号</button>
         </div>
@@ -1099,6 +1099,28 @@ async function init() {
         console.error('Error:', error);
     }
 }
+
+function handleTablistKeyboard(event) {
+    const tab = event.target.closest?.('[role="tab"]');
+    const tablist = tab?.closest('[role="tablist"]');
+    if (!tablist) return;
+    const tabs = Array.from(tablist.querySelectorAll('[role="tab"]'))
+        .filter(item => item.closest('[role="tablist"]') === tablist)
+        .filter(item => !item.disabled && !item.hidden);
+    const currentIndex = tabs.indexOf(tab);
+    if (currentIndex < 0) return;
+    let nextIndex = null;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = tabs.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    tabs[nextIndex].focus();
+    tabs[nextIndex].click();
+}
+
+document.addEventListener('keydown', handleTablistKeyboard);
 
 document.addEventListener('click', event => {
     if (!event.target.closest('.global-coach-account')) closeGlobalCoachMenu();

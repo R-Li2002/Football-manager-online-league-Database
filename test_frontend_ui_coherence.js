@@ -34,6 +34,8 @@ assert.match(html, /class="mobile-more-menu-item mobile-more-utility"[^>]+toggle
 assert.match(html, /class="mobile-more-menu-label">更多页面</, 'mobile overflow menu should separate secondary pages from utilities');
 assert.match(html, /class="mobile-more-menu-label">站点工具</, 'mobile overflow menu should label utility actions');
 assert.match(html, /class="nav-tab-icon"[^>]*aria-hidden="true"><svg/, 'primary navigation should use stable SVG icons');
+assert.match(html, /class="skip-link" href="#mainContent"/, 'keyboard users should be able to skip repeated navigation');
+assert.match(html, /id="mainContent" class="app-main-content" tabindex="-1"/, 'the skip target should accept programmatic focus');
 assert.match(html, /class="nav-tab-icon nav-stat-icon"[^>]*aria-hidden="true"><svg/, 'data navigation should use the same SVG language as other primary tabs');
 assert.doesNotMatch(html, /class="(?:nav-stat-icon|mobile-bottom-nav-icon mobile-stat-icon)"[^>]*><i>/, 'data navigation should not construct icons from CSS bars');
 assert.match(html, /class="database-subtabs competition-primary-tabs surface-card"/, 'competition sections should keep a clear primary switcher');
@@ -51,6 +53,10 @@ assert.match(html, /class="competition-level-group-label">三级联赛</, 'leagu
 assert.match(html, /class="competition-level-group-label">杯赛</, 'cup competitions should be explicitly grouped');
 assert.doesNotMatch(html.slice(0, html.indexOf('<div id="home"')), /⌂|⌕|⇩|◉|⋯/, 'global navigation should not depend on platform glyph icons');
 assert.doesNotMatch(fs.readFileSync('static/app.js', 'utf8'), /global-coach-login-mark[^\n]*>◉</, 'the coach login entry should use the shared SVG icon language');
+assert.match(app, /function handleTablistKeyboard\(event\)/, 'tablists should support arrow, Home, and End keyboard navigation');
+assert.match(app, /document\.addEventListener\('keydown', handleTablistKeyboard\)/, 'tablist keyboard navigation should be registered once');
+assert.doesNotMatch(app, />⌂<|>◎<|>◇<|>⚙</, 'coach account actions should not depend on platform glyph icons');
+assert.match(core, /home:[\s\S]*user:[\s\S]*shield:[\s\S]*settings:/, 'the shared SVG icon helper should cover coach account actions');
 
 assert.doesNotMatch(css, /transition:\s*all/, 'UI transitions should name exact properties');
 assert.match(shellCss, /body:not\(\[data-active-tab="home"\]\) \.header-logo\s*\{[^}]*width:\s*74px[^}]*height:\s*74px/s, 'desktop function pages should retain the full HEIGO logo size');

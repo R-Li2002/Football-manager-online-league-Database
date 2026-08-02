@@ -375,6 +375,17 @@ header.shell-header {
     font-weight: 900;
 }
 
+.global-coach-menu-actions > button > span .ui-icon,
+.global-coach-chevron .ui-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.global-coach-chevron {
+    display: grid;
+    place-items: center;
+}
+
 .global-coach-menu-actions > button > div,
 .global-coach-menu-alert > div {
     display: grid;
