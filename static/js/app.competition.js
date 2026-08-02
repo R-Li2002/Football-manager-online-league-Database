@@ -181,7 +181,7 @@ function getCompetitionModuleMetrics() {
         return [
             {label: '球队', value: String(teams.length)},
             {label: '黄牌关注', value: String(cautions)},
-            {label: '停赛', value: String(suspended), tone: suspended ? 'warning' : 'normal', note: roundNo !== null ? `更新至第 ${roundNo} 轮` : '轮次待标注'},
+            {label: '停赛', value: String(suspended), tone: suspended ? 'warning' : 'normal', note: formatSuspensionRoundProgress(roundNo, '轮次待标注')},
         ];
     }
     const rows = (standingsData.rows || []).filter(row => row.level === currentCompetitionLevel);
@@ -2603,12 +2603,21 @@ function getSuspensionTeamRound(teamId) {
     return Number.isInteger(value) && value >= 0 ? value : null;
 }
 
+function formatSuspensionRoundProgress(roundNo, missingLabel = '伤停轮次待补充') {
+    if (roundNo === null || roundNo === undefined) return missingLabel;
+    const numericRound = Number(roundNo);
+    if (!Number.isInteger(numericRound) || numericRound < 0) return missingLabel;
+    if (numericRound === 0) return '已完成赛季初核对 · 默认用于第 1 轮';
+    if (numericRound >= 34) return `已核对完第 ${numericRound} 轮 · 赛季轮次已核对完成`;
+    return `已核对完第 ${numericRound} 轮 · 默认用于第 ${numericRound + 1} 轮`;
+}
+
 function renderSuspensionTeamNote(team) {
     if (team.is_orphaned) return '';
     const teamId = Number(team.team_id || 0);
     const note = getSuspensionTeamNote(teamId);
     const roundNo = getSuspensionTeamRound(teamId);
-    const displayText = `${roundNo !== null ? `第 ${roundNo} 轮` : '轮次未标注'}${note ? ` · ${note}` : ''}`;
+    const displayText = `${formatSuspensionRoundProgress(roundNo, '轮次未标注')}${note ? ` · ${note}` : ''}`;
     const editing = canManageCurrentCompetitionSuspensions() && Number(activeSuspensionEditorTeamId || 0) === teamId;
     return `
         <div class="suspension-team-note">
@@ -2616,7 +2625,7 @@ function renderSuspensionTeamNote(team) {
             <span id="suspension-team-progress-display-${teamId}">${escapeHtml(displayText)}</span>
         </div>
         ${editing ? `<div class="suspension-team-note-editor capture-exclude">
-            <label class="suspension-round-field"><span>轮次</span><input id="suspension-team-round-${teamId}" type="number" min="0" max="34" inputmode="numeric" value="${roundNo ?? ''}" placeholder="轮次" oninput="queueSuspensionProgressSave('team', ${teamId})" onblur="queueSuspensionProgressSave('team', ${teamId}, true)"></label>
+            <label class="suspension-round-field"><span>已核对完</span><input id="suspension-team-round-${teamId}" type="number" min="0" max="34" inputmode="numeric" value="${roundNo ?? ''}" placeholder="N" aria-label="已核对完成的轮次" oninput="queueSuspensionProgressSave('team', ${teamId})" onblur="queueSuspensionProgressSave('team', ${teamId}, true)"><small>填 N → 默认用于 N+1</small></label>
             <input id="suspension-team-note-${teamId}" type="text" maxlength="160" value="${escapeHtml(note)}" placeholder="可选备注，例如赛后已核对" oninput="queueSuspensionProgressSave('team', ${teamId})" onblur="queueSuspensionProgressSave('team', ${teamId}, true)">
             <span class="ui-save-state" id="suspension-progress-state-team-${teamId}" aria-live="polite">自动保存</span>
         </div>` : ''}
@@ -2626,13 +2635,13 @@ function renderSuspensionTeamNote(team) {
 function renderSuspensionUpdateNote(level) {
     const note = getSuspensionUpdateNote(level);
     const roundNo = getSuspensionUpdateRound(level);
-    const displayText = `${roundNo !== null ? `更新至第 ${roundNo} 轮` : '伤停轮次待补充'}${note ? ` · ${note}` : ''}`;
+    const displayText = `${formatSuspensionRoundProgress(roundNo)}${note ? ` · ${note}` : ''}`;
     return `
         <div class="suspension-update-note">
             <span class="suspension-update-note-text" id="suspension-level-progress-display-${escapeHtml(level)}">${escapeHtml(displayText)}</span>
             ${canManageCurrentCompetitionSuspensions() ? `
                 <div class="suspension-note-editor capture-exclude">
-                    <label class="suspension-round-field"><span>更新至轮次</span><input id="suspension-round-${escapeHtml(level)}" type="number" min="0" max="34" inputmode="numeric" value="${roundNo ?? ''}" placeholder="轮次" oninput="queueSuspensionProgressSave('level', ${htmlJsString(level)})" onblur="queueSuspensionProgressSave('level', ${htmlJsString(level)}, true)"></label>
+                    <label class="suspension-round-field"><span>已核对完</span><input id="suspension-round-${escapeHtml(level)}" type="number" min="0" max="34" inputmode="numeric" value="${roundNo ?? ''}" placeholder="N" aria-label="已核对完成的轮次" oninput="queueSuspensionProgressSave('level', ${htmlJsString(level)})" onblur="queueSuspensionProgressSave('level', ${htmlJsString(level)}, true)"><small>填 N → 默认用于 N+1</small></label>
                     <input id="suspension-note-${escapeHtml(level)}" type="text" maxlength="160" value="${escapeHtml(note)}" placeholder="可选备注，例如全部球队已核对" oninput="queueSuspensionProgressSave('level', ${htmlJsString(level)})" onblur="queueSuspensionProgressSave('level', ${htmlJsString(level)}, true)">
                     <span class="ui-save-state" id="suspension-progress-state-level-${escapeHtml(level)}" aria-live="polite">自动保存</span>
                 </div>
@@ -2694,7 +2703,7 @@ function renderSuspensionViewFilters(teams) {
 function renderSuspensionFilteredEmpty() {
     const title = currentSuspensionViewFilter === 'attention' ? '当前没有待处理球队' : '当前没有伤停记录';
     const message = currentSuspensionViewFilter === 'attention'
-        ? '停赛、历史异常和更新轮次落后的球队会集中显示在这里。'
+        ? '停赛、历史异常和伤停核对轮次落后的球队会集中显示在这里。'
         : '当前级别没有黄牌关注或停赛记录，可切换到全部球队继续核对。';
     return `${renderUiState({tone: 'success', title, message, compact: true})}<button class="btn btn-secondary suspension-show-all-btn capture-exclude" type="button" onclick="setSuspensionViewFilter('all')">查看全部球队</button>`;
 }
@@ -2811,7 +2820,7 @@ function getSuspensionProgressPayload(scope, identifier) {
     const roundValue = String(roundInput.value || '').trim();
     const roundNo = roundValue === '' ? null : Number(roundValue);
     if (roundNo !== null && (!Number.isInteger(roundNo) || roundNo < 0 || roundNo > 34)) {
-        return {error: '更新轮次只能填写 0 到 34'};
+        return {error: '已核对完轮次只能填写 0 到 34'};
     }
     return {
         scope: normalizedScope,
@@ -2831,7 +2840,7 @@ function setSuspensionProgressSaveState(scope, identifier, state, message) {
 }
 
 function updateSuspensionProgressDisplay(payload) {
-    const displayText = `${payload.roundNo !== null ? (payload.scope === 'team' ? `第 ${payload.roundNo} 轮` : `更新至第 ${payload.roundNo} 轮`) : (payload.scope === 'team' ? '轮次未标注' : '伤停轮次待补充')}${payload.text ? ` · ${payload.text}` : ''}`;
+    const displayText = `${formatSuspensionRoundProgress(payload.roundNo, payload.scope === 'team' ? '轮次未标注' : '伤停轮次待补充')}${payload.text ? ` · ${payload.text}` : ''}`;
     const display = document.getElementById(payload.scope === 'team'
         ? `suspension-team-progress-display-${payload.identifier}`
         : `suspension-level-progress-display-${payload.identifier}`);
@@ -4867,7 +4876,7 @@ function createSuspensionCapturePanel(level) {
                 <div>
                     <span>HEIGO DISCIPLINE REPORT</span>
                     <h2>${escapeHtml(level)}伤停统计</h2>
-                    <p>${roundNo !== null ? `更新至第 ${roundNo} 轮` : '伤停轮次待补充'}${updateNote ? ` · ${escapeHtml(updateNote)}` : ''}</p>
+                    <p>${escapeHtml(formatSuspensionRoundProgress(roundNo))}${updateNote ? ` · ${escapeHtml(updateNote)}` : ''}</p>
                 </div>
                 <strong class="${activeTeams.length ? 'is-active' : 'is-clear'}">${activeTeams.length ? `${activeTeams.length} 队有记录` : '本轮无伤停记录'}</strong>
             </header>
@@ -4882,7 +4891,7 @@ function createSuspensionCapturePanel(level) {
                     const teamRound = getSuspensionTeamRound(team.team_id);
                     const teamNote = getSuspensionTeamNote(team.team_id);
                     return `<article class="suspension-capture-team">
-                        <header><div><h3>${escapeHtml(team.team_name)}</h3><span>${escapeHtml(team.manager || '主教练待定')}</span></div><em>${teamRound !== null ? `第 ${teamRound} 轮` : '轮次待补'}</em></header>
+                        <header><div><h3>${escapeHtml(team.team_name)}</h3><span>${escapeHtml(team.manager || '主教练待定')}</span></div><em>${teamRound !== null ? (teamRound >= 34 ? '赛季核对完成' : `核对至 R${teamRound} · 用于 R${teamRound + 1}`) : '轮次待补'}</em></header>
                         ${teamNote ? `<p class="suspension-capture-team-note">${escapeHtml(teamNote)}</p>` : ''}
                         <div class="suspension-capture-sections">
                             ${renderSuspensionCaptureSection('1张黄牌', team.one_yellow, 'is-one-yellow')}

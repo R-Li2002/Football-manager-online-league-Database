@@ -5710,7 +5710,7 @@
         min-width: 0;
     }
 
-    .suspension-team-note .suspension-round-field {
+    .suspension-team-note-editor .suspension-round-field {
         grid-column: 1 / -1;
         justify-self: start;
     }

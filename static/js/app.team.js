@@ -341,29 +341,42 @@ function teamDetailPowerCore(items) {
 
 function teamDetailSuspensionFreshness(teamSuspensions) {
     const progress = teamSuspensions?.progress;
-    if (!progress || !['current', 'ahead', 'stale', 'unknown'].includes(progress.state)) {
+    if (!progress || !['current', 'ahead', 'stale', 'gap', 'unknown'].includes(progress.state)) {
         return {state: 'unknown', title: '伤停轮次待确认', detail: '暂时无法判断数据时效'};
     }
     return {
         state: progress.state,
         title: String(progress.title || '伤停轮次待确认'),
         detail: String(progress.detail || '暂时无法判断数据时效'),
+        matchLatestRound: teamDetailSafeNumber(progress.match_latest_recorded_round, progress.match_completed_round),
+        matchContinuousRound: teamDetailSafeNumber(progress.match_continuous_completed_round, progress.match_completed_round),
+        matchGapRounds: Array.isArray(progress.match_gap_rounds) ? progress.match_gap_rounds.map(Number).filter(Number.isInteger) : [],
+        suspensionCheckedRound: progress.suspension_checked_round === null || progress.suspension_checked_round === undefined ? null : teamDetailSafeNumber(progress.suspension_checked_round),
+        appliesFromRound: progress.applies_from_round === null || progress.applies_from_round === undefined ? null : teamDetailSafeNumber(progress.applies_from_round),
     };
 }
 
 function teamDetailEffectiveUpcomingMatches(matches, progress) {
     const floorRound = teamDetailSafeNumber(progress?.progress_floor_round);
+    const gapRounds = new Set((progress?.match_gap_rounds || []).map(Number).filter(Number.isInteger));
     return matches.filter(match => (
         match.status === 'postponed'
+        || gapRounds.has(teamDetailSafeNumber(match.round_no))
         || teamDetailSafeNumber(match.round_no) > floorRound
     ));
 }
 
 function teamDetailDiscipline(teamSuspensions, freshness) {
     const status = freshness || {state: 'unknown', title: '伤停轮次待确认', detail: '暂时无法判断数据时效'};
-    const statusIcon = status.state === 'current' ? '✓' : status.state === 'ahead' ? '↗' : status.state === 'stale' ? '!' : '?';
+    const statusIcon = status.state === 'current' ? '✓' : status.state === 'ahead' ? '↗' : ['stale', 'gap'].includes(status.state) ? '!' : '?';
     const freshnessMarkup = `<div class="team-discipline-freshness is-${escapeHtml(status.state)}"><span aria-hidden="true">${statusIcon}</span><div><strong>${escapeHtml(status.title)}</strong><small>${escapeHtml(status.detail)}</small></div></div>`;
-    if (!teamSuspensions) return `${freshnessMarkup}<div class="team-detail-empty-inline">暂无纪律数据。</div>`;
+    const hasGaps = Boolean(status.matchGapRounds?.length);
+    const progressMarkup = `<div class="team-discipline-progress" aria-label="赛果与伤停轮次进度">
+        <span><small>${hasGaps ? '赛果连续至' : '赛果至'}</small><strong>R${teamDetailSafeNumber(hasGaps ? status.matchContinuousRound : status.matchLatestRound)}</strong>${hasGaps ? `<em>最高 R${teamDetailSafeNumber(status.matchLatestRound)}</em>` : ''}</span>
+        <span><small>伤停至</small><strong>${status.suspensionCheckedRound === null || status.suspensionCheckedRound === undefined ? '--' : `R${teamDetailSafeNumber(status.suspensionCheckedRound)}`}</strong></span>
+        <span><small>适用于</small><strong>${status.appliesFromRound === null || status.appliesFromRound === undefined ? '--' : `R${teamDetailSafeNumber(status.appliesFromRound)}`}</strong></span>
+    </div>`;
+    if (!teamSuspensions) return `${freshnessMarkup}${progressMarkup}<div class="team-detail-empty-inline">暂无纪律数据。</div>`;
     const sections = [
         ['停赛', teamSuspensions.suspended || [], 'danger'],
         ['两黄', teamSuspensions.two_yellows || [], 'warning'],
@@ -373,9 +386,9 @@ function teamDetailDiscipline(teamSuspensions, freshness) {
     if (!hasAny) {
         const clearTitle = status.state === 'current' ? '阵容可用' : '暂无已登记伤停';
         const clearDetail = ['current', 'ahead'].includes(status.state) ? '暂无黄牌累积或停赛记录' : '伤停轮次未匹配，阵容状态仍需确认';
-        return `${freshnessMarkup}<div class="team-discipline-clear is-${escapeHtml(status.state)}"><span>${status.state === 'current' ? '✓' : '!'}</span><div><strong>${clearTitle}</strong><small>${clearDetail}</small></div></div>`;
+        return `${freshnessMarkup}${progressMarkup}<div class="team-discipline-clear is-${escapeHtml(status.state)}"><span>${status.state === 'current' ? '✓' : '!'}</span><div><strong>${clearTitle}</strong><small>${clearDetail}</small></div></div>`;
     }
-    return `${freshnessMarkup}<div class="team-discipline-list">${sections.map(([label, items, tone]) => `<div class="team-discipline-row is-${tone}"><span>${label}</span><strong>${items.length}</strong><p>${items.map(item => escapeHtml(item.player_name || item.name || String(item))).join('、') || '无'}</p></div>`).join('')}</div>`;
+    return `${freshnessMarkup}${progressMarkup}<div class="team-discipline-list">${sections.map(([label, items, tone]) => `<div class="team-discipline-row is-${tone}"><span>${label}</span><strong>${items.length}</strong><p>${items.map(item => escapeHtml(item.player_name || item.name || String(item))).join('、') || '无'}</p></div>`).join('')}</div>`;
 }
 
 function teamDetailRoster(players, powerByUid) {

@@ -1353,6 +1353,16 @@ body.light-mode .team-detail-player-link {
     color: #f4f9ff;
 }
 
+.team-discipline-freshness.is-gap {
+    border-color: color-mix(in srgb, #d8643f 42%, transparent);
+    background: color-mix(in srgb, #d8643f 9%, transparent);
+}
+
+.team-discipline-freshness.is-gap > span {
+    background: #d8643f;
+    color: #fff8f4;
+}
+
 .team-discipline-freshness.is-stale {
     border-color: color-mix(in srgb, #f39c12 42%, transparent);
     background: color-mix(in srgb, #f39c12 10%, transparent);
@@ -1363,12 +1373,49 @@ body.light-mode .team-detail-player-link {
     color: #241500;
 }
 
+.team-discipline-progress {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.team-discipline-progress > span {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+    padding: 7px 8px;
+    border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--bg-tertiary) 84%, transparent);
+    text-align: center;
+}
+
+.team-discipline-progress small,
+.team-discipline-progress em {
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: .58rem;
+    font-style: normal;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.team-discipline-progress strong {
+    color: var(--text-primary);
+    font-family: var(--font-data);
+    font-size: .76rem;
+}
+
 .team-discipline-clear.is-stale,
+.team-discipline-clear.is-gap,
 .team-discipline-clear.is-unknown {
     background: color-mix(in srgb, #f39c12 7%, transparent);
 }
 
 .team-discipline-clear.is-stale > span,
+.team-discipline-clear.is-gap > span,
 .team-discipline-clear.is-unknown > span {
     background: #f39c12;
     color: #241500;

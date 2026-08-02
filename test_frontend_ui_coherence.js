@@ -116,6 +116,8 @@ assert.match(competition, /function createSuspensionCapturePanel\(level\)/, 'sus
 assert.match(competition, /kind === 'suspensions' \? createSuspensionCapturePanel\(level\) : null/, 'suspension screenshots should not capture the live editing DOM');
 assert.match(competition, /suspension-editor capture-exclude/, 'active suspension editors must be excluded from generic captures');
 assert.match(competition, /function queueSuspensionProgressSave\(scope, identifier, immediate = false\)/, 'suspension progress should use debounced autosave');
+assert.match(competition, /function formatSuspensionRoundProgress\(roundNo, missingLabel = '伤停轮次待补充'\)/, 'suspension round semantics should use one shared formatter');
+assert.match(competition, />已核对完<\/span>[\s\S]*?填 N → 默认用于 N\+1/, 'suspension editors should explain that round N is completed and applies to N+1');
 assert.match(competition, /function saveSuspensionProgress\(scope, identifier, requestedVersion = null\)/, 'suspension progress autosave should have a dedicated persistence path');
 assert.match(competition, /suspensionProgressSaveVersions/, 'suspension progress autosave should protect newer edits from stale responses');
 assert.match(competition, /网络波动，正在重试/, 'suspension progress should retry once after a transient network interruption');

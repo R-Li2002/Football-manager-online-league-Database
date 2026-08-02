@@ -51,7 +51,10 @@ assert(team.includes('function teamDetailSuspensionFreshness(teamSuspensions)'),
 assert(team.includes('teamSuspensions?.progress'), 'team center should use the canonical team progress object');
 assert(team.includes('function teamDetailEffectiveUpcomingMatches(matches, progress)'), 'team center should filter unsynced historical fixtures using the progress floor');
 assert(team.includes("match.status === 'postponed'"), 'explicitly postponed fixtures should remain visible even below the progress floor');
+assert(team.includes('gapRounds.has(teamDetailSafeNumber(match.round_no))'), 'recorded-result gaps should remain visible even below the progress floor');
 assert(team.includes("status.state === 'ahead'"), 'ahead-of-results suspension updates should have a distinct status');
+assert(team.includes('team-discipline-progress'), 'team center should display result, suspension, and applicable rounds together');
+assert(team.includes("'赛果连续至'"), 'a result gap should distinguish continuous progress from the highest recorded round');
 assert(team.includes('伤停轮次未匹配，阵容状态仍需确认'), 'stale data should not claim that the roster is definitively available');
 assert(team.includes("fetchJsonOrThrow('/api/teams/power-summaries')"), 'level-wide team power summaries should be loaded');
 assert(team.includes('renderRosterFormationPreview({teamName: team.name'), 'team center should render an eleven-player pitch preview');
@@ -113,6 +116,8 @@ assert(css.includes('.team-cup-opponent-row'), 'cup opponent progress should be 
 assert(css.includes('.team-power-summary-values'), 'the dual HEIGO average card should be styled');
 assert(css.includes('.team-discipline-freshness.is-stale'), 'stale suspension coverage should have a dedicated warning style');
 assert(css.includes('.team-discipline-freshness.is-ahead'), 'suspension progress ahead of recorded results should have a dedicated sync style');
+assert(css.includes('.team-discipline-freshness.is-gap'), 'result gaps should have a dedicated warning style');
+assert(css.includes('.team-discipline-progress'), 'the three-part round progress strip should have dedicated styling');
 assert(css.includes('.team-power-heigo small'), 'HEIGO percentile should have a dedicated label style');
 assert(css.includes('.team-roster-export-card'), 'roster image export styling should exist');
 assert(css.includes('.team-roster-view-switch'), 'team roster should have a dedicated three-way view switch');

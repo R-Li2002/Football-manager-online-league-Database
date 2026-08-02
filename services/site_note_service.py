@@ -88,7 +88,7 @@ def update_site_note(
     if len(text) > 160:
         raise HTTPException(status_code=400, detail="注释不能超过 160 个字符")
     if request.round_no is not None and (request.round_no < 0 or request.round_no > 34):
-        raise HTTPException(status_code=400, detail="更新轮次只能填写 0 到 34")
+        raise HTTPException(status_code=400, detail="已核对完轮次只能填写 0 到 34")
 
     note = db.query(SiteNote).filter(SiteNote.key == clean_key).first()
     if not note:
@@ -100,6 +100,6 @@ def update_site_note(
     note.updated_at = datetime.now()
     db.commit()
 
-    round_label = f"第 {request.round_no} 轮" if request.round_no is not None else "未标注轮次"
+    round_label = f"已核对完第 {request.round_no} 轮" if request.round_no is not None else "未标注已核对轮次"
     write_to_log("页面注释更新", f"{clean_key}: {text or '清空'}; {round_label}", operator)
     return {"success": True, "message": "注释已保存"}

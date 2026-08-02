@@ -107,6 +107,28 @@ class SuspensionServiceTest(unittest.TestCase):
         self.assertEqual(progress.next_match_round, 6)
         self.assertIn("落后 3 轮", progress.detail)
 
+    def test_result_gap_reports_continuous_and_latest_rounds_without_hiding_gap(self):
+        for round_no in (1, 2, 3):
+            self._add_match(round_no, status="played", home_score=round_no, away_score=0)
+        gap_match = self._add_match(4)
+        self._add_match(5, status="played", home_score=5, away_score=0)
+        self._add_match(6)
+        self._set_team_round(3)
+
+        response = suspension_service.get_suspensions(self.db)
+        progress = next(team for team in response.teams if team.team_name == "Alpha").progress
+
+        self.assertEqual(progress.state, "gap")
+        self.assertEqual(progress.match_completed_round, 5)
+        self.assertEqual(progress.match_latest_recorded_round, 5)
+        self.assertEqual(progress.match_continuous_completed_round, 3)
+        self.assertEqual(progress.match_gap_rounds, [4])
+        self.assertEqual(progress.next_match_id, gap_match.id)
+        self.assertEqual(progress.next_match_round, 4)
+        self.assertTrue(progress.next_match_is_gap)
+        self.assertIn("连续完成至第 3 轮", progress.detail)
+        self.assertIn("第 4 轮尚未确认", progress.detail)
+
     def test_explicit_postponement_remains_the_next_match(self):
         postponed = self._add_match(1, status="postponed")
         self._add_match(2)

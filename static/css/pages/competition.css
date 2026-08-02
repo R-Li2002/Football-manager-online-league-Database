@@ -2778,6 +2778,14 @@ body.light-mode .standings-table-container {
     white-space: nowrap;
 }
 
+.suspension-round-field small {
+    flex: 0 0 auto;
+    color: var(--text-tertiary);
+    font-size: .6rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
 .suspension-note-editor .suspension-round-field input,
 .suspension-team-note .suspension-round-field input {
     width: 58px;

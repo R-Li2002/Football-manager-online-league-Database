@@ -54,6 +54,10 @@ def _match_belongs_to_team(match: Match, team: Team) -> bool:
     )
 
 
+def _format_round_list(rounds: list[int]) -> str:
+    return "、".join(str(round_no) for round_no in rounds)
+
+
 def _build_suspension_progress(
     team: Team,
     matches: list[Match],
@@ -63,25 +67,42 @@ def _build_suspension_progress(
     marker = team_note or level_note
     checked_round = int(marker.round_no) if marker and marker.round_no is not None else None
     team_matches = [match for match in matches if match.level == team.level and _match_belongs_to_team(match, team)]
-    completed_rounds = [
+    completed_rounds = {
         int(match.round_no)
         for match in team_matches
         if match.status in PLAYED_MATCH_STATUSES
         and match.home_score is not None
         and match.away_score is not None
+    }
+    cancelled_rounds = {int(match.round_no) for match in team_matches if match.status == "cancelled"}
+    resolved_rounds = completed_rounds | cancelled_rounds
+    match_latest_recorded_round = max(completed_rounds, default=0)
+    match_continuous_completed_round = 0
+    for round_no in range(1, match_latest_recorded_round + 1):
+        if round_no not in resolved_rounds:
+            break
+        match_continuous_completed_round = round_no
+    match_gap_rounds = [
+        round_no
+        for round_no in range(1, match_latest_recorded_round + 1)
+        if round_no not in resolved_rounds
     ]
-    match_completed_round = max(completed_rounds, default=0)
-    progress_floor_round = max(match_completed_round, checked_round or 0)
+    match_completed_round = match_latest_recorded_round
+    progress_floor_round = max(match_latest_recorded_round, checked_round or 0)
     pending_matches = [
         match
         for match in team_matches
         if match.status in {"scheduled", "postponed"}
         and (match.home_score is None or match.away_score is None)
-        and (match.status == "postponed" or int(match.round_no) > progress_floor_round)
+        and (
+            int(match.round_no) in match_gap_rounds
+            or match.status == "postponed"
+            or int(match.round_no) > progress_floor_round
+        )
     ]
     pending_matches.sort(
         key=lambda match: (
-            0 if match.status == "postponed" else 1,
+            0 if int(match.round_no) in match_gap_rounds else 1 if match.status == "postponed" else 2,
             match.match_date or datetime.max,
             int(match.round_no),
             int(match.id),
@@ -90,7 +111,40 @@ def _build_suspension_progress(
     next_match = pending_matches[0] if pending_matches else None
     next_round = int(next_match.round_no) if next_match else None
     next_is_postponed = bool(next_match and next_match.status == "postponed")
+    next_is_gap = bool(next_match and int(next_match.round_no) in match_gap_rounds)
     marker_source = "team" if team_note else "level" if level_note else None
+    applies_from_round = checked_round + 1 if checked_round is not None else None
+
+    common_fields = {
+        "match_completed_round": match_completed_round,
+        "match_latest_recorded_round": match_latest_recorded_round,
+        "match_continuous_completed_round": match_continuous_completed_round,
+        "match_gap_rounds": match_gap_rounds,
+        "suspension_checked_round": checked_round,
+        "applies_from_round": applies_from_round,
+        "progress_floor_round": progress_floor_round,
+        "next_match_id": next_match.id if next_match else None,
+        "next_match_round": next_round,
+        "next_match_is_postponed": next_is_postponed,
+        "next_match_is_gap": next_is_gap,
+        "marker_source": marker_source,
+    }
+
+    if match_gap_rounds:
+        continuous_label = (
+            f"连续完成至第 {match_continuous_completed_round} 轮"
+            if match_continuous_completed_round > 0
+            else "尚未形成连续赛果"
+        )
+        return SuspensionProgressResponse(
+            state="gap",
+            title="赛果录入存在轮次缺口",
+            detail=(
+                f"{continuous_label}，第 {match_latest_recorded_round} 轮已有结果；"
+                f"第 {_format_round_list(match_gap_rounds)} 轮尚未确认"
+            ),
+            **common_fields,
+        )
 
     if checked_round is None:
         detail = (
@@ -102,14 +156,9 @@ def _build_suspension_progress(
             state="unknown",
             title="伤停轮次待确认",
             detail=detail,
-            match_completed_round=match_completed_round,
-            progress_floor_round=progress_floor_round,
-            next_match_id=next_match.id if next_match else None,
-            next_match_round=next_round,
-            next_match_is_postponed=next_is_postponed,
+            **common_fields,
         )
 
-    applies_from_round = checked_round + 1
     next_detail = "当前没有待进行的联赛比赛"
     if next_round is not None:
         next_detail = (
@@ -124,14 +173,7 @@ def _build_suspension_progress(
             state="stale",
             title=f"伤停仅核对至第 {checked_round} 轮",
             detail=f"赛果已更新至第 {match_completed_round} 轮，落后 {lag} 轮；{next_detail}",
-            match_completed_round=match_completed_round,
-            suspension_checked_round=checked_round,
-            applies_from_round=applies_from_round,
-            progress_floor_round=progress_floor_round,
-            next_match_id=next_match.id if next_match else None,
-            next_match_round=next_round,
-            next_match_is_postponed=next_is_postponed,
-            marker_source=marker_source,
+            **common_fields,
         )
 
     if checked_round > match_completed_round:
@@ -144,14 +186,7 @@ def _build_suspension_progress(
             state="ahead",
             title=f"伤停已提前核对至第 {checked_round} 轮",
             detail=f"{recorded_detail}；{next_detail}",
-            match_completed_round=match_completed_round,
-            suspension_checked_round=checked_round,
-            applies_from_round=applies_from_round,
-            progress_floor_round=progress_floor_round,
-            next_match_id=next_match.id if next_match else None,
-            next_match_round=next_round,
-            next_match_is_postponed=next_is_postponed,
-            marker_source=marker_source,
+            **common_fields,
         )
 
     return SuspensionProgressResponse(
@@ -162,14 +197,7 @@ def _build_suspension_progress(
             if next_round is not None and not next_is_postponed
             else next_detail
         ),
-        match_completed_round=match_completed_round,
-        suspension_checked_round=checked_round,
-        applies_from_round=applies_from_round,
-        progress_floor_round=progress_floor_round,
-        next_match_id=next_match.id if next_match else None,
-        next_match_round=next_round,
-        next_match_is_postponed=next_is_postponed,
-        marker_source=marker_source,
+        **common_fields,
     )
 
 

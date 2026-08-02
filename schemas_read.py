@@ -732,16 +732,20 @@ class SuspensionPlayerResponse(BaseModel):
 
 
 class SuspensionProgressResponse(BaseModel):
-    state: Literal["current", "ahead", "stale", "unknown"]
+    state: Literal["current", "ahead", "stale", "gap", "unknown"]
     title: str
     detail: str
     match_completed_round: int = 0
+    match_latest_recorded_round: int = 0
+    match_continuous_completed_round: int = 0
+    match_gap_rounds: list[int] = Field(default_factory=list)
     suspension_checked_round: Optional[int] = None
     applies_from_round: Optional[int] = None
     progress_floor_round: int = 0
     next_match_id: Optional[int] = None
     next_match_round: Optional[int] = None
     next_match_is_postponed: bool = False
+    next_match_is_gap: bool = False
     marker_source: Optional[Literal["team", "level"]] = None
 
 
