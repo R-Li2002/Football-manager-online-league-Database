@@ -12,7 +12,9 @@ const team = fs.readFileSync('static/js/app.team.js', 'utf8');
 const players = fs.readFileSync('static/js/app.players.js', 'utf8');
 const coaches = fs.readFileSync('static/js/app.coaches.js', 'utf8');
 
-assert(app.includes("team: ['/static/js/app.coaches.js', '/static/vendor/html-to-image.js', '/static/js/app.players.js', '/static/js/app.team.js']"), 'team module assets should include lineup and image export dependencies');
+assert(app.includes("team: ['/static/js/app.coaches.js', '/static/js/app.players.js', '/static/js/app.team.js']"), 'team module should load only its core scripts');
+assert(app.includes("function ensureHtmlToImage()"), 'image export dependency should have a shared on-demand loader');
+assert(!app.match(/team:\s*\[[^\]]*html-to-image/), 'team entry should not preload the screenshot dependency');
 assert(app.includes("'overview', 'team', 'players'"), 'team should be a valid hidden SPA tab');
 assert(app.includes("params.set('team', normalized.team.name)"), 'team deep link should be written to the URL');
 assert(app.includes("const teamParam = params.get('team')"), 'team deep link should be read from the URL');
@@ -83,6 +85,8 @@ assert(team.includes('function teamDetailRosterCards('), 'team roster should pro
 assert(team.includes('<th>年龄</th><th>初始 CA</th><th>当前 CA</th><th>当前 PA</th><th>位置</th><th>国籍</th><th>工资</th><th>名额</th><th>复制</th>'), 'detail roster should expose all requested roster fields');
 assert(team.includes('async function copyTeamRosterPlayer('), 'each team roster player should support copying');
 assert(team.includes('async function copyTeamLineupImage()'), 'team center should copy the visible lineup image directly');
+assert.match(team, /async function copyTeamLineupImage\(\)[\s\S]*?await ensureHtmlToImage\(\)/, 'lineup image export should load its renderer only when requested');
+assert.match(team, /async function copyTeamRosterImage\(\)[\s\S]*?await ensureHtmlToImage\(\)/, 'roster image export should load its renderer only when requested');
 assert(team.includes("navigator.clipboard.write([new ClipboardItem({'image/png': blobPromise})])"), 'lineup image should prefer clipboard copy');
 assert(team.includes('showTeamLineupImageFallback(blob, fileName)'), 'lineup image should fall back to preview and download');
 assert(team.includes('team-panel-actions'), 'lineup copy and edit actions should share one header action group');

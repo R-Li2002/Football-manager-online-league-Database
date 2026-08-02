@@ -95,7 +95,7 @@ function renderHomeDashboardCrest(logoPath, teamName, fallback, className = 'hom
     }
     return `
         <span class="${className} has-logo">
-            <img src="${escapeHtml(logoPath)}" alt="${escapeHtml(teamName)}队徽" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
+            <img src="${escapeHtml(logoPath)}" alt="${escapeHtml(teamName)}队徽" width="512" height="512" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
             <b hidden aria-hidden="true">${escapeHtml(fallback)}</b>
         </span>
     `;
@@ -383,7 +383,7 @@ function getHomePromotionVersion(promotion) {
 
 function getHomePromotionMedia(promotion) {
     if (promotion.image_url) {
-        return `<span class="home-promotion-media"><img src="${escapeHtml(promotion.image_url)}" alt=""></span>`;
+        return `<span class="home-promotion-media"><img src="${escapeHtml(promotion.image_url)}" alt="" width="1600" height="900" decoding="async"></span>`;
     }
     return `<span class="home-promotion-media is-symbol" aria-hidden="true">${homePromotionIconSvg(promotion.icon)}</span>`;
 }
@@ -451,7 +451,7 @@ function buildHomePromotionModalMarkup(promotion) {
         }).join('')}</div>`
         : (promotion.body ? `<p class="home-promotion-modal-body">${escapeHtml(promotion.body)}</p>` : '');
     const media = promotion.image_url
-        ? `<div class="home-promotion-modal-image"><img src="${escapeHtml(promotion.image_url)}" alt=""></div>`
+        ? `<div class="home-promotion-modal-image"><img src="${escapeHtml(promotion.image_url)}" alt="" width="1600" height="900" decoding="async"></div>`
         : `<div class="home-promotion-modal-signal" aria-hidden="true"><i></i><i></i><i></i><b>${homePromotionIconSvg(promotion.icon)}</b></div>`;
     return `<section class="home-promotion-modal-card is-${escapeHtml(promotion.theme || 'violet')}">
         <div class="home-promotion-modal-hero">

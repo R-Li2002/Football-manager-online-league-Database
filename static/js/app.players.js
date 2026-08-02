@@ -410,7 +410,7 @@ function renderRosterTeamBadge(teamName) {
     if (team?.logo_path) {
         return `
             <div class="roster-team-badge has-logo" aria-hidden="true">
-                <img src="${escapeQueryText(team.logo_path)}" alt="${escapeQueryText(teamName)}队徽">
+                <img src="${escapeQueryText(team.logo_path)}" alt="${escapeQueryText(teamName)}队徽" width="512" height="512" loading="lazy" decoding="async">
             </div>
         `;
     }
@@ -1076,7 +1076,11 @@ function showRosterCopyStatus(message, tone = 'success') {
         showDetailExportToast(message, tone);
         return;
     }
-    window.alert(message);
+    if (typeof showUiToast === 'function') {
+        showUiToast(message, tone === 'warning' ? 'warning' : 'success');
+        return;
+    }
+    showModal(tone === 'warning' ? '操作未完成' : '操作完成', escapeHtml(message));
 }
 
 async function copyRosterPlayerInfo(event, uid) {

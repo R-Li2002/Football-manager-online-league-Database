@@ -12,14 +12,21 @@ const competitionCss = fs.readFileSync(path.join(__dirname, 'static/css/pages/co
 
 assert.match(
     appCode,
-    /competition:\s*\[[^\]]*app\.admin\.js[^\]]*app\.competition\.js[^\]]*\]/,
-    'competition module must load the shared admin request helpers before app.competition.js',
+    /competition:\s*\['\/static\/js\/app\.competition\.js'\]/,
+    'competition module should load only its own implementation',
 );
+assert.doesNotMatch(appCode, /competition:\s*\[[^\]]*app\.admin\.js/, 'competition should not pull in the full admin workspace');
 assert.match(
     appCode,
-    /tabName === 'competition'[\s\S]*?Promise\.all\(\[ensureAppModule\('competition'\), ensureTeamsLoaded\(\), ensurePlayersLoaded\(\)\]\)/,
-    'competition must load league players before rendering match-event and suspension suggestions',
+    /tabName === 'competition'[\s\S]*?Promise\.all\(\[ensureAppModule\('competition'\), ensureTeamsLoaded\(\)\]\)/,
+    'public competition entry should load teams without preloading every player',
 );
+assert.doesNotMatch(appCode, /tabName === 'competition'[\s\S]{0,220}ensurePlayersLoaded/, 'competition entry should not preload league players');
+assert.match(coreCode, /async function workJsonRequest\(url, options = \{\}\)/, 'work requests should live in the shared core layer');
+assert.match(competitionCode, /function ensureCompetitionPlayersLoaded\(\)/, 'competition should expose an on-demand player loader');
+assert.match(competitionCode, /await ensureCompetitionPlayersLoaded\(\)/, 'competition editors should request players when needed');
+assert.match(competitionCode, /workJsonRequest\(/, 'competition writes should use the lightweight shared work request');
+assert.doesNotMatch(competitionCode, /adminJsonRequest\(/, 'competition should not depend on admin workspace requests');
 assert.match(competitionCode, /function invalidateCompetitionPlayerCaches\(\)/, 'competition player caches should be reset when the roster dataset changes');
 assert.match(competitionCode, /function getCupGroupMatchPairs\(group\)/, 'cup results should combine both legs against one opponent');
 assert.match(competitionCode, /function addCupGroupResultPair\(groupNo\)/, 'cup score entry should add one home-and-away pair at a time');
@@ -311,8 +318,8 @@ async function assertCupInitializationUsesExplicitResetAndFeedback() {
     let requestedUrl = '';
     let modalPayload = null;
     let loadOptions = null;
-    context.confirm = () => true;
-    context.adminJsonRequest = async url => {
+    context.showConfirmDialog = async () => true;
+    context.workJsonRequest = async url => {
         requestedUrl = url;
         return {
             response: {ok: true},

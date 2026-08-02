@@ -6890,4 +6890,25 @@ body:not(.light-mode) .team-center-lineup-capture {
     .mobile-reaction-ranking {
         display: none;
     }
+
+    #competition [role="tab"],
+    #database [role="tab"],
+    .workspace-nav-item,
+    .workspace-login-tab,
+    .team-panel-link,
+    .cup-group-results-tabs button,
+    .cup-phase-switch button,
+    .player-ranking-tabs button {
+        min-height: 44px;
+    }
+
+    .workspace-page-head p,
+    .maintenance-copy,
+    .maintenance-impact,
+    .competition-module-status-title p,
+    .database-module-hero p,
+    .team-panel-header p {
+        font-size: .75rem;
+        line-height: 1.5;
+    }
 }

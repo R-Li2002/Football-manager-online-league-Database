@@ -101,6 +101,24 @@ body:not(.light-mode) {
     outline: none;
 }
 
+.tab-content:focus {
+    outline: none;
+}
+
+.ui-confirm-copy {
+    color: var(--text-secondary);
+    font-size: var(--text-md);
+    line-height: 1.65;
+    white-space: pre-line;
+}
+
+.ui-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin-top: var(--space-5);
+}
+
 html {
     font-size: 16px;
     -webkit-text-size-adjust: 100%;

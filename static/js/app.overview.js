@@ -428,7 +428,7 @@ function getOverviewTeamLogoHtml(team, crestTone, crestText) {
     if (team.logo_path) {
         return `
             <button class="overview-team-crest has-logo" type="button" onclick="viewTeamPlayers('${teamNameForClick}')" aria-label="进入${escapeHtml(team.name)}球队中心">
-                <img src="${escapeHtml(team.logo_path)}" alt="${escapeHtml(team.name)}队徽">
+                <img src="${escapeHtml(team.logo_path)}" alt="${escapeHtml(team.name)}队徽" width="512" height="512" loading="lazy" decoding="async">
             </button>
         `;
     }

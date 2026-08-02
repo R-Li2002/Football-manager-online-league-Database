@@ -6,21 +6,28 @@ const APP_STATIC_ASSET_VERSION = (() => {
     }
 })();
 const APP_ASSET_LOAD_PROMISES = new Map();
+const APP_STYLE_LOAD_PROMISES = new Map();
 const APP_MODULE_LOAD_PROMISES = new Map();
 const APP_MODULE_ASSETS = {
     coaches: ['/static/js/app.coaches.js'],
     overview: ['/static/js/app.coaches.js', '/static/js/app.overview.js'],
-    team: ['/static/js/app.coaches.js', '/static/vendor/html-to-image.js', '/static/js/app.players.js', '/static/js/app.team.js'],
+    team: ['/static/js/app.coaches.js', '/static/js/app.players.js', '/static/js/app.team.js'],
     players: ['/static/js/app.coaches.js', '/static/js/app.players.js'],
-    competition: ['/static/js/app.coaches.js', '/static/vendor/html-to-image.js', '/static/js/app.admin.js', '/static/js/app.competition.js'],
+    competition: ['/static/js/app.competition.js'],
     database: [
-        '/static/vendor/html-to-image.js',
         '/static/js/app.database.js',
         '/static/js/database.search.js',
-        '/static/js/database.tactics.js',
         '/static/js/database.compare.js',
     ],
+    'database-tactics': ['/static/js/database.tactics.js'],
     admin: ['/static/js/app.admin.js'],
+};
+const APP_MODULE_STYLES = {
+    overview: ['/static/css/pages/team.css'],
+    team: ['/static/css/pages/team.css'],
+    competition: ['/static/css/pages/competition.css'],
+    database: ['/static/css/pages/database.css'],
+    'database-tactics': ['/static/css/pages/database.css'],
 };
 const APP_MODULE_READY_CHECKS = {
     coaches: () => typeof loadCoaches === 'function',
@@ -29,6 +36,7 @@ const APP_MODULE_READY_CHECKS = {
     players: () => typeof searchPlayers === 'function',
     competition: () => typeof loadCompetitionData === 'function',
     database: () => typeof searchDatabase === 'function' && typeof showPlayerDetail === 'function',
+    'database-tactics': () => typeof loadDatabaseTacticsBoard === 'function',
     admin: () => typeof showAdminLoginPanel === 'function',
 };
 let globalCoachMenuOpen = false;
@@ -36,6 +44,7 @@ let teamsLoadPromise = null;
 let playersLoadPromise = null;
 let leagueInfoLoadPromise = null;
 let tabActivationSequence = 0;
+const appTabScrollPositions = new Map();
 
 function buildVersionedAssetUrl(path) {
     if (!APP_STATIC_ASSET_VERSION) return path;
@@ -63,6 +72,38 @@ function loadAppScript(path) {
     return promise;
 }
 
+function loadAppStyle(path) {
+    if (APP_STYLE_LOAD_PROMISES.has(path)) return APP_STYLE_LOAD_PROMISES.get(path);
+    const promise = new Promise((resolve, reject) => {
+        const existing = document.querySelector(`link[data-app-lazy-style="${path}"]`);
+        if (existing?.sheet) {
+            resolve(path);
+            return;
+        }
+        const link = existing || document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = buildVersionedAssetUrl(path);
+        link.dataset.appLazyStyle = path;
+        link.addEventListener('load', () => resolve(path), {once: true});
+        link.addEventListener('error', () => reject(new Error(`模块样式加载失败: ${path}`)), {once: true});
+        if (!existing) {
+            const responsiveStyle = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+                .find(item => String(item.getAttribute('href') || '').includes('/static/css/responsive.css'));
+            document.head.insertBefore(link, responsiveStyle || null);
+        }
+    }).catch(error => {
+        APP_STYLE_LOAD_PROMISES.delete(path);
+        throw error;
+    });
+    APP_STYLE_LOAD_PROMISES.set(path, promise);
+    return promise;
+}
+
+function ensureHtmlToImage() {
+    if (window.htmlToImage?.toBlob) return Promise.resolve(window.htmlToImage);
+    return loadAppScript('/static/vendor/html-to-image.js').then(() => window.htmlToImage);
+}
+
 function ensureAppModule(moduleName) {
     if (APP_MODULE_READY_CHECKS[moduleName]?.()) {
         return Promise.resolve(moduleName);
@@ -72,6 +113,7 @@ function ensureAppModule(moduleName) {
     }
     const assets = APP_MODULE_ASSETS[moduleName] || [];
     const promise = (async () => {
+        await Promise.all((APP_MODULE_STYLES[moduleName] || []).map(loadAppStyle));
         for (const asset of assets) {
             await loadAppScript(asset);
         }
@@ -101,7 +143,7 @@ function renderGlobalCoachAccount() {
         return;
     }
     const avatar = account.avatar_path
-        ? `<img src="${escapeHtml(account.avatar_path)}" alt="${escapeHtml(account.nickname || '教练')}头像">`
+        ? `<img src="${escapeHtml(account.avatar_path)}" alt="${escapeHtml(account.nickname || '教练')}头像" width="256" height="256" decoding="async">`
         : `<span class="global-coach-avatar-fallback">${escapeHtml(getGlobalCoachInitials(account.nickname || account.username))}</span>`;
     const hasWork = Boolean(!account.must_change_password && account.qq_number && (account.can_manage_schedule || account.can_manage_cup_standings || account.can_manage_rankings || account.can_manage_suspensions || account.can_manage_candidate_lists));
     const identityMeta = account.team_name || (account.qq_number ? `QQ ${account.qq_number}` : '教练账号');
@@ -297,24 +339,11 @@ async function prepareAppTab(tabName) {
     } else if (tabName === 'players') {
         await Promise.all([ensureAppModule('players'), ensureTeamsLoaded(), ensurePlayersLoaded()]);
     } else if (tabName === 'competition') {
-        await Promise.all([ensureAppModule('competition'), ensureTeamsLoaded(), ensurePlayersLoaded()]);
+        await Promise.all([ensureAppModule('competition'), ensureTeamsLoaded()]);
     } else if (tabName === 'coaches') {
         await ensureAppModule('coaches');
     } else if (tabName === 'database') {
         await ensureAppModule('database');
-    } else if (tabName === 'admin') {
-        if (isAdmin) {
-            await Promise.all([
-                ensureAppModule('overview'),
-                ensureAppModule('players'),
-                ensureAppModule('competition'),
-                ensureAppModule('coaches'),
-                ensureAppModule('database'),
-                ensureTeamsLoaded(),
-                ensurePlayersLoaded(),
-                ensureLeagueInfoLoaded(),
-            ]);
-        }
     }
     if (isAdmin || tabName === 'admin') {
         await ensureAppModule('admin');
@@ -923,6 +952,9 @@ async function restoreDatabaseHistoryState(databaseState) {
     }
     currentDbSort = normalizeSortState(databaseState.sort, 'number');
     currentDatabaseSubtab = databaseState.subtab === 'tactics' ? 'tactics' : databaseState.subtab === 'power' ? 'power' : databaseState.subtab === 'leaderboard' ? 'leaderboard' : databaseState.subtab === 'candidates' ? 'candidates' : 'search';
+    if (currentDatabaseSubtab === 'tactics') {
+        await ensureAppModule('database-tactics');
+    }
     dbDetailReturnState = {
         tab: normalizeAppTabName(databaseState.returnTab || 'database'),
         subtab: databaseState.returnSubtab === 'tactics' ? 'tactics' : databaseState.returnSubtab === 'power' ? 'power' : databaseState.returnSubtab === 'leaderboard' ? 'leaderboard' : databaseState.returnSubtab === 'candidates' ? 'candidates' : 'search',
@@ -1190,6 +1222,10 @@ async function refreshLeagueInfoDataset() {
 
 async function showTab(tabName, triggerElement = null, options = {}) {
     const normalizedTab = normalizeAppTabName(tabName);
+    const previousTab = getActiveTabName();
+    if (previousTab && previousTab !== normalizedTab) {
+        appTabScrollPositions.set(previousTab, Math.max(0, window.scrollY || 0));
+    }
     const activationId = ++tabActivationSequence;
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-tab').forEach(el => {
@@ -1228,6 +1264,22 @@ async function showTab(tabName, triggerElement = null, options = {}) {
     }
     if (options.syncHistory !== false) {
         syncAppHistory(options.historyMode || 'push');
+    }
+    if (previousTab !== normalizedTab) {
+        const activePanel = document.getElementById(normalizedTab);
+        activePanel?.setAttribute('tabindex', '-1');
+        activePanel?.focus({preventScroll: true});
+    }
+    if (options.restoreScroll !== false) {
+        const targetScroll = Number(appTabScrollPositions.get(normalizedTab) || 0);
+        const scheduleFrame = typeof window.requestAnimationFrame === 'function'
+            ? window.requestAnimationFrame.bind(window)
+            : callback => callback();
+        scheduleFrame(() => {
+            if (typeof window.scrollTo === 'function') {
+                window.scrollTo({top: targetScroll, left: 0, behavior: 'auto'});
+            }
+        });
     }
 }
 
@@ -1270,7 +1322,9 @@ async function openFullLeagueRoster(options = {}) {
     if (typeof resetPlayers === 'function') {
         resetPlayers({pushHistory: false});
     }
-    window.scrollTo({top: 0, behavior: options.smooth === false ? 'auto' : 'smooth'});
+    if (typeof window.scrollTo === 'function') {
+        window.scrollTo({top: 0, behavior: options.smooth === false ? 'auto' : 'smooth'});
+    }
     if (options.pushHistory !== false) {
         syncAppHistory(options.historyMode || 'push');
     }
@@ -1289,7 +1343,9 @@ async function openTeamCenter(options = {}) {
     await showTab('team', options.triggerElement || null, {
         historyMode: options.historyMode || 'push',
     });
-    window.scrollTo({top: 0, behavior: options.smooth === false ? 'auto' : 'smooth'});
+    if (typeof window.scrollTo === 'function') {
+        window.scrollTo({top: 0, behavior: options.smooth === false ? 'auto' : 'smooth'});
+    }
 }
 
 async function openAdminEntry() {

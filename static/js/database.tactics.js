@@ -522,8 +522,8 @@ function setDatabaseTacticsName(value) {
     if (heading) heading.textContent = databaseTacticsState.name;
 }
 
-function clearDatabaseTacticsBoard() {
-    if (Object.keys(databaseTacticsState.picks || {}).length && !window.confirm('确认清空当前战术板？')) return;
+async function clearDatabaseTacticsBoard() {
+    if (Object.keys(databaseTacticsState.picks || {}).length && !await showConfirmDialog({title: '清空战术板', message: '当前选人和自定义位置会被清空。', confirmLabel: '确认清空', danger: true})) return;
     databaseTacticsState.picks = {};
     databaseTacticsState.players = {};
     databaseTacticsState.activePoint = null;

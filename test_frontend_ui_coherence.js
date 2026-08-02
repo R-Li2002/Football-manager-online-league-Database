@@ -75,8 +75,9 @@ assert.match(css, /--control-height:\s*44px/, 'the shared design foundation shou
 assert.match(shellCss, /\.shell-utility-spinner/, 'long-running global actions should belong to the shell layer');
 assert.match(html, /static\/css\/ui-foundation\.css/, 'the shared UI foundation should be loaded after the legacy stylesheet');
 assert.match(html, /static\/css\/shell\.css/, 'the shell ownership layer should be loaded explicitly');
-assert.match(html, /static\/css\/pages\/database\.css/, 'the database page layer should be loaded explicitly');
-assert.match(html, /static\/css\/pages\/competition\.css/, 'the competition page layer should be loaded explicitly');
+assert.doesNotMatch(html, /static\/css\/pages\/(?:database|competition|team)\.css/, 'page-specific styles should not delay the initial shell');
+assert.match(app, /const APP_MODULE_STYLES = \{[\s\S]*competition: \['\/static\/css\/pages\/competition\.css'\][\s\S]*database: \['\/static\/css\/pages\/database\.css'\]/, 'page-specific styles should load with their modules');
+assert.match(app, /function loadAppStyle\(path\)/, 'the app shell should provide a page-style loader');
 assert.match(html, /static\/css\/responsive\.css/, 'the final responsive layer should be loaded explicitly');
 assert.match(html, /id="resultModal"[^>]*role="dialog"[^>]*aria-modal="true"[^>]*aria-labelledby="modalTitle"[^>]*aria-hidden="true"/, 'the shared result modal should expose dialog semantics');
 assert.match(html, /class="modal-close"[^>]*aria-label="关闭弹窗"[^>]*>[\s\S]*?<svg/, 'the shared result modal close control should be labelled and use an SVG icon');
@@ -124,7 +125,11 @@ assert.doesNotMatch(competition, />保存进度<\/button>/, 'suspension progress
 assert.match(competition, />保存记录<\/button>/, 'the remaining explicit action should clearly save the player record');
 assert.match(competitionCss, /\.suspension-capture-grid\s*\{[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/, 'suspension capture should use a compact three-column report layout');
 assert.match(competitionCss + responsiveCss, /\.suspension-view-filters/, 'suspension view filters should have dedicated responsive styling');
-assert.match(app, /competition:\s*\[[^\]]*\/static\/vendor\/html-to-image\.js/, 'competition must load the screenshot dependency directly');
+assert.doesNotMatch(app, /competition:\s*\[[^\]]*\/static\/vendor\/html-to-image\.js/, 'competition should not preload the screenshot renderer');
+assert.match(app, /function ensureHtmlToImage\(\)/, 'screenshots should load their renderer only when requested');
+assert.match(core, /function showConfirmDialog\(options = \{\}\)/, 'destructive actions should use the shared in-app confirmation dialog');
+assert.doesNotMatch(app + core + competition, /\b(?:alert|confirm)\s*\(/, 'core workflows should not fall back to blocking browser dialogs');
+assert.match(app, /const appTabScrollPositions = new Map\(\)/, 'primary modules should preserve their scroll position');
 assert.doesNotMatch(competition, /\bgetCupConfig\(/, 'competition status should use the established cup configuration helper');
 assert.match(competition, /competitionCupGroup/, 'unsupported cup choices should be hidden as a complete group');
 assert.ok(uiFontSize > 0 && uiFontSize < 300 * 1024, 'the self-hosted Chinese UI font should stay below 300 KiB');

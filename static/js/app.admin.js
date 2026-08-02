@@ -14,6 +14,7 @@ let workspaceLogoSourceMode = 'fclogo';
 let workspaceLogoLocalFile = null;
 let workspaceLogoLocalPreviewUrl = '';
 let workspaceAdminOperationsLoaded = false;
+let workspaceAdminOperationsLoadPromise = null;
 
 const WORKSPACE_CAPABILITY_LABELS = {
     'schedule.write': '赛程维护',
@@ -371,7 +372,7 @@ async function applyWorkspaceLogoCandidate() {
     if (!document.getElementById('workspaceLogoConfirm')?.checked) return showModal('提示', '请先完成并勾选人工核对');
     const isLocal = candidate.source_kind === 'local';
     if (isLocal && !workspaceLogoLocalFile) return showModal('提示', '请重新选择本地队徽文件');
-    if (!window.confirm(`确认将 ${team.name} 的当前队徽替换为所选${isLocal ? '本地文件' : ' FCLOGO 候选'}？`)) return;
+    if (!await showConfirmDialog({title: '替换球队队徽', message: `将 ${team.name} 的当前队徽替换为所选${isLocal ? '本地文件' : ' FCLOGO 候选'}，来源记录会被保留。`, confirmLabel: '确认替换'})) return;
     const button = document.getElementById('workspaceLogoApplyButton');
     if (button) { button.disabled = true; button.textContent = '清洗并保存中...'; }
     try {
@@ -1192,21 +1193,36 @@ async function workspaceLogout() {
 }
 
 function loadWorkspaceAdminOperations() {
-    if (!workspaceSessionData?.identity?.is_full_admin || workspaceAdminOperationsLoaded) return;
-    workspaceAdminOperationsLoaded = true;
-    updateStats();
-    renderFormalImportSummaryCard();
-    renderSchemaBootstrapStatusCard();
-    renderOperationsAuditCard();
-    renderTeamStatSourceDebugView();
-    populateAdminSelects();
-    loadSchemaBootstrapStatus();
-    loadLatestFormalImportSummary();
-    loadOperationsAudit();
-    loadDataFeedbackReports();
-    loadSeaPlayers();
-    loadTransferLogs();
-    loadLogFile();
+    if (!workspaceSessionData?.identity?.is_full_admin || workspaceAdminOperationsLoaded) return Promise.resolve();
+    if (workspaceAdminOperationsLoadPromise) return workspaceAdminOperationsLoadPromise;
+    workspaceAdminOperationsLoadPromise = (async () => {
+        await Promise.all([
+            ensureAppModule('overview'),
+            ensureTeamsLoaded(),
+            ensurePlayersLoaded(),
+            ensureLeagueInfoLoaded(),
+        ]);
+        updateStats();
+        renderFormalImportSummaryCard();
+        renderSchemaBootstrapStatusCard();
+        renderOperationsAuditCard();
+        renderTeamStatSourceDebugView();
+        populateAdminSelects();
+        loadSchemaBootstrapStatus();
+        loadLatestFormalImportSummary();
+        loadOperationsAudit();
+        loadDataFeedbackReports();
+        loadSeaPlayers();
+        loadTransferLogs();
+        loadLogFile();
+        workspaceAdminOperationsLoaded = true;
+    })().catch(error => {
+        console.error('Failed to load workspace operations:', error);
+        showModal('工作区加载失败', '数据与系统工作区暂时无法加载，请稍后重试。');
+    }).finally(() => {
+        workspaceAdminOperationsLoadPromise = null;
+    });
+    return workspaceAdminOperationsLoadPromise;
 }
 
 function isAdminUnauthorizedError(error) {
@@ -1986,7 +2002,7 @@ async function batchConsume() {
 }
 
 async function runFormalImport() {
-    const confirmed = confirm('确定要导入服务器上的最新联赛名单吗？\n\n系统会先备份数据库，再按严格模式同步联赛规则、球队和球员名单。');
+    const confirmed = await showConfirmDialog({title: '导入最新联赛名单', message: '系统会先备份数据库，再按严格模式同步联赛规则、球队和球员名单。', confirmLabel: '开始导入', danger: true});
     if (!confirmed) return;
     try {
         const result = await adminJsonRequest('/api/admin/import/formal', {method: 'POST'});
@@ -2038,7 +2054,7 @@ async function uploadAdminImportFile(kind) {
         showModal('请选择文件', `请先选择要上传的${config.title}文件。`);
         return;
     }
-    if (!confirm(config.confirmText)) return;
+    if (!await showConfirmDialog({title: `上传并更新${config.title}`, message: config.confirmText.replace(/^.*?\n\n/, ''), confirmLabel: '上传并更新', danger: true})) return;
 
     const button = document.getElementById(config.buttonId);
     if (button) button.disabled = true;
@@ -2093,7 +2109,7 @@ async function uploadWorkspaceScheduleFile() {
         showModal('请选择文件', '请先选择要上传的赛程 Excel。');
         return;
     }
-    if (!confirm(`确定上传并正式更新赛程吗？\n\n文件：${file.name}\n同一场比赛已录入的比分和状态会保留。`)) return;
+    if (!await showConfirmDialog({title: '上传并更新赛程', message: `文件：${file.name}\n同一场比赛已录入的比分和状态会保留。`, confirmLabel: '上传并更新'})) return;
     const button = document.getElementById('scheduleImportButton');
     if (button) button.disabled = true;
     const formData = new FormData();
@@ -2117,7 +2133,7 @@ async function uploadWorkspaceScheduleFile() {
 }
 
 async function importWorkspaceLatestSchedule() {
-    if (!confirm('确认导入服务器 imports/schedules/ 下最新的赛程 Excel？\n\n同一场已录入比分会保留。')) return;
+    if (!await showConfirmDialog({title: '导入服务器最新赛程', message: '将读取 imports/schedules/ 下最新的赛程 Excel，同一场已录入比分会保留。', confirmLabel: '开始导入'})) return;
     const result = await adminJsonRequest('/api/admin/matches/import', {method: 'POST'});
     if (!result) return;
     const {response, data} = result;
@@ -2130,7 +2146,7 @@ async function importWorkspaceLatestSchedule() {
 }
 
 async function rebuildTeamStatCaches() {
-    const confirmed = confirm('确定要安全全量重算所有可见球队的缓存统计吗？');
+    const confirmed = await showConfirmDialog({title: '全量重算球队统计', message: '将安全重算所有可见球队的缓存统计。', confirmLabel: '开始重算'});
     if (!confirmed) return;
     try {
         const result = await adminJsonRequest('/api/admin/team-stats/rebuild-cache', {method: 'POST'});
@@ -2149,7 +2165,7 @@ async function rebuildTeamStatCaches() {
 }
 
 async function recalculateWages() {
-    const confirmed = confirm('确定要执行全量工资重算吗？');
+    const confirmed = await showConfirmDialog({title: '全量工资重算', message: '将按当前规则重新计算全部球员工资与球队汇总。', confirmLabel: '开始重算'});
     if (!confirmed) return;
     try {
         const result = await adminJsonRequest('/api/admin/recalculate-wages', {method: 'POST'});
@@ -2280,7 +2296,7 @@ async function updatePlayerField(uid, field, value) {
 
 async function updatePlayerUidConfirm(oldUid, newUid, inputElement) {
     if (oldUid == newUid) return;
-    const confirmed = confirm(`确认修改 UID？\n\n从 ${oldUid} 修改为 ${newUid}`);
+    const confirmed = await showConfirmDialog({title: '修改球员 UID', message: `UID 将从 ${oldUid} 修改为 ${newUid}，请确认目标 UID 无误。`, confirmLabel: '确认修改', danger: true});
     if (!confirmed) {
         inputElement.value = oldUid;
         return;

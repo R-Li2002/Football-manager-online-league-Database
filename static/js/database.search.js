@@ -2225,17 +2225,17 @@ function updateCandidateAdminSelectionUI() {
     }
 }
 
-function confirmRemoveCandidatePlayer(listId, uid) {
+async function confirmRemoveCandidatePlayer(listId, uid) {
     const player = candidateAdminPlayersCache.items.find(item => Number(item.uid) === Number(uid));
     const label = player?.name ? `${player.name}（UID ${uid}）` : `UID ${uid}`;
-    if (!window.confirm(`确认从候选名单移除 ${label}？`)) return;
-    removeCandidatePlayer(listId, uid);
+    if (!await showConfirmDialog({title: '移除候选球员', message: `将 ${label} 从当前候选名单移除。`, confirmLabel: '确认移除', danger: true})) return;
+    await removeCandidatePlayer(listId, uid);
 }
 
 async function removeSelectedCandidateAdminPlayers(listId) {
     const uids = [...candidateAdminSelectedUids].map(Number).filter(Number.isFinite);
     if (!uids.length) return;
-    if (!window.confirm(`确认从候选名单中移除 ${uids.length} 名球员？`)) return;
+    if (!await showConfirmDialog({title: '批量移除候选球员', message: `将从当前候选名单移除 ${uids.length} 名球员。`, confirmLabel: '确认移除', danger: true})) return;
     await fetchCandidateJson(`/api/admin/candidate-lists/${Number(listId)}/players/batch-remove`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -2269,7 +2269,7 @@ async function removeSelectedCandidateDockPlayers() {
         showModal('候选名单夹', '请先勾选要移除的球员。');
         return;
     }
-    if (!window.confirm(`确认从名单中移除 ${uids.length} 名球员？`)) return;
+    if (!await showConfirmDialog({title: '移除已选球员', message: `将从当前名单移除 ${uids.length} 名球员。`, confirmLabel: '确认移除', danger: true})) return;
     await fetchCandidateJson(`/api/admin/candidate-lists/${listId}/players/batch-remove`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -2317,7 +2317,7 @@ function buildCandidateResultActionCell(player) {
 
 async function publishCandidateList(listId) {
     const preview = await fetchCandidateJson(`/api/admin/candidate-lists/${Number(listId)}/publish-preview`, {method: 'POST'});
-    const ok = window.confirm(`发布给教练？\n当前 ${preview.current_count} 人，新增 ${preview.added_uids.length}，移除 ${preview.removed_uids.length}，缺失 ${preview.missing_count}。`);
+    const ok = await showConfirmDialog({title: '发布候选名单', message: `当前 ${preview.current_count} 人，新增 ${preview.added_uids.length}，移除 ${preview.removed_uids.length}，缺失 ${preview.missing_count}。`, confirmLabel: '发布给教练'});
     if (!ok) return;
     await fetchCandidateJson(`/api/admin/candidate-lists/${Number(listId)}/publish`, {method: 'POST'});
     await loadAdminCandidateLists({silent: true});
@@ -2343,7 +2343,7 @@ async function deleteCandidateList(listId) {
     const targetId = Number(listId);
     const item = adminCandidateLists.find(entry => Number(entry.id) === targetId);
     const name = item?.name || `名单 ${targetId}`;
-    const ok = window.confirm(`确认删除候选名单“${name}”？\n删除后教练不可见，管理员列表中也会移除。`);
+    const ok = await showConfirmDialog({title: '删除候选名单', message: `“${name}”将对教练不可见，并从管理员列表移除。`, confirmLabel: '确认删除', danger: true});
     if (!ok) return;
     await fetchCandidateJson(`/api/admin/candidate-lists/${targetId}/archive`, {method: 'POST'});
     if (Number(activeCandidateList?.id || 0) === targetId) {
@@ -2570,11 +2570,12 @@ function resetPowerRankingFilters() {
     loadPowerRanking({pushHistory: true, historyMode: 'replace'});
 }
 
-function showDatabaseSubtab(subtab, options = {}) {
+async function showDatabaseSubtab(subtab, options = {}) {
     currentDatabaseSubtab = subtab === 'tactics' ? 'tactics' : subtab === 'power' ? 'power' : subtab === 'leaderboard' ? 'leaderboard' : subtab === 'candidates' ? 'candidates' : 'search';
     syncDatabaseSubtabUI();
     if (currentDatabaseSubtab === 'tactics') {
         activateDatabaseView('tactics');
+        await ensureAppModule('database-tactics');
         loadDatabaseTacticsBoard(options);
         return;
     }

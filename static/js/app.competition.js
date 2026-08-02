@@ -589,7 +589,7 @@ async function saveRankingMatch() {
     const button = document.getElementById('rankingSaveButton');
     if (button) { button.disabled = true; button.textContent = '正在计算…'; }
     try {
-        const result = await adminJsonRequest('/api/admin/rankings/matches', {
+        const result = await workJsonRequest('/api/admin/rankings/matches', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({home_team_id: homeTeamId, away_team_id: awayTeamId, result: resultValue}),
         });
@@ -609,10 +609,10 @@ async function deleteRankingMatch(matchId) {
     if (!canManageRankingMatches() || rankingMatchMutationBusy) return;
     const match = (rankingData.matches || []).find(item => Number(item.id) === Number(matchId));
     const resultLabel = {home: '主队胜', draw: '平局', away: '客队胜'}[match?.result] || '已录赛果';
-    if (!match || !confirm(`确认撤销 ${match.home_team_name} vs ${match.away_team_name}（${resultLabel}）？后续积分会按比赛顺序重新计算。`)) return;
+    if (!match || !await showConfirmDialog({title: '撤销排位比赛', message: `撤销 ${match.home_team_name} vs ${match.away_team_name}（${resultLabel}）后，后续积分会按比赛顺序重新计算。`, confirmLabel: '确认撤销', danger: true})) return;
     rankingMatchMutationBusy = true;
     try {
-        const result = await adminJsonRequest(`/api/admin/rankings/matches/${Number(matchId)}`, {method: 'DELETE'});
+        const result = await workJsonRequest(`/api/admin/rankings/matches/${Number(matchId)}`, {method: 'DELETE'});
         if (!result) return;
         if (!result.response.ok) {
             showModal('撤销失败', escapeHtml(result.data.detail || '排位比赛撤销失败。'));
@@ -1954,7 +1954,7 @@ async function saveCupGroupScore(matchId, requestedVersion = null) {
     cupGroupScoreSaveInFlight.add(numericId);
     setCupGroupScoreSaveState(numericId, 'saving', '保存中');
     try {
-        const result = await adminJsonRequest(`/api/admin/cups/${cupConfig.key}/group-matches/${numericId}`, {
+        const result = await workJsonRequest(`/api/admin/cups/${cupConfig.key}/group-matches/${numericId}`, {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({home_score: payload.homeScore, away_score: payload.awayScore}),
@@ -2122,7 +2122,7 @@ async function saveCupGroup(groupNo) {
     const state = document.getElementById(`cup-group-save-state-${groupNo}`);
     setUiButtonBusy(button, true, '保存中');
     if (state) state.textContent = '正在保存';
-    const result = await adminJsonRequest(`/api/admin/cups/${cupConfig.key}/groups/${groupNo}`, {
+    const result = await workJsonRequest(`/api/admin/cups/${cupConfig.key}/groups/${groupNo}`, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({team_ids: teamIds}),
@@ -2775,10 +2775,24 @@ function toggleMobileSuspensionTeam(teamId) {
     renderSuspensionsBoard();
 }
 
-function toggleSuspensionEditor(teamId) {
+async function ensureCompetitionPlayersLoaded() {
+    if ((allPlayers || []).length) return true;
+    try {
+        await ensurePlayersLoaded();
+        invalidateCompetitionPlayerCaches();
+        return true;
+    } catch (error) {
+        console.error('Failed to load players for competition editor:', error);
+        showModal('球员名单加载失败', '暂时无法读取球员名单，请检查网络后重试。');
+        return false;
+    }
+}
+
+async function toggleSuspensionEditor(teamId) {
     if (!canManageCurrentCompetitionSuspensions()) return;
     const numericTeamId = Number(teamId);
     const opening = Number(activeSuspensionEditorTeamId || 0) !== numericTeamId;
+    if (opening && !await ensureCompetitionPlayersLoaded()) return;
     activeSuspensionEditorTeamId = opening ? numericTeamId : null;
     if (opening) expandedMobileSuspensionTeams.add(numericTeamId);
     renderSuspensionsBoard();
@@ -2867,13 +2881,13 @@ async function saveSuspensionProgress(scope, identifier, requestedVersion = null
         };
         let result;
         try {
-            result = await adminJsonRequest(`/api/admin/site-notes/${encodeURIComponent(payload.noteKey)}`, requestOptions);
+            result = await workJsonRequest(`/api/admin/site-notes/${encodeURIComponent(payload.noteKey)}`, requestOptions);
         } catch (error) {
             console.warn('Suspension progress autosave interrupted; retrying once:', error);
             setSuspensionProgressSaveState(scope, identifier, 'saving', '网络波动，正在重试');
             await new Promise(resolve => window.setTimeout(resolve, 900));
             if (Number(suspensionProgressSaveVersions.get(key) || 0) !== version) return;
-            result = await adminJsonRequest(`/api/admin/site-notes/${encodeURIComponent(payload.noteKey)}`, requestOptions);
+            result = await workJsonRequest(`/api/admin/site-notes/${encodeURIComponent(payload.noteKey)}`, requestOptions);
         }
         if (!result) {
             setSuspensionProgressSaveState(scope, identifier, 'error', '保存失败');
@@ -2915,8 +2929,9 @@ async function saveSuspensionProgress(scope, identifier, requestedVersion = null
     }
 }
 
-function openSuspensionEditor(teamId, playerUid = null) {
+async function openSuspensionEditor(teamId, playerUid = null) {
     if (!canManageCurrentCompetitionSuspensions()) return;
+    if (!await ensureCompetitionPlayersLoaded()) return;
     activeSuspensionEditorTeamId = Number(teamId);
     expandedMobileSuspensionTeams.add(Number(teamId));
     renderSuspensionsBoard();
@@ -2957,7 +2972,7 @@ function resolveSuspensionPlayer(teamId) {
 
 async function saveSuspensionPayload(payload) {
     if (!canManageCurrentCompetitionSuspensions()) return false;
-    const result = await adminJsonRequest('/api/admin/suspensions', {
+    const result = await workJsonRequest('/api/admin/suspensions', {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload),
@@ -3942,9 +3957,10 @@ function renderMatchEventViewerDialog(match) {
     `;
 }
 
-function openMatchEventEditor(matchId) {
+async function openMatchEventEditor(matchId) {
     const match = findScheduleMatchById(matchId);
     if (!match) return;
+    if (canManageCurrentCompetitionSchedule() && !await ensureCompetitionPlayersLoaded()) return;
     closeMatchEventEditor(true);
     activeMatchEventEditorMatchId = Number(matchId);
     matchEventEditorDirty = false;
@@ -3958,8 +3974,8 @@ function openMatchEventEditor(matchId) {
     window.requestAnimationFrame(() => modal.querySelector('.match-event-modal')?.focus());
 }
 
-function closeMatchEventEditor(force = false) {
-    if (!force && matchEventEditorDirty && !confirm('尚未保存比赛数据，确认关闭吗？')) return;
+async function closeMatchEventEditor(force = false) {
+    if (!force && matchEventEditorDirty && !await showConfirmDialog({title: '关闭比赛数据', message: '当前修改尚未保存，关闭后未保存内容会丢失。', confirmLabel: '放弃修改', danger: true})) return;
     document.getElementById('matchEventEditorModal')?.remove();
     document.body.classList.remove('match-event-modal-open');
     activeMatchEventEditorMatchId = null;
@@ -4100,7 +4116,7 @@ async function saveMatchEventEditor() {
     saveButton.textContent = '保存中...';
     if (status) status.textContent = '正在保存比赛数据';
     try {
-        const result = await adminJsonRequest('/api/admin/matches/batch', {
+        const result = await workJsonRequest('/api/admin/matches/batch', {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({matches: [payload]}),
@@ -4886,6 +4902,11 @@ function createSuspensionCapturePanel(level) {
 
 async function saveCompetitionImage(kind, level = currentCompetitionLevel) {
     if (competitionImageExportBusy) return;
+    try {
+        await ensureHtmlToImage();
+    } catch (error) {
+        console.error('Failed to load image export component:', error);
+    }
     if (!window.htmlToImage || typeof window.htmlToImage.toBlob !== 'function') {
         showModal('导出组件未就绪', '页面截图组件加载失败，请刷新页面后重试。');
         return;
@@ -5154,9 +5175,9 @@ function resetScheduleFilters() {
 
 async function importLatestSchedule() {
     if (!canManageSchedule) return;
-    const confirmed = confirm('确认导入 imports/schedules/ 下最新的赛程 Excel？同一场已录入比分会保留。');
+    const confirmed = await showConfirmDialog({title: '导入最新赛程', message: '将读取 imports/schedules/ 下最新的赛程 Excel，同一场已录入的比分会保留。', confirmLabel: '开始导入'});
     if (!confirmed) return;
-    const result = await adminJsonRequest('/api/admin/matches/import', {method: 'POST'});
+    const result = await workJsonRequest('/api/admin/matches/import', {method: 'POST'});
     if (!result) return;
     const {response, data} = result;
     if (!response.ok || !data.success) {
@@ -5187,11 +5208,11 @@ function selectScheduleImportFile() {
 
 async function uploadScheduleImportFile(file) {
     if (!canManageSchedule || !file) return;
-    const confirmed = confirm(`确定上传并正式更新赛程吗？\n\n文件：${file.name}\n同一场比赛已录入的比分和状态会保留。`);
+    const confirmed = await showConfirmDialog({title: '上传并更新赛程', message: `文件：${file.name}\n同一场比赛已录入的比分和状态会保留。`, confirmLabel: '上传并更新'});
     if (!confirmed) return;
     const formData = new FormData();
     formData.append('file', file, file.name);
-    const result = await adminJsonRequest('/api/admin/matches/import/upload', {method: 'POST', body: formData});
+    const result = await workJsonRequest('/api/admin/matches/import/upload', {method: 'POST', body: formData});
     if (!result) return;
     const {response, data} = result;
     if (!response.ok || !data.success) {
@@ -5327,7 +5348,7 @@ async function saveScheduleMatchQuietly(matchId) {
     scheduleMatchSaveInFlight.add(numericMatchId);
     setScheduleMatchSaveState(numericMatchId, 'saving');
     try {
-        const result = await adminJsonRequest('/api/admin/matches/batch', {
+        const result = await workJsonRequest('/api/admin/matches/batch', {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({matches: [payload]}),
@@ -5376,7 +5397,7 @@ async function saveCurrentMatchProgress(matchIds) {
     matches.forEach(item => setScheduleMatchSaveState(item.match_id, 'saving'));
     let result;
     try {
-        result = await adminJsonRequest('/api/admin/matches/batch', {
+        result = await workJsonRequest('/api/admin/matches/batch', {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({matches}),
@@ -5408,9 +5429,9 @@ async function saveMatchResult(matchId) {
 
 async function resetMatchResult(matchId) {
     if (!canManageCurrentCompetitionSchedule()) return;
-    const confirmed = confirm('确认将这场比赛重置为未赛？双方比分会被清空。');
+    const confirmed = await showConfirmDialog({title: '重置比赛结果', message: '这场比赛将恢复为未赛，双方比分会被清空。', confirmLabel: '确认重置', danger: true});
     if (!confirmed) return;
-    const result = await adminJsonRequest(`/api/admin/matches/${matchId}`, {
+    const result = await workJsonRequest(`/api/admin/matches/${matchId}`, {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({home_score: null, away_score: null, status: 'scheduled'}),
@@ -5431,7 +5452,7 @@ async function initializeCupBracket() {
     if (!canManageSchedule) return;
     const cupConfig = getCurrentCupConfig();
     if (!cupConfig) return;
-    const confirmed = confirm(`确认重新初始化${currentCompetitionLevel}？现有球队、比分和晋级结果将被清空，赛制槽位会重新生成。`);
+    const confirmed = await showConfirmDialog({title: `重新初始化${currentCompetitionLevel}`, message: '现有球队、比分和晋级结果将被清空，赛制槽位会重新生成。', confirmLabel: '确认重新初始化', danger: true});
     if (!confirmed) return;
     const button = document.getElementById('initializeCupBracketButton');
     const originalLabel = button?.textContent || cupConfig.initializeLabel;
@@ -5440,7 +5461,7 @@ async function initializeCupBracket() {
         button.textContent = '初始化中...';
     }
     try {
-        const result = await adminJsonRequest(`/api/admin/cups/${cupConfig.key}/initialize?reset=true`, {method: 'POST'});
+        const result = await workJsonRequest(`/api/admin/cups/${cupConfig.key}/initialize?reset=true`, {method: 'POST'});
         if (!result) return;
         const {response, data} = result;
         if (!response.ok || !data.success) {
@@ -5464,7 +5485,7 @@ async function saveCupMatchTeams(matchId) {
     if (!canManageSchedule) return;
     const homeTeamId = Number(document.getElementById(`cup-home-team-${matchId}`)?.value || 0) || null;
     const awayTeamId = Number(document.getElementById(`cup-away-team-${matchId}`)?.value || 0) || null;
-    const result = await adminJsonRequest(`/api/admin/cups/matches/${matchId}/teams`, {
+    const result = await workJsonRequest(`/api/admin/cups/matches/${matchId}/teams`, {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({home_team_id: homeTeamId, away_team_id: awayTeamId}),
@@ -5509,7 +5530,7 @@ async function saveCupMatchResult(matchId) {
         payload.winner_team_id = winnerTeamId;
         payload.notes = isTwoLegCupStage(match) ? '总比分相同，按客场进球规则晋级' : '比分相同，手动选择晋级球队';
     }
-    const result = await adminJsonRequest(`/api/admin/cups/matches/${matchId}/result`, {
+    const result = await workJsonRequest(`/api/admin/cups/matches/${matchId}/result`, {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload),

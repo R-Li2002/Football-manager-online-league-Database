@@ -681,6 +681,11 @@ function showTeamLineupImageFallback(blob, fileName) {
 
 async function copyTeamLineupImage() {
     if (teamLineupExportBusy || !currentTeamDetailData) return;
+    try {
+        await ensureHtmlToImage();
+    } catch (error) {
+        console.error('Failed to load lineup export component:', error);
+    }
     if (!window.htmlToImage || typeof window.htmlToImage.toBlob !== 'function') {
         showModal('导出组件未就绪', '阵容图片组件加载失败，请刷新页面后重试。');
         return;
@@ -729,6 +734,11 @@ async function copyTeamLineupImage() {
 
 async function copyTeamRosterImage() {
     if (teamRosterExportBusy || !currentTeamDetailData) return;
+    try {
+        await ensureHtmlToImage();
+    } catch (error) {
+        console.error('Failed to load roster export component:', error);
+    }
     if (!window.htmlToImage || typeof window.htmlToImage.toBlob !== 'function') {
         showModal('导出组件未就绪', '球队名单图片组件加载失败，请刷新页面后重试。');
         return;

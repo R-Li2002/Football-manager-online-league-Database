@@ -1388,6 +1388,11 @@ async function copyCurrentPlayerDetailImage() {
         showModal('暂时无法复制', '当前没有可导出的球员详情。');
         return;
     }
+    try {
+        await ensureHtmlToImage();
+    } catch (error) {
+        console.error('Failed to load player export component:', error);
+    }
     if (!window.htmlToImage || typeof window.htmlToImage.toBlob !== 'function') {
         showModal('导出组件未就绪', '页面截图组件加载失败，请刷新页面后重试。');
         return;

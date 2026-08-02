@@ -914,7 +914,7 @@ async function saveCoachHonor() {
 
 async function deleteCoachHonor(honorId) {
     if (!canEditCurrentCoach() || !currentCoachDetail) return;
-    if (!confirm('确认删除这条教练荣誉？')) return;
+    if (!await showConfirmDialog({title: '删除教练荣誉', message: '这条荣誉将从教练主页移除。', confirmLabel: '确认删除', danger: true})) return;
     const useAdmin = canManageCoachProfiles();
     const url = useAdmin ? `/api/admin/coach-honors/${Number(honorId)}` : `/api/coach/me/honors/${Number(honorId)}`;
     const result = await coachJsonRequest(url, {method: 'DELETE'}, useAdmin);
@@ -958,7 +958,7 @@ async function saveCoachAssistant(assistantId = null) {
 
 async function deleteCoachAssistant(assistantId) {
     if (!canEditCurrentCoach() || !currentCoachDetail) return;
-    if (!confirm('确认删除这位助教？')) return;
+    if (!await showConfirmDialog({title: '删除助教', message: '这位助教将从当前教练主页移除。', confirmLabel: '确认删除', danger: true})) return;
     const useAdmin = canManageCoachProfiles();
     const url = useAdmin
         ? `/api/admin/coach-assistants/${Number(assistantId)}`

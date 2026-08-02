@@ -228,6 +228,51 @@ function setUiButtonBusy(buttonOrId, busy, label = '处理中...') {
     }
 }
 
+async function workJsonRequest(url, options = {}) {
+    const response = await fetch(url, {credentials: 'same-origin', ...options});
+    if (response.status === 401) {
+        currentAdminRole = '';
+        isAdmin = false;
+        canManageSchedule = false;
+        canManageCupStandings = false;
+        canManageRankings = false;
+        canManageSuspensions = false;
+        canManageCandidateLists = false;
+        workspaceSessionState = {authenticated: false, identity: null};
+        if (currentCoachAccount?.authenticated) currentCoachAccount = {authenticated: false};
+        if (typeof renderGlobalCoachAccount === 'function') renderGlobalCoachAccount();
+        if (typeof syncLightweightAdminTabVisibility === 'function') syncLightweightAdminTabVisibility();
+        showModal('登录已失效', '当前工作身份已失效，请重新登录后继续。');
+        return null;
+    }
+    const data = await response.json().catch(() => ({}));
+    return {response, data};
+}
+
+function showConfirmDialog(options = {}) {
+    const title = options.title || '确认操作';
+    const message = options.message || '确认继续吗？';
+    const confirmLabel = options.confirmLabel || '确认';
+    const cancelLabel = options.cancelLabel || '取消';
+    return new Promise(resolve => {
+        let settled = false;
+        const finish = value => {
+            if (settled) return;
+            settled = true;
+            document.removeEventListener('heigo:modal-closed', handleClosed);
+            resolve(value);
+        };
+        const handleClosed = () => finish(false);
+        document.addEventListener('heigo:modal-closed', handleClosed, {once: true});
+        showModal(title, `<div class="ui-confirm-copy">${escapeHtml(message)}</div><div class="ui-confirm-actions"><button class="btn btn-secondary" id="uiConfirmCancel" type="button">${escapeHtml(cancelLabel)}</button><button class="btn ${options.danger ? 'btn-danger' : 'btn-primary'}" id="uiConfirmAccept" type="button">${escapeHtml(confirmLabel)}</button></div>`);
+        document.getElementById('uiConfirmCancel')?.addEventListener('click', () => closeModal(), {once: true});
+        document.getElementById('uiConfirmAccept')?.addEventListener('click', () => {
+            finish(true);
+            closeModal();
+        }, {once: true});
+    });
+}
+
 let uiFieldIdSeed = 0;
 
 function setUiFieldError(inputOrId, message = '') {
@@ -753,6 +798,7 @@ function closeModal(options = {}) {
     if (modal.classList.contains('is-locked') && options.force !== true) return;
     modal.classList.remove('active', 'is-locked');
     modal.setAttribute('aria-hidden', 'true');
+    document.dispatchEvent(new CustomEvent('heigo:modal-closed'));
     const returnFocus = resultModalReturnFocus;
     resultModalReturnFocus = null;
     if (returnFocus?.isConnected) requestAnimationFrame(() => returnFocus.focus());
@@ -780,5 +826,7 @@ window.AppCore = {
     setUiButtonBusy,
     setUiFieldError,
     setUiInlineFeedback,
+    workJsonRequest,
+    showConfirmDialog,
     uiIconSvg,
 };
