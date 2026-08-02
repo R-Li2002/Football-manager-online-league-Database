@@ -1,3 +1,5 @@
+var fetchWithTimeout = globalThis.fetchWithTimeout || ((...args) => globalThis.fetch(...args));
+
 var currentCompetitionSubtab = 'standings';
 var currentCompetitionLevel = '超级';
 var currentCupPhase = 'knockout';
@@ -18,6 +20,7 @@ var cupGroupVisiblePairKeys = new Set();
 var competitionDataLoaded = false;
 var competitionLoadedSections = new Set();
 var competitionSectionLoadPromises = new Map();
+var competitionSectionDataCache = new Map();
 var currentPlayerRankingType = 'goals';
 var activeSuspensionEditorTeamId = null;
 var competitionImageExportBusy = false;
@@ -31,6 +34,9 @@ var activeMobileScheduleEditMatchId = null;
 var activeMatchEventEditorMatchId = null;
 var matchEventEditorDirty = false;
 var matchEventEditorReturnFocus = null;
+var matchEventDraftSaveTimer = null;
+const MATCH_EVENT_DRAFT_STORAGE_PREFIX = 'heigoMatchEventDraft:v1:';
+const MATCH_EVENT_DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 var matchEventRowDomIdSeed = 0;
 var scheduleAutoSaveTimers = new Map();
 var scheduleMatchSaveStates = new Map();
@@ -78,8 +84,11 @@ function renderCompetitionDataStatus() {
     const status = item?.status || (isCupCompetitionLevel() ? 'normal' : 'unknown');
     const cupScheduleLabel = currentCupGroupScheduleView === 'results' ? '小组赛赛况' : '小组赛分组';
     const cupStandingLabel = currentCupPhase === 'group' ? '小组赛积分榜' : '淘汰赛阶段';
-    const statusLabel = item?.status_label || (isCupCompetitionLevel() ? (currentCompetitionSubtab === 'schedule' ? cupScheduleLabel : cupStandingLabel) : '读取中');
+    const statusLabel = item
+        ? getDataStatusDisplayLabel(item)
+        : (isCupCompetitionLevel() ? (currentCompetitionSubtab === 'schedule' ? cupScheduleLabel : cupStandingLabel) : '读取中');
     const updateTime = item?.updated_at ? formatDataStatusTime(item.updated_at) : '';
+    const statusMeta = item ? dataStatusMeta(item) : [];
     const cupPhaseLabel = currentCompetitionSubtab === 'schedule' ? cupScheduleLabel : cupStandingLabel;
     const headline = isCupCompetitionLevel()
         ? `${currentCompetitionLevel} · ${cupPhaseLabel}`
@@ -98,6 +107,7 @@ function renderCompetitionDataStatus() {
                     <span>${isCupCompetitionLevel() ? 'CUP STAGE' : 'MATCHDAY DATA'}</span>
                     <strong>${escapeHtml(headline)}</strong>
                     <p>${escapeHtml(description)}</p>
+                    ${statusMeta.length ? `<small class="competition-module-status-meta">${statusMeta.map(value => escapeHtml(value)).join('<i>·</i>')}</small>` : ''}
                 </div>
                 <div class="competition-module-status-badge">
                     ${dataStatusIconSvg(status)}
@@ -450,7 +460,10 @@ function showCompetitionSubtab(subtab) {
     renderCompetitionAdminActions();
     renderCompetitionWorkPanel();
     renderCompetitionDataStatus();
-    if (competitionLoadedSections.has(currentCompetitionSubtab)) {
+    (globalThis.requestAnimationFrame || (callback => callback()))(() => globalThis.refreshHorizontalScrollAffordances?.(document.getElementById('competition') || document));
+    const cacheKey = getCompetitionSectionCacheKey(currentCompetitionSubtab);
+    if (competitionLoadedSections.has(cacheKey)) {
+        applyCompetitionSectionPayload(currentCompetitionSubtab, competitionSectionDataCache.get(cacheKey));
         renderCompetitionSection(currentCompetitionSubtab);
     } else {
         renderCompetitionSectionLoading(currentCompetitionSubtab);
@@ -644,22 +657,14 @@ function setCompetitionLevel(level) {
         const roundSelect = document.getElementById('scheduleRoundSelect');
         if (summary && roundSelect) roundSelect.value = String(summary.round_start);
     }
-    if (currentCompetitionSubtab === 'playerRankings') {
-        renderPlayerRankingsBoard();
-        if (typeof syncAppHistory === 'function') {
-            syncAppHistory('replace');
-        }
-        return;
+    const cacheKey = getCompetitionSectionCacheKey(currentCompetitionSubtab);
+    if (competitionLoadedSections.has(cacheKey)) {
+        applyCompetitionSectionPayload(currentCompetitionSubtab, competitionSectionDataCache.get(cacheKey));
+        renderCompetitionSection(currentCompetitionSubtab);
+    } else {
+        renderCompetitionSectionLoading(currentCompetitionSubtab);
+        loadCompetitionSection(currentCompetitionSubtab);
     }
-    if (currentCompetitionSubtab === 'suspensions') {
-        renderSuspensionsBoard();
-        if (typeof syncAppHistory === 'function') {
-            syncAppHistory('replace');
-        }
-        return;
-    }
-    renderCompetitionPrimaryBoard();
-    renderScheduleBoard();
     if (typeof syncAppHistory === 'function') {
         syncAppHistory('replace');
     }
@@ -965,7 +970,7 @@ async function loadCompetitionWorkSummary(options = {}) {
     competitionWorkLoadError = '';
     renderCompetitionWorkPanel();
     const shouldRenderBoards = options.renderBoards !== false;
-    competitionWorkLoadPromise = fetch('/api/workspace/competition-work', {credentials: 'same-origin'})
+    competitionWorkLoadPromise = fetchWithTimeout('/api/workspace/competition-work', {credentials: 'same-origin'})
         .then(async response => {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             competitionWorkData = await response.json();
@@ -1006,7 +1011,7 @@ function focusCompetitionWorkMatch(matchId) {
         target?.scrollIntoView({behavior: 'smooth', block: 'center'});
         target?.classList.add('is-work-target');
         if (isMobileViewport() && canManageCurrentCompetitionSchedule() && currentCompetitionWorkTargetMatchId) {
-            openMobileScheduleEditDrawer(currentCompetitionWorkTargetMatchId);
+            openMatchEventEditor(currentCompetitionWorkTargetMatchId);
         }
     });
 }
@@ -1030,7 +1035,7 @@ async function updateCompetitionSuspensionConfirmation(confirmed) {
     if (!summary || !summary.can_confirm_suspensions) return;
     let response;
     try {
-        response = await fetch(`/api/workspace/competition-work/${encodeURIComponent(summary.level)}/${summary.round_start}/suspensions`, {
+        response = await fetchWithTimeout(`/api/workspace/competition-work/${encodeURIComponent(summary.level)}/${summary.round_start}/suspensions`, {
             method: 'PATCH',
             credentials: 'same-origin',
             headers: {'Content-Type': 'application/json'},
@@ -1056,7 +1061,7 @@ function invalidateCompetitionAssignableAccounts() {
 
 async function loadCompetitionAssignableAccounts(options = {}) {
     if (competitionAssignableAccounts.length && options.force !== true) return competitionAssignableAccounts;
-    const response = await fetch('/api/workspace/accounts', {credentials: 'same-origin'});
+    const response = await fetchWithTimeout('/api/workspace/accounts', {credentials: 'same-origin'});
     if (!response.ok) throw new Error('负责人列表加载失败');
     const data = await response.json();
     competitionAssignableAccounts = (data.items || []).filter(item => (
@@ -1111,7 +1116,7 @@ async function saveCompetitionAssignment() {
     if (!summary) return;
     const schedulePrincipal = document.getElementById('competitionScheduleResponsible')?.value || null;
     const suspensionPrincipal = document.getElementById('competitionSuspensionResponsible')?.value || null;
-    const response = await fetch(`/api/workspace/competition-responsibilities/${encodeURIComponent(summary.level)}`, {
+    const response = await fetchWithTimeout(`/api/workspace/competition-responsibilities/${encodeURIComponent(summary.level)}`, {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'},
@@ -1133,7 +1138,7 @@ async function submitCompetitionRoundWork() {
     if (!summary || !summary.can_submit) return;
     let response;
     try {
-        response = await fetch(`/api/workspace/competition-work/${encodeURIComponent(summary.level)}/${summary.round_start}/submit`, {
+        response = await fetchWithTimeout(`/api/workspace/competition-work/${encodeURIComponent(summary.level)}/${summary.round_start}/submit`, {
             method: 'POST',
             credentials: 'same-origin',
             headers: {'Content-Type': 'application/json'},
@@ -1150,7 +1155,7 @@ async function submitCompetitionRoundWork() {
     }
     competitionWorkData = data;
     renderCompetitionWorkPanel();
-    showModal('已提交复核', `${escapeHtml(summary.level)} ${escapeHtml(summary.round_label)} 已进入管理员复核队列。`);
+    showSuccessToast(`${summary.level} ${summary.round_label} 已提交复核`);
     if (typeof loadWorkspaceDashboard === 'function') loadWorkspaceDashboard({force: true});
 }
 
@@ -1175,7 +1180,7 @@ async function reviewCompetitionRoundWork(approved) {
         noteInput?.focus();
         return;
     }
-    const response = await fetch(`/api/workspace/competition-work/${encodeURIComponent(summary.level)}/${summary.round_start}/review`, {
+    const response = await fetchWithTimeout(`/api/workspace/competition-work/${encodeURIComponent(summary.level)}/${summary.round_start}/review`, {
         method: 'POST',
         credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'},
@@ -1189,7 +1194,7 @@ async function reviewCompetitionRoundWork(approved) {
     closeModal();
     competitionWorkData = data;
     renderCompetitionWorkPanel();
-    showModal(approved ? '复核已通过' : '任务已退回', approved ? '本轮工作已经完成。' : '任务已退回负责人继续修改。');
+    showUiToast(approved ? '本轮复核已通过' : '任务已退回负责人修改', approved ? 'success' : 'warning');
     if (typeof loadWorkspaceDashboard === 'function') loadWorkspaceDashboard({force: true});
 }
 
@@ -1274,6 +1279,7 @@ function getStandingZoneClass(row, levelRows) {
 function setMobileStandingsScope(scope) {
     currentMobileStandingsScope = ['total', 'home', 'away'].includes(scope) ? scope : 'total';
     renderStandingsBoard();
+    if (typeof syncAppHistory === 'function') syncAppHistory('replace');
 }
 
 function toggleMobileStandingRow(level, teamName) {
@@ -1284,6 +1290,7 @@ function toggleMobileStandingRow(level, teamName) {
         expandedMobileStandingRows.add(key);
     }
     renderStandingsBoard();
+    if (typeof syncAppHistory === 'function') syncAppHistory('replace');
 }
 
 function getMobileStandingsScopeMeta(scope = currentMobileStandingsScope) {
@@ -1929,7 +1936,7 @@ function renderCupQualificationSummary(stage) {
 async function refreshCupGroupQualificationDisplays() {
     const cupConfig = getCurrentCupConfig();
     if (!cupConfig?.groupCount) return;
-    const response = await fetch(`/api/cups/${cupConfig.key}/groups`, {credentials: 'same-origin'}).catch(() => null);
+    const response = await fetchWithTimeout(`/api/cups/${cupConfig.key}/groups`, {credentials: 'same-origin'}).catch(() => null);
     if (!response?.ok) return;
     const stage = await response.json().catch(() => null);
     if (!stage) return;
@@ -2348,6 +2355,7 @@ function toggleMobilePlayerRankingRow(rowKey) {
     if (expandedMobilePlayerRankingRows.has(key)) expandedMobilePlayerRankingRows.delete(key);
     else expandedMobilePlayerRankingRows.add(key);
     renderPlayerRankingsBoard();
+    if (typeof syncAppHistory === 'function') syncAppHistory('replace');
 }
 
 function getTeamPlayersForSuspension(team) {
@@ -2681,6 +2689,7 @@ function setSuspensionViewFilter(filter) {
     currentSuspensionViewFilter = ['active', 'attention', 'all'].includes(filter) ? filter : 'active';
     activeSuspensionEditorTeamId = null;
     renderSuspensionsBoard();
+    if (typeof syncAppHistory === 'function') syncAppHistory('replace');
 }
 
 function renderSuspensionViewFilters(teams) {
@@ -2782,6 +2791,7 @@ function toggleMobileSuspensionTeam(teamId) {
     if (expandedMobileSuspensionTeams.has(numericTeamId)) expandedMobileSuspensionTeams.delete(numericTeamId);
     else expandedMobileSuspensionTeams.add(numericTeamId);
     renderSuspensionsBoard();
+    if (typeof syncAppHistory === 'function') syncAppHistory('replace');
 }
 
 async function ensureCompetitionPlayersLoaded() {
@@ -3537,7 +3547,7 @@ function getScheduleMatchEventSummary(match) {
 
 function renderScheduleMatchEventSummary(match) {
     const summary = getScheduleMatchEventSummary(match);
-    const actionLabel = canManageCurrentCompetitionSchedule() ? '球员数据' : '查看明细';
+    const actionLabel = canManageCurrentCompetitionSchedule() ? '编辑比赛数据' : '查看明细';
     return `
         <button class="schedule-event-summary-bar" type="button" onclick="openMatchEventEditor(${Number(match.id)})" aria-label="${escapeHtml(actionLabel)}：${escapeHtml(match.home_team_name || '-')} 对 ${escapeHtml(match.away_team_name || '-')}">
             <span class="schedule-event-summary-stat"><em>进球</em><strong>${summary.goals}</strong></span>
@@ -3588,7 +3598,7 @@ function renderScheduleMatchRow(match, options = {}) {
                 </div>
                 ${renderScheduleMatchEvents(match)}
                 ${renderCompetitionWorkMatchIssue(match.id)}
-                ${canManageCurrentCompetitionSchedule() && includeAdmin ? `<div class="schedule-match-admin">${buildAdminMatchControlGroup(match)}</div>` : ''}
+                ${canManageCurrentCompetitionSchedule() && includeAdmin ? renderScheduleMatchEventSummary(match) : ''}
             </div>
             ${renderScheduleTeamSide(match, 'away')}
         </article>
@@ -3632,7 +3642,6 @@ function renderScheduleCompactMatchRow(match, options = {}) {
             </div>
             ${renderScheduleMatchEventSummary(match)}
             ${renderCompetitionWorkMatchIssue(match.id)}
-            ${canManageCurrentCompetitionSchedule() && includeAdmin ? `<div class="schedule-match-admin">${buildAdminMatchControlGroup(match)}</div>` : ''}
         </article>
     `;
 }
@@ -3819,6 +3828,19 @@ function renderMatchEventRow(match, event = {}, options = {}) {
     `;
 }
 
+function getMatchEventPositionSortRank(position) {
+    const compact = String(position || '').toUpperCase().replace(/[^A-Z]/g, '');
+    const roles = [...compact.matchAll(/(GK|ST|AM|DM|WB|D|M|S)([RLC]*)/g)]
+        .map(match => ({role: match[1], sides: match[2] || ''}));
+    if (roles.some(item => item.role === 'ST' || item.role === 'S')) return 0;
+    if (roles.some(item => ['AM', 'M'].includes(item.role) && /[RL]/.test(item.sides))) return 1;
+    if (roles.some(item => item.role === 'AM' || item.role === 'M')) return 2;
+    if (roles.some(item => item.role === 'DM')) return 3;
+    if (roles.some(item => item.role === 'D' || item.role === 'WB')) return 4;
+    if (roles.some(item => item.role === 'GK')) return 5;
+    return 6;
+}
+
 function getMatchEventEditorPlayers(match, team) {
     const rosterPlayers = getMatchTeamPlayers(match, team.team_name).map(player => ({
         uid: Number(player.uid || 0),
@@ -3838,7 +3860,10 @@ function getMatchEventEditorPlayers(match, team) {
                 playersByKey.set(key, {uid, name, position: '', isRosterPlayer: false});
             }
         });
-    return [...playersByKey.values()].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'en', {sensitivity: 'base', numeric: true}));
+    return [...playersByKey.values()].sort((a, b) => (
+        getMatchEventPositionSortRank(a.position) - getMatchEventPositionSortRank(b.position)
+        || String(a.name || '').localeCompare(String(b.name || ''), 'en', {sensitivity: 'base', numeric: true})
+    ));
 }
 
 function getMatchEventPlayerQuantity(match, team, player, eventType) {
@@ -3897,7 +3922,7 @@ function renderMatchEventMatrixTeam(match, team, side) {
     return `
         <section class="match-event-matrix-team" data-match-event-team-panel="${side}" ${side === 'home' ? '' : 'hidden'}>
             <div class="match-event-matrix-columns" aria-hidden="true">
-                <span>球员 · A–Z</span><span>进球</span><span>助攻</span><span>最佳</span>
+                <span>球员 · 按位置</span><span>进球</span><span>助攻</span><span>最佳</span>
             </div>
             <div class="match-event-matrix-list">
                 ${players.length ? players.map(player => renderMatchEventMatrixPlayer(match, team, player)).join('') : '<div class="match-event-matrix-empty">当前球队没有可用球员名单</div>'}
@@ -3906,6 +3931,52 @@ function renderMatchEventMatrixTeam(match, team, side) {
                 <span><strong>乌龙球</strong><small>计入当前球队比分，不关联具体球员</small></span>
                 <input type="number" min="0" step="1" inputmode="numeric" value="${ownGoals || ''}" placeholder="0" data-match-own-goals data-team-name="${escapeHtml(team.team_name)}" oninput="markMatchEventEditorDirty()">
             </label>
+        </section>
+    `;
+}
+
+function renderMatchEventScoreEditor(match) {
+    const hasScore = match.home_score !== null && match.home_score !== undefined
+        && match.away_score !== null && match.away_score !== undefined;
+    const status = isScheduleForfeitStatus(match.status)
+        ? match.status
+        : (hasScore ? 'played' : 'scheduled');
+    const scoreReadonly = isScheduleForfeitStatus(status) ? 'readonly' : '';
+    return `
+        <section class="match-event-score-editor ${status === 'scheduled' ? 'is-scheduled' : ''} ${isScheduleForfeitStatus(status) ? 'is-forfeit' : ''}" aria-labelledby="matchEventScoreEditorTitle">
+            <h4 id="matchEventScoreEditorTitle" class="sr-only">比分与比赛判定</h4>
+            <div class="match-event-score-team is-home">
+                <span>主队</span>
+                <strong>${escapeHtml(match.home_team_name || '-')}</strong>
+            </div>
+            <label class="match-event-score-input">
+                <span class="sr-only">主队比分</span>
+                <input type="number" min="0" step="1" inputmode="numeric" id="match-home-${Number(match.id)}" value="${escapeHtml(match.home_score ?? '')}" ${scoreReadonly} data-match-score-side="home" aria-label="主队比分" oninput="handleMatchScoreEditorInput(${Number(match.id)})">
+            </label>
+            <span class="match-event-score-separator" aria-hidden="true">—</span>
+            <label class="match-event-score-input">
+                <span class="sr-only">客队比分</span>
+                <input type="number" min="0" step="1" inputmode="numeric" id="match-away-${Number(match.id)}" value="${escapeHtml(match.away_score ?? '')}" ${scoreReadonly} data-match-score-side="away" aria-label="客队比分" oninput="handleMatchScoreEditorInput(${Number(match.id)})">
+            </label>
+            <div class="match-event-score-team is-away">
+                <span>客队</span>
+                <strong>${escapeHtml(match.away_team_name || '-')}</strong>
+            </div>
+            <label class="match-event-status-field">
+                <span>比赛判定</span>
+                <select class="match-status-select" id="match-status-${Number(match.id)}" onchange="handleMatchStatusChange(${Number(match.id)})">
+                    <option value="scheduled" ${status === 'scheduled' ? 'selected' : ''}>未赛</option>
+                    <option value="played" ${status === 'played' ? 'selected' : ''}>正常比赛</option>
+                    <option value="home_forfeit" ${status === 'home_forfeit' ? 'selected' : ''}>主队判负</option>
+                    <option value="away_forfeit" ${status === 'away_forfeit' ? 'selected' : ''}>客队判负</option>
+                    <option value="double_forfeit" ${status === 'double_forfeit' ? 'selected' : ''}>双方判负</option>
+                </select>
+            </label>
+            <p class="match-event-score-note" id="matchEventScoreNote">${status === 'scheduled'
+                ? '直接填写比分会自动切换为正常比赛；主动改回未赛会清空本场数据。'
+                : (isScheduleForfeitStatus(status)
+                    ? '判负会按规则锁定比分，保存后不记录进球、助攻和本场最佳。'
+                    : '比分、比赛判定和球员数据会一次提交。')}</p>
         </section>
     `;
 }
@@ -3919,10 +3990,11 @@ function renderMatchEventEditorDialog(match) {
                 <header class="match-event-modal-head">
                     <div>
                         <span>比赛数据上报</span>
-                        <h3 id="matchEventModalTitle">${escapeHtml(match.home_team_name || '-')} <em>${escapeHtml(getScheduleMatchScoreText(match))}</em> ${escapeHtml(match.away_team_name || '-')}</h3>
+                        <h3 id="matchEventModalTitle">${escapeHtml(match.home_team_name || '-')} <em data-match-score-display>${escapeHtml(getScheduleMatchScoreText(match))}</em> ${escapeHtml(match.away_team_name || '-')}</h3>
                     </div>
                     <button type="button" class="match-event-modal-close" onclick="closeMatchEventEditor()" aria-label="关闭比赛数据窗口">${uiIconSvg('close')}</button>
                 </header>
+                ${renderMatchEventScoreEditor(match)}
                 <div class="match-event-modal-summary">
                     <span><small>进球</small><strong data-match-event-summary-goals>${summary.goals}</strong></span>
                     <span><small>助攻</small><strong data-match-event-summary-assists>${summary.assists}</strong></span>
@@ -3943,7 +4015,8 @@ function renderMatchEventEditorDialog(match) {
                     <span class="match-event-modal-status" id="matchEventModalStatus" role="status" aria-live="polite">填写数字后统一保存</span>
                     <div>
                         <button type="button" class="btn btn-secondary" onclick="closeMatchEventEditor()">取消</button>
-                        <button type="button" class="btn btn-primary" id="matchEventModalSave" onclick="saveMatchEventEditor()">保存比赛数据</button>
+                        <button type="button" class="btn btn-secondary" id="matchEventModalSaveNext" onclick="saveMatchEventEditor(true)">保存并下一场</button>
+                        <button type="button" class="btn btn-primary" id="matchEventModalSave" onclick="saveMatchEventEditor(false)">保存比赛数据</button>
                     </div>
                 </footer>
             </section>
@@ -3966,10 +4039,178 @@ function renderMatchEventViewerDialog(match) {
     `;
 }
 
+function getMatchEventDraftStorageKey(matchId) {
+    return `${MATCH_EVENT_DRAFT_STORAGE_PREFIX}${Number(matchId || 0)}`;
+}
+
+function readStoredMatchEventDraft(matchId) {
+    try {
+        const raw = localStorage.getItem(getMatchEventDraftStorageKey(matchId));
+        if (!raw) return null;
+        const draft = JSON.parse(raw);
+        if (!draft || Number(draft.matchId || 0) !== Number(matchId)) return null;
+        if (Date.now() - Number(draft.updatedAt || 0) > MATCH_EVENT_DRAFT_MAX_AGE_MS) {
+            localStorage.removeItem(getMatchEventDraftStorageKey(matchId));
+            return null;
+        }
+        return draft;
+    } catch (error) {
+        return null;
+    }
+}
+
+function clearStoredMatchEventDraft(matchId) {
+    window.clearTimeout(matchEventDraftSaveTimer);
+    matchEventDraftSaveTimer = null;
+    try {
+        localStorage.removeItem(getMatchEventDraftStorageKey(matchId));
+    } catch (error) {
+        // Restricted browsers may disable local storage; the editor still works normally.
+    }
+}
+
+function normalizeMatchEventsForDraft(events) {
+    return (events || []).map(event => ({
+        team_name: String(event.team_name || ''),
+        player_uid: event.player_uid === null || event.player_uid === undefined ? null : Number(event.player_uid || 0),
+        player_name: String(event.player_name || ''),
+        event_type: String(event.event_type || ''),
+        quantity: Number(event.quantity || 0),
+    })).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+}
+
+function persistMatchEventDraftNow() {
+    const matchId = Number(activeMatchEventEditorMatchId || 0);
+    if (!matchId || !document.getElementById('matchEventEditorModal') || !matchEventEditorDirty) return;
+    try {
+        const events = readMatchEventMatrixPayload(matchId);
+        const homeRaw = String(document.getElementById(`match-home-${matchId}`)?.value || '').trim();
+        const awayRaw = String(document.getElementById(`match-away-${matchId}`)?.value || '').trim();
+        const match = findScheduleMatchById(matchId);
+        localStorage.setItem(getMatchEventDraftStorageKey(matchId), JSON.stringify({
+            matchId,
+            updatedAt: Date.now(),
+            homeScore: homeRaw === '' ? null : Number(homeRaw),
+            awayScore: awayRaw === '' ? null : Number(awayRaw),
+            status: String(document.getElementById(`match-status-${matchId}`)?.value || match?.status || 'scheduled'),
+            events: normalizeMatchEventsForDraft(events),
+        }));
+        const status = document.getElementById('matchEventModalStatus');
+        if (status && !status.classList.contains('is-warning')) status.textContent = '草稿已保存在本机';
+    } catch (error) {
+        // Invalid in-progress values stay in the open form and will be validated on save.
+    }
+}
+
+function scheduleMatchEventDraftSave() {
+    window.clearTimeout(matchEventDraftSaveTimer);
+    matchEventDraftSaveTimer = window.setTimeout(() => {
+        matchEventDraftSaveTimer = null;
+        persistMatchEventDraftNow();
+    }, 350);
+}
+
+function restoreStoredMatchEventDraft(match) {
+    const draft = readStoredMatchEventDraft(match.id);
+    if (!draft) return false;
+    const serverEvents = normalizeMatchEventsForDraft(match.events || []);
+    const draftHasScoreState = Object.prototype.hasOwnProperty.call(draft, 'homeScore')
+        || Object.prototype.hasOwnProperty.call(draft, 'awayScore')
+        || Object.prototype.hasOwnProperty.call(draft, 'status');
+    const serverStatus = isScheduleForfeitStatus(match.status)
+        ? String(match.status)
+        : (match.home_score === null || match.home_score === undefined ? 'scheduled' : 'played');
+    const scoreStateMatches = !draftHasScoreState || (
+        (draft.homeScore ?? null) === (match.home_score ?? null)
+        && (draft.awayScore ?? null) === (match.away_score ?? null)
+        && String(draft.status || serverStatus) === serverStatus
+    );
+    if (scoreStateMatches && JSON.stringify(serverEvents) === JSON.stringify(draft.events || [])) {
+        clearStoredMatchEventDraft(match.id);
+        return false;
+    }
+    const modal = document.getElementById('matchEventEditorModal');
+    if (!modal) return false;
+    if (draftHasScoreState) {
+        const homeInput = document.getElementById(`match-home-${Number(match.id)}`);
+        const awayInput = document.getElementById(`match-away-${Number(match.id)}`);
+        const statusSelect = document.getElementById(`match-status-${Number(match.id)}`);
+        if (homeInput) homeInput.value = draft.homeScore ?? '';
+        if (awayInput) awayInput.value = draft.awayScore ?? '';
+        if (statusSelect && ['scheduled', 'played', 'home_forfeit', 'away_forfeit', 'double_forfeit'].includes(String(draft.status || ''))) {
+            statusSelect.value = String(draft.status);
+        }
+    }
+    modal.querySelectorAll('[data-event-count], [data-match-own-goals]').forEach(input => { input.value = ''; });
+    modal.querySelectorAll('[data-match-event-mvp]').forEach(input => { input.checked = false; });
+    (draft.events || []).forEach(event => {
+        if (event.event_type === 'own_goal') {
+            const input = Array.from(modal.querySelectorAll('[data-match-own-goals]'))
+                .find(item => String(item.dataset.teamName || '') === String(event.team_name || ''));
+            if (input) input.value = Number(event.quantity || 0) || '';
+            return;
+        }
+        const row = Array.from(modal.querySelectorAll('[data-match-event-matrix-row]')).find(item => {
+            const sameTeam = String(item.dataset.teamName || '') === String(event.team_name || '');
+            const samePlayer = Number(event.player_uid || 0) > 0
+                ? Number(item.dataset.playerUid || 0) === Number(event.player_uid || 0)
+                : String(item.dataset.playerName || '') === String(event.player_name || '');
+            return sameTeam && samePlayer;
+        });
+        if (!row) return;
+        if (event.event_type === 'mvp') row.querySelector('[data-match-event-mvp]').checked = true;
+        else {
+            const input = row.querySelector(`[data-event-count="${event.event_type}"]`);
+            if (input) input.value = Number(event.quantity || 0) || '';
+        }
+    });
+    handleMatchStatusChange(match.id, {markDirty: false, resetScheduled: true});
+    matchEventEditorDirty = true;
+    updateMatchEventEditorTotals();
+    const status = document.getElementById('matchEventModalStatus');
+    if (status) status.textContent = `已恢复 ${new Date(Number(draft.updatedAt || Date.now())).toLocaleString('zh-CN')} 的本机草稿`;
+    return true;
+}
+
+function buildScheduleMatchSnapshot(match) {
+    return {
+        match_id: Number(match.id),
+        home_score: match.home_score === null || match.home_score === undefined ? null : Number(match.home_score),
+        away_score: match.away_score === null || match.away_score === undefined ? null : Number(match.away_score),
+        status: String(match.status || ''),
+        events: normalizeMatchEventsForDraft(match.events || []),
+    };
+}
+
+async function restoreScheduleMatchSnapshot(snapshot) {
+    if (!snapshot?.match_id) return;
+    setScheduleMatchSaveState(snapshot.match_id, 'saving', '正在撤销');
+    try {
+        const result = await workJsonRequest('/api/admin/matches/batch', {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({matches: [snapshot]}),
+        });
+        if (!result || !result.response.ok || !result.data.success) throw new Error(result?.data?.detail || result?.data?.message || '撤销失败');
+        applyMatchPayloadLocally(snapshot);
+        setScheduleMatchSaveState(snapshot.match_id, 'saved', '已撤销上一次修改');
+        renderScheduleBoard();
+        invalidateCompetitionSections(['standings', 'playerRankings', 'suspensions']);
+        await refreshPlayerRankingsData();
+        await refreshCompetitionWorkSummary({renderBoards: false});
+        renderCompetitionDataStatus();
+        showUiToast('已撤销上一次比赛数据修改', 'success');
+    } catch (error) {
+        setScheduleMatchSaveState(snapshot.match_id, 'error', error.message || '撤销失败');
+        showUiToast(error.message || '撤销失败，请重试', 'danger', {duration: 5200});
+    }
+}
+
 async function openMatchEventEditor(matchId) {
     const match = findScheduleMatchById(matchId);
     if (!match) return;
     if (canManageCurrentCompetitionSchedule() && !await ensureCompetitionPlayersLoaded()) return;
+    if (document.getElementById('matchEventEditorModal') && matchEventEditorDirty) persistMatchEventDraftNow();
     closeMatchEventEditor(true);
     activeMatchEventEditorMatchId = Number(matchId);
     matchEventEditorDirty = false;
@@ -3980,11 +4221,19 @@ async function openMatchEventEditor(matchId) {
     if (!modal) return;
     document.body.appendChild(modal);
     document.body.classList.add('match-event-modal-open');
+    if (canManageCurrentCompetitionSchedule()) {
+        handleMatchStatusChange(match.id, {markDirty: false});
+        restoreStoredMatchEventDraft(match);
+    }
+    globalThis.refreshHorizontalScrollAffordances?.(modal);
     window.requestAnimationFrame(() => modal.querySelector('.match-event-modal')?.focus());
 }
 
 async function closeMatchEventEditor(force = false) {
-    if (!force && matchEventEditorDirty && !await showConfirmDialog({title: '关闭比赛数据', message: '当前修改尚未保存，关闭后未保存内容会丢失。', confirmLabel: '放弃修改', danger: true})) return;
+    if (!force && matchEventEditorDirty) {
+        persistMatchEventDraftNow();
+        if (!await showConfirmDialog({title: '关闭比赛数据', message: '当前修改已保存为本机草稿，再次打开这场比赛时会自动恢复。', confirmLabel: '保留草稿并关闭'})) return;
+    }
     document.getElementById('matchEventEditorModal')?.remove();
     document.body.classList.remove('match-event-modal-open');
     activeMatchEventEditorMatchId = null;
@@ -4011,6 +4260,55 @@ function switchMatchEventEditorTeam(side) {
 function markMatchEventEditorDirty() {
     matchEventEditorDirty = true;
     updateMatchEventEditorTotals();
+    scheduleMatchEventDraftSave();
+}
+
+function getMatchEventEditorStatus(matchId) {
+    const match = findScheduleMatchById(matchId);
+    return String(document.getElementById(`match-status-${Number(matchId)}`)?.value || match?.status || 'scheduled');
+}
+
+function setMatchEventMatrixAvailability(disabled) {
+    const modal = document.getElementById('matchEventEditorModal');
+    if (!modal) return;
+    modal.classList.toggle('is-result-only', Boolean(disabled));
+    modal.querySelectorAll('.match-event-modal-body input').forEach(input => {
+        input.disabled = Boolean(disabled);
+    });
+}
+
+function clearMatchEventMatrixValues() {
+    const modal = document.getElementById('matchEventEditorModal');
+    if (!modal) return;
+    modal.querySelectorAll('[data-event-count], [data-match-own-goals]').forEach(input => {
+        input.value = '';
+    });
+    modal.querySelectorAll('[data-match-event-mvp]').forEach(input => {
+        input.checked = false;
+    });
+}
+
+function syncMatchEventScorePresentation(matchId) {
+    const modal = document.getElementById('matchEventEditorModal');
+    if (!modal || Number(modal.dataset.matchId || 0) !== Number(matchId)) return;
+    const homeRaw = String(document.getElementById(`match-home-${Number(matchId)}`)?.value || '').trim();
+    const awayRaw = String(document.getElementById(`match-away-${Number(matchId)}`)?.value || '').trim();
+    modal.dataset.homeScore = homeRaw;
+    modal.dataset.awayScore = awayRaw;
+    const output = modal.querySelector('[data-match-score-display]');
+    if (output) output.textContent = homeRaw !== '' && awayRaw !== '' ? `${homeRaw} - ${awayRaw}` : '-';
+}
+
+function handleMatchScoreEditorInput(matchId) {
+    const statusSelect = document.getElementById(`match-status-${Number(matchId)}`);
+    const homeRaw = String(document.getElementById(`match-home-${Number(matchId)}`)?.value || '').trim();
+    const awayRaw = String(document.getElementById(`match-away-${Number(matchId)}`)?.value || '').trim();
+    if (statusSelect?.value === 'scheduled' && (homeRaw !== '' || awayRaw !== '')) {
+        statusSelect.value = 'played';
+        handleMatchStatusChange(matchId, {markDirty: false});
+    }
+    syncMatchEventScorePresentation(matchId);
+    markMatchEventEditorDirty();
 }
 
 function updateMatchEventEditorTotals() {
@@ -4046,9 +4344,9 @@ function updateMatchEventEditorTotals() {
     });
     const status = document.getElementById('matchEventModalStatus');
     if (status && matchEventEditorDirty) {
-        const homeScore = String(modal.dataset.homeScore || '').trim();
-        const awayScore = String(modal.dataset.awayScore || '').trim();
-        const scoreMismatch = homeScore !== '' && awayScore !== ''
+        const homeScore = String(document.getElementById(`match-home-${Number(modal.dataset.matchId || 0)}`)?.value || '').trim();
+        const awayScore = String(document.getElementById(`match-away-${Number(modal.dataset.matchId || 0)}`)?.value || '').trim();
+        const scoreMismatch = getMatchEventEditorStatus(modal.dataset.matchId) === 'played' && homeScore !== '' && awayScore !== ''
             && (teamGoals.home !== Number(homeScore) || teamGoals.away !== Number(awayScore));
         status.textContent = scoreMismatch ? '有未保存修改 · 进球合计与比分不一致' : '有未保存修改';
         status.classList.toggle('is-warning', scoreMismatch);
@@ -4098,10 +4396,19 @@ function readMatchEventMatrixPayload(matchId) {
     return events;
 }
 
-async function saveMatchEventEditor() {
+function getNextScheduleMatchForEntry(currentMatchId) {
+    const matches = sortScheduleMatches(getFilteredScheduleMatches());
+    const currentIndex = matches.findIndex(match => Number(match.id) === Number(currentMatchId));
+    return currentIndex >= 0 ? (matches[currentIndex + 1] || null) : null;
+}
+
+async function saveMatchEventEditor(openNext = false) {
     const matchId = Number(activeMatchEventEditorMatchId || 0);
+    const matchBeforeSave = findScheduleMatchById(matchId);
+    const previousSnapshot = matchBeforeSave ? buildScheduleMatchSnapshot(matchBeforeSave) : null;
     const status = document.getElementById('matchEventModalStatus');
     const saveButton = document.getElementById('matchEventModalSave');
+    const saveNextButton = document.getElementById('matchEventModalSaveNext');
     if (!matchId || !saveButton) return;
     let payload;
     try {
@@ -4110,6 +4417,7 @@ async function saveMatchEventEditor() {
         if (status) status.textContent = error.message || '比赛数据填写不完整';
         return;
     }
+    persistMatchEventDraftNow();
     if (scheduleMatchSaveInFlight.has(matchId)) {
         if (status) status.textContent = '比分正在保存，请稍后再保存球员数据';
         return;
@@ -4123,6 +4431,7 @@ async function saveMatchEventEditor() {
     setScheduleMatchSaveState(matchId, 'saving');
     saveButton.disabled = true;
     saveButton.textContent = '保存中...';
+    if (saveNextButton) saveNextButton.disabled = true;
     if (status) status.textContent = '正在保存比赛数据';
     try {
         const result = await workJsonRequest('/api/admin/matches/batch', {
@@ -4134,20 +4443,33 @@ async function saveMatchEventEditor() {
         const {response, data} = result;
         if (!response.ok || !data.success) throw new Error(data.detail || data.message || '保存比赛数据失败');
         applyMatchPayloadLocally(payload);
+        const nextMatch = openNext ? getNextScheduleMatchForEntry(matchId) : null;
         setScheduleMatchSaveState(matchId, 'saved');
         matchEventEditorDirty = false;
+        clearStoredMatchEventDraft(matchId);
         closeMatchEventEditor(true);
         renderScheduleBoard();
         invalidateCompetitionSections(['standings', 'playerRankings', 'suspensions']);
         await refreshPlayerRankingsData();
         await refreshCompetitionWorkSummary({renderBoards: false});
         renderCompetitionDataStatus();
-        if (typeof showUiToast === 'function') showUiToast('比赛数据已保存', {tone: 'success'});
+        if (nextMatch) await openMatchEventEditor(nextMatch.id);
+        if (typeof showUiToast === 'function') {
+            const successMessage = openNext
+                ? (nextMatch ? `已保存，继续录入第 ${Number(nextMatch.round_no) || '-'} 轮下一场` : '已保存，当前范围没有下一场比赛')
+                : '比赛数据已保存';
+            showUiToast(successMessage, 'success', previousSnapshot ? {
+                duration: 8000,
+                actionLabel: '撤销',
+                onAction: () => restoreScheduleMatchSnapshot(previousSnapshot),
+            } : {});
+        }
     } catch (error) {
         setScheduleMatchSaveState(matchId, 'error', error.message || '保存失败，点击重试');
         if (status) status.textContent = error.message || '保存失败，请重试';
         saveButton.disabled = false;
         saveButton.textContent = '重新保存';
+        if (saveNextButton) saveNextButton.disabled = false;
     } finally {
         scheduleMatchSaveInFlight.delete(matchId);
     }
@@ -4158,6 +4480,45 @@ function handleMatchEventEditorKeydown(event) {
     if (!modal) return;
     if (event.key === 'Escape') {
         closeMatchEventEditor();
+        return;
+    }
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        saveMatchEventEditor(false);
+        return;
+    }
+    if (event.key === 'Enter' && event.target instanceof HTMLInputElement && event.target.type === 'number') {
+        event.preventDefault();
+        const visiblePanel = modal.querySelector('[data-match-event-team-panel]:not([hidden])');
+        const scoreInputs = [modal.querySelector('[data-match-score-side="home"]'), modal.querySelector('[data-match-score-side="away"]')].filter(item => item && !item.disabled);
+        const eventInputs = visiblePanel
+            ? Array.from(visiblePanel.querySelectorAll('input[type="number"]:not(:disabled)'))
+            : [];
+        const sequence = [...scoreInputs, ...eventInputs];
+        const currentIndex = sequence.indexOf(event.target);
+        const nextIndex = currentIndex + (event.shiftKey ? -1 : 1);
+        if (sequence[nextIndex]) {
+            sequence[nextIndex].focus();
+            sequence[nextIndex].select?.();
+            return;
+        }
+        const activeSide = visiblePanel?.dataset.matchEventTeamPanel;
+        if (!event.shiftKey && activeSide === 'home') {
+            switchMatchEventEditorTeam('away');
+            const firstAwayInput = modal.querySelector('[data-match-event-team-panel="away"] input[type="number"]:not(:disabled)');
+            firstAwayInput?.focus();
+            firstAwayInput?.select?.();
+            return;
+        }
+        if (event.shiftKey && activeSide === 'away') {
+            switchMatchEventEditorTeam('home');
+            const homeInputs = modal.querySelectorAll('[data-match-event-team-panel="home"] input[type="number"]:not(:disabled)');
+            const lastHomeInput = homeInputs[homeInputs.length - 1];
+            lastHomeInput?.focus();
+            lastHomeInput?.select?.();
+            return;
+        }
+        document.getElementById('matchEventModalSaveNext')?.focus();
         return;
     }
     if (event.key !== 'Tab') return;
@@ -4404,54 +4765,38 @@ function setScheduleMatchSaveState(matchId, state, message = '') {
     });
 }
 
-function buildAdminMatchControlGroup(match) {
-    const homeScore = match.home_score ?? '';
-    const awayScore = match.away_score ?? '';
-    const status = isScheduleForfeitStatus(match.status) ? match.status : 'played';
-    const isForfeit = isScheduleForfeitStatus(status);
-    const scoreReadonly = isForfeit ? 'readonly' : '';
-    return `
-        <div class="match-edit-card ${isForfeit ? 'is-forfeit' : ''}">
-            <div class="match-edit-controls">
-                <span class="match-edit-round">第 ${Number(match.round_no) || '-'} 轮</span>
-                <input type="number" min="0" id="match-home-${match.id}" value="${escapeHtml(homeScore)}" aria-label="主队进球" ${scoreReadonly} oninput="scheduleMatchAutoSave(${Number(match.id)})" onchange="scheduleMatchAutoSave(${Number(match.id)})">
-                <span>-</span>
-                <input type="number" min="0" id="match-away-${match.id}" value="${escapeHtml(awayScore)}" aria-label="客队进球" ${scoreReadonly} oninput="scheduleMatchAutoSave(${Number(match.id)})" onchange="scheduleMatchAutoSave(${Number(match.id)})">
-                <select class="match-status-select" id="match-status-${match.id}" aria-label="比赛判定" onchange="handleMatchStatusChange(${Number(match.id)})">
-                    <option value="played" ${status === 'played' ? 'selected' : ''}>正常比赛</option>
-                    <option value="home_forfeit" ${status === 'home_forfeit' ? 'selected' : ''}>主队判负</option>
-                    <option value="away_forfeit" ${status === 'away_forfeit' ? 'selected' : ''}>客队判负</option>
-                    <option value="double_forfeit" ${status === 'double_forfeit' ? 'selected' : ''}>双方判负</option>
-                </select>
-                <button class="btn btn-secondary match-reset-btn" type="button" onclick="resetMatchResult(${match.id})">设为未赛</button>
-                ${renderScheduleMatchSaveState(match.id)}
-            </div>
-            <div class="match-forfeit-note" ${isForfeit ? '' : 'hidden'}>判负状态会按规则自动锁定比分，保存后不记录进球、助攻和本场最佳。</div>
-        </div>
-    `;
-}
-
-function handleMatchStatusChange(matchId) {
+function handleMatchStatusChange(matchId, options = {}) {
     const statusSelect = document.getElementById(`match-status-${matchId}`);
     const homeInput = document.getElementById(`match-home-${matchId}`);
     const awayInput = document.getElementById(`match-away-${matchId}`);
-    const editCard = statusSelect?.closest('.match-edit-card');
-    const note = editCard?.querySelector('.match-forfeit-note');
-    const score = getForfeitScoreForStatus(statusSelect?.value);
-    if (homeInput) homeInput.readOnly = Boolean(score);
-    if (awayInput) awayInput.readOnly = Boolean(score);
-    editCard?.classList.toggle('is-forfeit', Boolean(score));
-    if (note) note.hidden = !score;
+    const editor = statusSelect?.closest('.match-event-score-editor');
+    const note = document.getElementById('matchEventScoreNote');
+    const selectedStatus = String(statusSelect?.value || 'scheduled');
+    const score = getForfeitScoreForStatus(selectedStatus);
+    const isScheduled = selectedStatus === 'scheduled';
+    const lockScore = Boolean(score);
+    if (homeInput) homeInput.readOnly = lockScore;
+    if (awayInput) awayInput.readOnly = lockScore;
+    editor?.classList.toggle('is-forfeit', Boolean(score));
+    editor?.classList.toggle('is-scheduled', isScheduled);
     if (score) {
         if (homeInput) homeInput.value = score.home_score;
         if (awayInput) awayInput.value = score.away_score;
+    } else if (isScheduled && (options.markDirty !== false || options.resetScheduled === true)) {
+        if (homeInput) homeInput.value = '';
+        if (awayInput) awayInput.value = '';
+        clearMatchEventMatrixValues();
     }
-    scheduleMatchAutoSave(matchId);
-}
-
-function buildAdminMatchControls(match) {
-    if (!canManageCurrentCompetitionSchedule()) return '';
-    return `<td class="match-edit-cell">${buildAdminMatchControlGroup(match)}</td>`;
+    if (note) {
+        note.textContent = isScheduled
+            ? '直接填写比分会自动切换为正常比赛；主动改回未赛会清空本场数据。'
+            : (score
+                ? '判负会按规则锁定比分，保存后不记录进球、助攻和本场最佳。'
+                : '比分、比赛判定和球员数据会一次提交。');
+    }
+    setMatchEventMatrixAvailability(Boolean(score) || isScheduled);
+    syncMatchEventScorePresentation(matchId);
+    if (options.markDirty !== false) markMatchEventEditorDirty();
 }
 
 function groupMatchesByLevelAndRound(matches) {
@@ -4534,26 +4879,6 @@ function renderScheduleLegCell(match) {
     `;
 }
 
-function renderSchedulePairAdminCell(pair) {
-    if (!canManageCurrentCompetitionSchedule()) return '';
-    return `
-        <td class="match-edit-cell schedule-pair-edit-cell">
-            ${(pair.matches || []).map(buildAdminMatchControlGroup).join('')}
-        </td>
-    `;
-}
-
-function buildScheduleBatchActions(matches) {
-    if (!canManageCurrentCompetitionSchedule()) return '';
-    const matchIds = (matches || []).map(match => Number(match.id)).filter(Boolean);
-    if (!matchIds.length) return '';
-    return `
-        <div class="schedule-batch-actions">
-            <button class="btn btn-primary" type="button" onclick="saveCurrentMatchProgress([${matchIds.join(',')}])">保存</button>
-        </div>
-    `;
-}
-
 function renderMobileScheduleMatchCard(match) {
     if (!match) {
         return `
@@ -4598,12 +4923,8 @@ function renderMobileScheduleMatchCard(match) {
             ${renderCompetitionWorkMatchIssue(match.id)}
             ${canManageCurrentCompetitionSchedule() ? `
                 <div class="mobile-schedule-edit-actions">
-                    <button class="mobile-schedule-edit-trigger" type="button" onclick="openMobileScheduleEditDrawer(${Number(match.id)})">
-                        <span>比分与状态</span>
-                        <span aria-hidden="true">›</span>
-                    </button>
                     <button class="mobile-schedule-edit-trigger is-player-data" type="button" onclick="openMatchEventEditor(${Number(match.id)})">
-                        <span>球员数据</span>
+                        <span>编辑比赛数据</span>
                         <span aria-hidden="true">›</span>
                     </button>
                 </div>
@@ -4618,6 +4939,7 @@ function toggleMobileScheduleMatchDetails(matchId) {
     if (expandedMobileScheduleMatches.has(numericMatchId)) expandedMobileScheduleMatches.delete(numericMatchId);
     else expandedMobileScheduleMatches.add(numericMatchId);
     renderScheduleBoard();
+    if (typeof syncAppHistory === 'function') syncAppHistory('replace');
 }
 
 function renderMobileScheduleList(matches, rounds = []) {
@@ -4665,75 +4987,10 @@ function renderMobileScheduleRound(roundPair) {
         <div class="schedule-round-block mobile-schedule-round-block">
             <div class="schedule-round-header">
                 <h3>${escapeHtml(formatRoundPairLabel(roundPair.rounds))}</h3>
-                ${buildScheduleBatchActions(roundPair.matches)}
             </div>
             <div class="mobile-schedule-list">
                 ${buildSchedulePairRows(roundPair.matches).map(pair => renderMobileSchedulePair(pair, roundPair)).join('')}
             </div>
-        </div>
-    `;
-}
-
-function flushScheduleMatchAutoSave(matchId) {
-    const numericMatchId = Number(matchId || 0);
-    if (!numericMatchId || !scheduleAutoSaveTimers.has(numericMatchId)) return;
-    window.clearTimeout(scheduleAutoSaveTimers.get(numericMatchId));
-    scheduleAutoSaveTimers.delete(numericMatchId);
-    saveScheduleMatchQuietly(numericMatchId);
-}
-
-function openMobileScheduleEditDrawer(matchId) {
-    if (!canManageCurrentCompetitionSchedule()) return;
-    const match = findScheduleMatchById(matchId);
-    if (!match) return;
-    activeMobileScheduleEditMatchId = Number(matchId);
-    renderScheduleBoard();
-    window.requestAnimationFrame(() => {
-        document.querySelector('.mobile-schedule-editor-sheet')?.focus();
-    });
-}
-
-function closeMobileScheduleEditDrawer() {
-    const matchId = activeMobileScheduleEditMatchId;
-    if (matchId) flushScheduleMatchAutoSave(matchId);
-    activeMobileScheduleEditMatchId = null;
-    closeMatchEventSuggestions();
-    document.body.classList.remove('mobile-schedule-editor-open');
-    renderScheduleBoard();
-}
-
-function renderMobileScheduleEditDrawer() {
-    if (!canManageCurrentCompetitionSchedule() || !activeMobileScheduleEditMatchId) {
-        document.body.classList.remove('mobile-schedule-editor-open');
-        return '';
-    }
-    const match = findScheduleMatchById(activeMobileScheduleEditMatchId);
-    if (!match) {
-        activeMobileScheduleEditMatchId = null;
-        document.body.classList.remove('mobile-schedule-editor-open');
-        return '';
-    }
-    const score = getScheduleMatchScoreText(match);
-    document.body.classList.add('mobile-schedule-editor-open');
-    return `
-        <div class="mobile-schedule-editor-overlay" role="presentation" onclick="if (event.target === this) closeMobileScheduleEditDrawer()">
-            <aside class="mobile-schedule-editor-sheet" role="dialog" aria-modal="true" aria-label="编辑赛程事件" tabindex="-1">
-                <header class="mobile-schedule-editor-head">
-                    <div>
-                        <span>赛程维护</span>
-                        <strong>${escapeHtml(match.home_team_name || '-')} vs ${escapeHtml(match.away_team_name || '-')}</strong>
-                    </div>
-                    <button type="button" class="mobile-schedule-editor-close" onclick="closeMobileScheduleEditDrawer()" aria-label="关闭编辑">${uiIconSvg('close')}</button>
-                </header>
-                <div class="mobile-schedule-editor-summary">
-                    <span>${escapeHtml(match.home_team_name || '-')}</span>
-                    <strong>${escapeHtml(score)}</strong>
-                    <span>${escapeHtml(match.away_team_name || '-')}</span>
-                </div>
-                <div class="mobile-schedule-editor-body">
-                    ${buildAdminMatchControlGroup(match)}
-                </div>
-            </aside>
         </div>
     `;
 }
@@ -4799,7 +5056,7 @@ function buildStandingsExcelFileName(level) {
 
 async function exportStandingsExcel(level = currentCompetitionLevel) {
     try {
-        const response = await fetch(`/api/export/standings.xlsx?level=${encodeURIComponent(level)}`);
+        const response = await fetchWithTimeout(`/api/export/standings.xlsx?level=${encodeURIComponent(level)}`);
         if (!response.ok) {
             const data = await response.json().catch(() => ({}));
             throw new Error(data.detail || '积分榜 Excel 导出失败');
@@ -4813,7 +5070,7 @@ async function exportStandingsExcel(level = currentCompetitionLevel) {
 
 async function exportRankingExcel() {
     try {
-        const response = await fetch('/api/export/rankings.xlsx');
+        const response = await fetchWithTimeout('/api/export/rankings.xlsx');
         if (!response.ok) {
             const data = await response.json().catch(() => ({}));
             throw new Error(data.detail || '排位 Excel 导出失败');
@@ -4827,7 +5084,7 @@ async function exportRankingExcel() {
 
 async function exportSuspensionsExcel(level = currentCompetitionLevel) {
     try {
-        const response = await fetch(`/api/export/suspensions.xlsx?level=${encodeURIComponent(level)}`);
+        const response = await fetchWithTimeout(`/api/export/suspensions.xlsx?level=${encodeURIComponent(level)}`);
         if (!response.ok) {
             const data = await response.json().catch(() => ({}));
             throw new Error(data.detail || '伤停 Excel 导出失败');
@@ -5009,7 +5266,6 @@ function renderScheduleBoard() {
             ${renderScheduleRoundNavigator(rounds, currentRound, orderedMatches)}
             ${renderScheduleRoundPairGrid(currentPair.rounds, orderedMatches, {includeAdmin: includeDesktopAdmin})}
             ${renderMobileScheduleList(orderedMatches, currentPair.rounds)}
-            ${renderMobileScheduleEditDrawer()}
         </section>
     `;
     renderCompetitionDataStatus();
@@ -5031,11 +5287,58 @@ const COMPETITION_SECTION_LABELS = {
     suspensions: '伤停',
 };
 
+function getCompetitionSectionScope(section, level = currentCompetitionLevel) {
+    if (section === 'rating') return 'all';
+    const cupConfig = CUP_COMPETITIONS[level];
+    return cupConfig ? cupConfig.key : level;
+}
+
+function getCompetitionSectionCacheKey(section, level = currentCompetitionLevel) {
+    return `${section}:${getCompetitionSectionScope(section, level)}`;
+}
+
+function applyCompetitionSectionPayload(section, payload) {
+    if (!payload) return;
+    if (section === 'schedule') {
+        if (payload.schedule) scheduleData = payload.schedule;
+        if (payload.cupKey) cupGroupStageData = {...cupGroupStageData, [payload.cupKey]: payload.groupStage || null};
+        return;
+    }
+    if (section === 'playerRankings') {
+        playerRankingData = payload.playerRankings;
+        return;
+    }
+    if (section === 'rating') {
+        rankingData = payload.rankings;
+        return;
+    }
+    if (section === 'suspensions') {
+        suspensionData = payload.suspensions;
+        siteNotesData = (payload.siteNotes || []).reduce((acc, note) => {
+            acc[note.key] = note;
+            return acc;
+        }, {});
+        return;
+    }
+    if (payload.standings) standingsData = payload.standings;
+    if (payload.cupKey) {
+        cupBracketData = {...cupBracketData, [payload.cupKey]: payload.bracket};
+        cupGroupStageData = {...cupGroupStageData, [payload.cupKey]: payload.groupStage || null};
+    }
+}
+
 function invalidateCompetitionSections(sections = Object.keys(COMPETITION_SECTION_CONTAINERS)) {
     const targets = Array.isArray(sections) ? sections : [sections];
     targets.forEach(section => {
-        competitionLoadedSections.delete(section);
-        competitionSectionLoadPromises.delete(section);
+        for (const key of [...competitionLoadedSections]) {
+            if (key.startsWith(`${section}:`)) competitionLoadedSections.delete(key);
+        }
+        for (const key of [...competitionSectionLoadPromises.keys()]) {
+            if (key.startsWith(`${section}:`)) competitionSectionLoadPromises.delete(key);
+        }
+        for (const key of [...competitionSectionDataCache.keys()]) {
+            if (key.startsWith(`${section}:`)) competitionSectionDataCache.delete(key);
+        }
     });
     competitionDataLoaded = competitionLoadedSections.size > 0;
     if (typeof invalidateTeamDetailCache === 'function') invalidateTeamDetailCache();
@@ -5061,7 +5364,7 @@ function renderCompetitionSectionLoading(section) {
     if (container) container.innerHTML = renderUiState({tone: 'loading', title: `正在读取${COMPETITION_SECTION_LABELS[section] || '数据'}`, message: '只加载当前模块所需数据。', compact: true});
 }
 
-function renderCompetitionSectionError(section) {
+function renderCompetitionSectionError(section, failureType = 'request') {
     const containerId = section === 'standings' && isCupCompetitionLevel()
         ? 'cupBracketBoard'
         : section === 'schedule' && isCupCompetitionLevel()
@@ -5070,85 +5373,108 @@ function renderCompetitionSectionError(section) {
     const container = document.getElementById(containerId);
     if (!container) return;
     const label = COMPETITION_SECTION_LABELS[section] || '数据';
-    container.innerHTML = renderUiState({tone: 'danger', title: `${label}加载失败`, message: '其他统计模块不受影响，可稍后单独重试。', actionLabel: '重新读取', actionOnclick: `loadCompetitionSection('${section}', {force:true})`, compact: true});
+    const renderFailure = failureType === 'render';
+    container.innerHTML = renderUiState({
+        tone: 'danger',
+        title: `${label}${renderFailure ? '显示' : '加载'}失败`,
+        message: renderFailure
+            ? '数据已经读取，但页面显示出现异常；其他统计模块不受影响。'
+            : '其他统计模块不受影响，可稍后单独重试。',
+        actionLabel: renderFailure ? '刷新页面' : '重新读取',
+        actionOnclick: renderFailure ? 'window.location.reload()' : `loadCompetitionSection('${section}', {force:true})`,
+        compact: true,
+    });
+}
+
+function applyAndRenderCompetitionSectionPayload(section, cacheKey, payload) {
+    if (cacheKey !== getCompetitionSectionCacheKey(currentCompetitionSubtab)) return true;
+    try {
+        applyCompetitionSectionPayload(section, payload);
+        renderCompetitionSection(section);
+        return true;
+    } catch (error) {
+        console.error(`Failed to render competition section ${section}:`, error);
+        renderCompetitionSectionError(section, 'render');
+        return false;
+    }
 }
 
 async function fetchCompetitionJson(url, options = {}) {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok && !options.optional) throw new Error(`${url}: HTTP ${response.status}`);
     if (!response.ok) return null;
     return response.json();
 }
 
-async function requestCompetitionSection(section) {
+async function requestCompetitionSection(section, level = currentCompetitionLevel) {
+    const cupConfig = CUP_COMPETITIONS[level] || null;
     if (section === 'schedule') {
-        const [matches, championsGroups, leagueGroups] = await Promise.all([
-            fetchCompetitionJson('/api/matches'),
-            fetchCompetitionJson('/api/cups/champions_cup/groups', {optional: true}),
-            fetchCompetitionJson('/api/cups/league_cup/groups', {optional: true}),
-        ]);
-        scheduleData = matches;
-        cupGroupStageData = {...cupGroupStageData, champions_cup: championsGroups, league_cup: leagueGroups};
-        return;
+        if (cupConfig) {
+            const groupStage = cupConfig.groupCount
+                ? await fetchCompetitionJson(`/api/cups/${cupConfig.key}/groups`, {optional: true})
+                : null;
+            return {cupKey: cupConfig.key, groupStage};
+        }
+        return {schedule: await fetchCompetitionJson(`/api/matches?level=${encodeURIComponent(level)}`)};
     }
     if (section === 'playerRankings') {
-        playerRankingData = await fetchCompetitionJson('/api/player-rankings');
-        return;
+        return {playerRankings: await fetchCompetitionJson(`/api/player-rankings?level=${encodeURIComponent(level)}`)};
     }
     if (section === 'rating') {
-        rankingData = await fetchCompetitionJson('/api/rankings');
-        return;
+        return {rankings: await fetchCompetitionJson('/api/rankings')};
     }
     if (section === 'suspensions') {
         const [suspensions, siteNotes] = await Promise.all([
-            fetchCompetitionJson('/api/suspensions'),
+            fetchCompetitionJson(`/api/suspensions?level=${encodeURIComponent(level)}`),
             fetchCompetitionJson('/api/site-notes'),
         ]);
-        suspensionData = suspensions;
-        siteNotesData = siteNotes.reduce((acc, note) => {
-            acc[note.key] = note;
-            return acc;
-        }, {});
-        return;
+        return {suspensions, siteNotes};
     }
-    const [standings, championsCup, leagueCup, wumingjianCup, championsGroups, leagueGroups] = await Promise.all([
-        fetchCompetitionJson('/api/standings'),
-        fetchCompetitionJson('/api/cups/champions_cup/bracket'),
-        fetchCompetitionJson('/api/cups/league_cup/bracket'),
-        fetchCompetitionJson('/api/cups/wumingjian_cup/bracket'),
-        fetchCompetitionJson('/api/cups/champions_cup/groups', {optional: true}),
-        fetchCompetitionJson('/api/cups/league_cup/groups', {optional: true}),
-    ]);
-    standingsData = standings;
-    cupBracketData = {champions_cup: championsCup, league_cup: leagueCup, wumingjian_cup: wumingjianCup};
-    cupGroupStageData = {...cupGroupStageData, champions_cup: championsGroups, league_cup: leagueGroups};
+    if (cupConfig) {
+        const [bracket, groupStage] = await Promise.all([
+            fetchCompetitionJson(`/api/cups/${cupConfig.key}/bracket`),
+            cupConfig.groupCount
+                ? fetchCompetitionJson(`/api/cups/${cupConfig.key}/groups`, {optional: true})
+                : Promise.resolve(null),
+        ]);
+        return {cupKey: cupConfig.key, bracket, groupStage};
+    }
+    return {standings: await fetchCompetitionJson(`/api/standings?level=${encodeURIComponent(level)}`)};
 }
 
 async function loadCompetitionSection(section = currentCompetitionSubtab, options = {}) {
     const normalizedSection = Object.hasOwn(COMPETITION_SECTION_CONTAINERS, section) ? section : 'standings';
+    const requestedLevel = currentCompetitionLevel;
+    const cacheKey = getCompetitionSectionCacheKey(normalizedSection, requestedLevel);
     if (options.force === true) invalidateCompetitionSections(normalizedSection);
-    if (competitionLoadedSections.has(normalizedSection)) {
-        if (normalizedSection === currentCompetitionSubtab) renderCompetitionSection(normalizedSection);
-        return true;
+    if (competitionLoadedSections.has(cacheKey)) {
+        return applyAndRenderCompetitionSectionPayload(
+            normalizedSection,
+            cacheKey,
+            competitionSectionDataCache.get(cacheKey),
+        );
     }
-    if (competitionSectionLoadPromises.has(normalizedSection)) return competitionSectionLoadPromises.get(normalizedSection);
+    if (competitionSectionLoadPromises.has(cacheKey)) return competitionSectionLoadPromises.get(cacheKey);
     renderCompetitionSectionLoading(normalizedSection);
     const promise = (async () => {
         try {
-            await requestCompetitionSection(normalizedSection);
-            competitionLoadedSections.add(normalizedSection);
+            let payload;
+            try {
+                payload = await requestCompetitionSection(normalizedSection, requestedLevel);
+            } catch (error) {
+                console.error(`Failed to request competition section ${normalizedSection}:`, error);
+                if (cacheKey === getCompetitionSectionCacheKey(currentCompetitionSubtab)) renderCompetitionSectionError(normalizedSection, 'request');
+                return false;
+            }
+            competitionSectionDataCache.set(cacheKey, payload);
+            competitionLoadedSections.add(cacheKey);
             competitionDataLoaded = true;
-            if (normalizedSection === currentCompetitionSubtab) renderCompetitionSection(normalizedSection);
-            return true;
-        } catch (error) {
-            console.error(`Failed to load competition section ${normalizedSection}:`, error);
-            if (normalizedSection === currentCompetitionSubtab) renderCompetitionSectionError(normalizedSection);
-            return false;
+            return applyAndRenderCompetitionSectionPayload(normalizedSection, cacheKey, payload);
         } finally {
-            competitionSectionLoadPromises.delete(normalizedSection);
+            competitionSectionLoadPromises.delete(cacheKey);
         }
     })();
-    competitionSectionLoadPromises.set(normalizedSection, promise);
+    competitionSectionLoadPromises.set(cacheKey, promise);
     return promise;
 }
 
@@ -5164,9 +5490,14 @@ async function loadCompetitionData(options = {}) {
 
 async function refreshPlayerRankingsData() {
     try {
-        const response = await fetch('/api/player-rankings');
+        const level = currentCompetitionLevel;
+        const response = await fetchWithTimeout(`/api/player-rankings?level=${encodeURIComponent(level)}`);
         if (!response.ok) return false;
-        playerRankingData = await response.json();
+        const payload = {playerRankings: await response.json()};
+        const cacheKey = getCompetitionSectionCacheKey('playerRankings', level);
+        competitionSectionDataCache.set(cacheKey, payload);
+        competitionLoadedSections.add(cacheKey);
+        applyCompetitionSectionPayload('playerRankings', payload);
         if (currentCompetitionSubtab === 'playerRankings') {
             renderPlayerRankingsBoard();
         }
@@ -5244,7 +5575,24 @@ function readMatchScorePayload(matchId, eventOverride = null) {
     const awayInput = document.getElementById(`match-away-${matchId}`);
     const statusSelect = document.getElementById(`match-status-${matchId}`);
     const match = findScheduleMatchById(matchId);
-    const selectedStatus = String(statusSelect?.value || match?.status || '').trim();
+    let selectedStatus = String(statusSelect?.value || match?.status || '').trim();
+    const homeRaw = String(homeInput ? homeInput.value : (match?.home_score ?? '')).trim();
+    const awayRaw = String(awayInput ? awayInput.value : (match?.away_score ?? '')).trim();
+    if (selectedStatus === 'scheduled' && (homeRaw !== '' || awayRaw !== '')) {
+        selectedStatus = 'played';
+        if (statusSelect) statusSelect.value = 'played';
+    }
+    if (selectedStatus === 'scheduled') {
+        if (homeInput) homeInput.value = '';
+        if (awayInput) awayInput.value = '';
+        return {
+            match_id: Number(matchId),
+            home_score: null,
+            away_score: null,
+            status: 'scheduled',
+            events: [],
+        };
+    }
     const forcedScore = getForfeitScoreForStatus(selectedStatus);
     if (forcedScore) {
         if (homeInput) homeInput.value = forcedScore.home_score;
@@ -5257,13 +5605,9 @@ function readMatchScorePayload(matchId, eventOverride = null) {
             events: [],
         };
     }
-    const homeRaw = String(homeInput ? homeInput.value : (match?.home_score ?? '')).trim();
-    const awayRaw = String(awayInput ? awayInput.value : (match?.away_score ?? '')).trim();
-    if ((homeRaw === '') !== (awayRaw === '')) {
-        throw new Error('请填写完整的双方比分，或清空双方比分后再保存。');
-    }
-    const homeScore = homeRaw === '' ? null : Number(homeRaw);
-    const awayScore = awayRaw === '' ? null : Number(awayRaw);
+    if (homeRaw === '' || awayRaw === '') throw new Error('正常比赛需要填写完整的双方比分。');
+    const homeScore = Number(homeRaw);
+    const awayScore = Number(awayRaw);
     if (
         (homeScore !== null && (!Number.isInteger(homeScore) || homeScore < 0)) ||
         (awayScore !== null && (!Number.isInteger(awayScore) || awayScore < 0))
@@ -5275,7 +5619,7 @@ function readMatchScorePayload(matchId, eventOverride = null) {
         match_id: Number(matchId),
         home_score: homeScore,
         away_score: awayScore,
-        status: '',
+        status: 'played',
         events,
     };
 }
@@ -5480,7 +5824,7 @@ async function initializeCupBracket() {
         }
         invalidateCompetitionSections();
         await loadCompetitionData({force: true});
-        showModal('初始化完成', escapeHtml(data.message || `${currentCompetitionLevel}已重新初始化`));
+        showSuccessToast(data.message || `${currentCompetitionLevel}已重新初始化`);
     } catch (error) {
         showModal('初始化失败', '网络连接失败，请稍后重试。');
     } finally {

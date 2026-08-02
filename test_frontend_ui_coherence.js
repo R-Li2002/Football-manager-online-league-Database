@@ -59,14 +59,15 @@ assert.doesNotMatch(app, />⌂<|>◎<|>◇<|>⚙</, 'coach account actions shoul
 assert.match(core, /home:[\s\S]*user:[\s\S]*shield:[\s\S]*settings:/, 'the shared SVG icon helper should cover coach account actions');
 
 assert.doesNotMatch(css, /transition:\s*all/, 'UI transitions should name exact properties');
-assert.match(shellCss, /body:not\(\[data-active-tab="home"\]\) \.header-logo\s*\{[^}]*width:\s*74px[^}]*height:\s*74px/s, 'desktop function pages should retain the full HEIGO logo size');
-assert.match(databaseCss, /\.database-module-hero\s*\{[^}]*min-height:\s*86px/s, 'database module headers should not behave like large hero panels');
+assert.match(shellCss, /body:not\(\[data-active-tab="home"\]\) \.header-logo\s*\{[^}]*width:\s*52px[^}]*height:\s*52px/s, 'desktop function pages should use the compact HEIGO logo size');
+assert.match(databaseCss, /\.database-module-hero\s*\{[^}]*min-height:\s*72px/s, 'database module headers should stay compact');
 assert.match(competitionCss, /\.match-event-own-goal-note/, 'competition-only match event styles should live in the competition layer');
 assert.match(responsiveCss, /@media \(max-width: 780px\)/, 'migrated mobile overrides should live in the responsive layer');
 assert.match(competitionCss, /\.mobile-standings-list\s*\{\s*display:\s*none/);
 assert.match(responsiveCss, /@media \(max-width: 780px\)[\s\S]*\.mobile-standings-list\s*\{\s*display:\s*grid/);
 assert.match(css, /button:not\(:disabled\):active[\s\S]*transform:\s*scale\(0\.98\)/, 'pressable controls should have tactile feedback');
 assert.match(responsiveCss, /scroll-padding-bottom:\s*calc\(var\(--mobile-bottom-nav-height\)/, 'mobile shell ownership should reserve navigation space');
+assert.match(responsiveCss, /\.horizontal-scroll-hint/, 'overflowing mobile tabs should expose a shared horizontal-scroll hint');
 assert.match(competitionCss, /\.competition-module-status\s*\{/, 'competition modules should share one contextual status summary');
 assert.match(responsiveCss, /\.competition-selector\.has-overflow:not\(\.is-at-end\)::after/, 'overflowing mobile competition tabs should expose a right-edge fade');
 assert.match(responsiveCss, /#competition \.competition-level-tabs\s*\{[^}]*width:\s*max-content/, 'competition choices should remain horizontally discoverable without truncating labels');
@@ -130,8 +131,19 @@ assert.match(competitionCss + responsiveCss, /\.suspension-view-filters/, 'suspe
 assert.doesNotMatch(app, /competition:\s*\[[^\]]*\/static\/vendor\/html-to-image\.js/, 'competition should not preload the screenshot renderer');
 assert.match(app, /function ensureHtmlToImage\(\)/, 'screenshots should load their renderer only when requested');
 assert.match(core, /function showConfirmDialog\(options = \{\}\)/, 'destructive actions should use the shared in-app confirmation dialog');
+assert.match(core, /function showSuccessToast\(message, options = \{\}\)/, 'routine success feedback should use the shared lightweight toast helper');
+assert.match(foundation, /#resultModal \.modal-content[\s\S]*?box-shadow:\s*var\(--shadow-modal\)/, 'shared dialogs should use one modal surface and elevation');
+assert.match(foundation, /#resultModal \.modal-close[\s\S]*?width:\s*var\(--control-height\)[\s\S]*?height:\s*var\(--control-height\)/, 'shared dialog close controls should meet the touch target baseline');
+assert.match(foundation, /\.ui-toast[\s\S]*?role/, 'toast styling should remain in the shared UI foundation');
 assert.doesNotMatch(app + core + competition, /\b(?:alert|confirm)\s*\(/, 'core workflows should not fall back to blocking browser dialogs');
 assert.match(app, /const appTabScrollPositions = new Map\(\)/, 'primary modules should preserve their scroll position');
+assert.match(app, /expandedLevels:[\s\S]*journeyView:/, 'team-center search and expansion context should be captured in history');
+assert.match(app, /suspensionFilter:[\s\S]*expandedStandingRows:[\s\S]*expandedScheduleMatches:[\s\S]*expandedPlayerRankingRows:/, 'competition filters and expanded mobile rows should be captured in history');
+assert.match(competition, /function setSuspensionViewFilter\(filter\)[\s\S]*syncAppHistory\('replace'\)/, 'suspension filter changes should replace the current history state');
+assert.match(competitionCss, /\.standings-table thead th,[\s\S]*position:\s*sticky/, 'desktop standings and player rankings should keep their headers visible');
+assert.match(competitionCss, /\.standings-table th:nth-child\(2\),[\s\S]*position:\s*sticky;[\s\S]*left:\s*0/, 'desktop standings should pin the team column during horizontal scrolling');
+assert.match(css, /\.players-list-table th:nth-child\(2\),[\s\S]*position:\s*sticky;[\s\S]*left:\s*0/, 'desktop roster tables should pin the player name column');
+assert.match(databaseCss, /#dbPlayersTable > \.db-players-table th:first-child,[\s\S]*position:\s*sticky;[\s\S]*left:\s*0/, 'desktop database results should pin the player name column');
 assert.doesNotMatch(competition, /\bgetCupConfig\(/, 'competition status should use the established cup configuration helper');
 assert.match(competition, /competitionCupGroup/, 'unsupported cup choices should be hidden as a complete group');
 assert.ok(uiFontSize > 0 && uiFontSize < 300 * 1024, 'the self-hosted Chinese UI font should stay below 300 KiB');

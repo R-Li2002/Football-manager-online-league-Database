@@ -1,3 +1,5 @@
+var fetchWithTimeout = globalThis.fetchWithTimeout || ((...args) => globalThis.fetch(...args));
+
 const APP_STATIC_ASSET_VERSION = (() => {
     try {
         return new URL(document.currentScript?.src || '', window.location.href).searchParams.get('v') || '';
@@ -124,6 +126,25 @@ function ensureAppModule(moduleName) {
     });
     APP_MODULE_LOAD_PROMISES.set(moduleName, promise);
     return promise;
+}
+
+function renderCoachProfileLink(name, className = 'coach-profile-link') {
+    const clean = String(name || '').trim();
+    if (!clean || clean === '-') return escapeHtml(clean || '-');
+    return `<button class="${className}" type="button" onclick="openCoachProfileLinkByName(${htmlJsString(clean)})" title="查看${escapeHtml(clean)}的教练主页">${escapeHtml(clean)}</button>`;
+}
+
+async function openCoachProfileLinkByName(name) {
+    const clean = String(name || '').trim();
+    if (!clean || clean === '-') return;
+    try {
+        await ensureAppModule('coaches');
+        if (typeof openCoachProfileByName !== 'function') throw new Error('coach-profile-module-unavailable');
+        await openCoachProfileByName(clean);
+    } catch (error) {
+        console.error('打开教练主页失败:', error);
+        showModal('打开失败', '教练主页暂时无法打开，请稍后重试。');
+    }
 }
 
 function getGlobalCoachInitials(name) {
@@ -271,7 +292,7 @@ async function openCompetitionPlayerAttributeDetail(uid, returnSubtab = 'playerR
 }
 
 async function fetchJsonOrThrow(url, options) {
-    const response = await fetch(url, options);
+    const response = await fetchWithTimeout(url, options);
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${url}`);
     return response.json();
 }
@@ -529,6 +550,45 @@ function initializeMobileNavigation() {
     syncMobileNavState({closeMenu: false});
 }
 
+const HORIZONTAL_SCROLL_AFFORDANCE_SELECTOR = [
+    '#database .database-subtabs',
+    '#competition .competition-primary-tabs',
+    '.cup-phase-switch',
+    '.player-ranking-tabs',
+    '.suspension-view-filters',
+    '.match-event-team-tabs',
+].join(',');
+
+function refreshHorizontalScrollAffordances(root = document) {
+    const mobile = isMobileViewport();
+    root.querySelectorAll?.(HORIZONTAL_SCROLL_AFFORDANCE_SELECTOR).forEach(scroller => {
+        scroller.querySelector(':scope > .horizontal-scroll-hint')?.remove();
+        scroller.classList.remove('has-horizontal-overflow', 'is-horizontal-scroll-end');
+        if (!mobile || scroller.hidden || scroller.scrollWidth <= scroller.clientWidth + 3) return;
+        const hint = document.createElement('span');
+        hint.className = 'horizontal-scroll-hint';
+        hint.setAttribute('aria-hidden', 'true');
+        hint.textContent = '›';
+        scroller.appendChild(hint);
+        scroller.classList.add('has-horizontal-overflow');
+        const syncEndState = () => {
+            const atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 4;
+            scroller.classList.toggle('is-horizontal-scroll-end', atEnd);
+        };
+        if (scroller.dataset.horizontalHintBound !== 'true') {
+            scroller.dataset.horizontalHintBound = 'true';
+            scroller.addEventListener('scroll', syncEndState, {passive: true});
+        }
+        syncEndState();
+    });
+}
+
+let horizontalScrollResizeTimer = null;
+window.addEventListener('resize', () => {
+    window.clearTimeout(horizontalScrollResizeTimer);
+    horizontalScrollResizeTimer = window.setTimeout(() => refreshHorizontalScrollAffordances(), 120);
+}, {passive: true});
+
 function buildAppHistoryUrl(state) {
     const normalized = normalizeHistoryState(state);
     const url = new URL(window.location.href);
@@ -673,6 +733,16 @@ function normalizeSortState(sortState, defaultType = 'number') {
     return {field, order, type};
 }
 
+function normalizeHistoryStringList(value, limit = 200) {
+    if (!Array.isArray(value)) return [];
+    return [...new Set(value.map(item => String(item || '').trim()).filter(Boolean))].slice(0, limit);
+}
+
+function normalizeHistoryNumberList(value, limit = 200) {
+    if (!Array.isArray(value)) return [];
+    return [...new Set(value.map(item => Number(item)).filter(item => Number.isFinite(item) && item > 0))].slice(0, limit);
+}
+
 function captureOverviewHistoryState() {
     return {
         expanded: Boolean(overviewMetaExpanded),
@@ -726,8 +796,10 @@ function captureCompetitionHistoryState() {
     const rankingType = typeof currentPlayerRankingType === 'string' ? currentPlayerRankingType : 'goals';
     const cupPhase = typeof currentCupPhase === 'string' ? currentCupPhase : 'knockout';
     const cupView = typeof currentCupGroupScheduleView === 'string' ? currentCupGroupScheduleView : 'groups';
+    const suspensionFilter = typeof currentSuspensionViewFilter === 'string' ? currentSuspensionViewFilter : 'active';
+    const standingsScope = typeof currentMobileStandingsScope === 'string' ? currentMobileStandingsScope : 'total';
     return {
-        subtab: ['schedule', 'playerRankings', 'suspensions'].includes(subtab)
+        subtab: ['schedule', 'playerRankings', 'rating', 'suspensions'].includes(subtab)
             ? subtab
             : 'standings',
         level: ['超级', '甲级', '乙级', '冠军杯', '联盟杯', '无铭剑杯'].includes(level)
@@ -740,6 +812,13 @@ function captureCompetitionHistoryState() {
             ? workFilter
             : 'all',
         rankingType: ['assists', 'mvps'].includes(rankingType) ? rankingType : 'goals',
+        suspensionFilter: ['active', 'attention', 'all'].includes(suspensionFilter) ? suspensionFilter : 'active',
+        standingsScope: ['total', 'home', 'away'].includes(standingsScope) ? standingsScope : 'total',
+        expandedStandingRows: typeof expandedMobileStandingRows !== 'undefined' ? [...expandedMobileStandingRows] : [],
+        expandedScheduleMatches: typeof expandedMobileScheduleMatches !== 'undefined' ? [...expandedMobileScheduleMatches] : [],
+        expandedPlayerRankingRows: typeof expandedMobilePlayerRankingRows !== 'undefined' ? [...expandedMobilePlayerRankingRows] : [],
+        expandedSuspensionTeams: typeof expandedMobileSuspensionTeams !== 'undefined' ? [...expandedMobileSuspensionTeams] : [],
+        workPanelExpanded: typeof competitionWorkPanelExpanded !== 'undefined' && Boolean(competitionWorkPanelExpanded),
     };
 }
 
@@ -748,6 +827,12 @@ function captureAppHistoryState() {
         tab: getActiveTabName(),
         team: {
             name: typeof currentTeamDetailName === 'string' ? currentTeamDetailName : '',
+            query: typeof teamCenterSearchQuery === 'string'
+                ? teamCenterSearchQuery
+                : (document.getElementById('teamCenterSearchInput')?.value || ''),
+            expandedLevels: typeof teamCenterExpandedLevels !== 'undefined' ? [...teamCenterExpandedLevels] : [],
+            expandedInitialized: typeof teamCenterExpandedInitialized !== 'undefined' && Boolean(teamCenterExpandedInitialized),
+            journeyView: typeof currentTeamJourneyView === 'string' ? currentTeamJourneyView : 'league',
         },
         overview: captureOverviewHistoryState(),
         players: capturePlayersHistoryState(),
@@ -769,6 +854,13 @@ function normalizeHistoryState(rawState, index = appHistoryIndex) {
         tab: normalizeAppTabName(baseState.tab),
         team: {
             name: typeof baseState.team?.name === 'string' ? baseState.team.name : '',
+            query: typeof baseState.team?.query === 'string' ? baseState.team.query : '',
+            expandedLevels: normalizeHistoryStringList(baseState.team?.expandedLevels, 3)
+                .filter(level => ['超级', '甲级', '乙级'].includes(level)),
+            expandedInitialized: Boolean(baseState.team?.expandedInitialized),
+            journeyView: typeof baseState.team?.journeyView === 'string' && baseState.team.journeyView
+                ? baseState.team.journeyView
+                : 'league',
         },
         overview: {
             expanded: Boolean(baseState.overview?.expanded),
@@ -783,7 +875,7 @@ function normalizeHistoryState(rawState, index = appHistoryIndex) {
                 : null,
         },
         competition: {
-            subtab: ['schedule', 'playerRankings', 'suspensions'].includes(baseState.competition?.subtab)
+            subtab: ['schedule', 'playerRankings', 'rating', 'suspensions'].includes(baseState.competition?.subtab)
                 ? baseState.competition.subtab
                 : 'standings',
             level: ['超级', '甲级', '乙级', '冠军杯', '联盟杯', '无铭剑杯'].includes(baseState.competition?.level)
@@ -800,6 +892,17 @@ function normalizeHistoryState(rawState, index = appHistoryIndex) {
             rankingType: ['assists', 'mvps'].includes(baseState.competition?.rankingType)
                 ? baseState.competition.rankingType
                 : 'goals',
+            suspensionFilter: ['active', 'attention', 'all'].includes(baseState.competition?.suspensionFilter)
+                ? baseState.competition.suspensionFilter
+                : 'active',
+            standingsScope: ['total', 'home', 'away'].includes(baseState.competition?.standingsScope)
+                ? baseState.competition.standingsScope
+                : 'total',
+            expandedStandingRows: normalizeHistoryStringList(baseState.competition?.expandedStandingRows),
+            expandedScheduleMatches: normalizeHistoryNumberList(baseState.competition?.expandedScheduleMatches),
+            expandedPlayerRankingRows: normalizeHistoryStringList(baseState.competition?.expandedPlayerRankingRows),
+            expandedSuspensionTeams: normalizeHistoryNumberList(baseState.competition?.expandedSuspensionTeams),
+            workPanelExpanded: Boolean(baseState.competition?.workPanelExpanded),
         },
         database: {
             query: typeof baseState.database?.query === 'string' ? baseState.database.query : '',
@@ -910,6 +1013,21 @@ async function restoreTeamHistoryState(teamState) {
     if (typeof currentTeamDetailName !== 'undefined') {
         currentTeamDetailName = typeof teamState?.name === 'string' ? teamState.name : '';
     }
+    if (typeof teamCenterSearchQuery !== 'undefined') {
+        teamCenterSearchQuery = typeof teamState?.query === 'string' ? teamState.query : '';
+    }
+    if (typeof teamCenterExpandedLevels !== 'undefined') {
+        teamCenterExpandedLevels.clear();
+        normalizeHistoryStringList(teamState?.expandedLevels, 3)
+            .filter(level => ['超级', '甲级', '乙级'].includes(level))
+            .forEach(level => teamCenterExpandedLevels.add(level));
+        teamCenterExpandedInitialized = Boolean(teamState?.expandedInitialized || teamCenterExpandedLevels.size > 0);
+    }
+    if (typeof currentTeamJourneyView !== 'undefined') {
+        currentTeamJourneyView = typeof teamState?.journeyView === 'string' && teamState.journeyView
+            ? teamState.journeyView
+            : 'league';
+    }
 }
 
 async function restoreCompetitionHistoryState(competitionState) {
@@ -919,6 +1037,13 @@ async function restoreCompetitionHistoryState(competitionState) {
     currentCupGroupScheduleView = competitionState.cupView === 'results' ? 'results' : 'groups';
     currentPlayerRankingType = competitionState.rankingType || 'goals';
     currentCompetitionWorkFilter = competitionState.workFilter || 'all';
+    currentSuspensionViewFilter = competitionState.suspensionFilter || 'active';
+    currentMobileStandingsScope = competitionState.standingsScope || 'total';
+    expandedMobileStandingRows = new Set(competitionState.expandedStandingRows || []);
+    expandedMobileScheduleMatches = new Set(competitionState.expandedScheduleMatches || []);
+    expandedMobilePlayerRankingRows = new Set(competitionState.expandedPlayerRankingRows || []);
+    expandedMobileSuspensionTeams = new Set(competitionState.expandedSuspensionTeams || []);
+    competitionWorkPanelExpanded = Boolean(competitionState.workPanelExpanded);
     showCompetitionSubtab(competitionState.subtab || 'standings');
     if (competitionState.round) {
         const roundSelect = document.getElementById('scheduleRoundSelect');
@@ -1086,19 +1211,39 @@ async function initializeAppHistory() {
 }
 
 async function init() {
-    const savedTheme = localStorage.getItem('themeMode');
+    let savedTheme = document.documentElement?.dataset?.themeMode || 'light';
+    try {
+        savedTheme = localStorage.getItem('themeMode') || savedTheme;
+    } catch (error) {
+        console.warn('主题偏好读取失败:', error);
+    }
     isDarkMode = savedTheme === 'dark';
     document.body.classList.toggle('light-mode', !isDarkMode);
     syncThemeToggleState();
     initializeMobileNavigation();
+    (window.requestAnimationFrame || (callback => callback()))(() => refreshHorizontalScrollAffordances());
     loadSiteVisitStats();
+
+    const bootstrapResults = await Promise.allSettled([
+        fetchJsonOrThrow('/api/home/summary'),
+        fetchJsonOrThrow('/api/admin/check'),
+        fetchJsonOrThrow('/api/workspace/session'),
+        fetchJsonOrThrow('/api/coach/check'),
+    ]);
+    const bootstrapLabels = ['首页摘要', '管理员身份', '工作身份', '教练身份'];
+    const failedBootstrapLabels = bootstrapResults
+        .map((result, index) => result.status === 'rejected' ? bootstrapLabels[index] : '')
+        .filter(Boolean);
+    bootstrapResults.forEach((result, index) => {
+        if (result.status === 'rejected') console.warn(`${bootstrapLabels[index]}初始化失败:`, result.reason);
+    });
+
+    const summary = bootstrapResults[0].status === 'fulfilled' ? bootstrapResults[0].value : homeSummary;
+    const adminData = bootstrapResults[1].status === 'fulfilled' ? bootstrapResults[1].value : {authenticated: false};
+    const workspaceSession = bootstrapResults[2].status === 'fulfilled' ? bootstrapResults[2].value : workspaceSessionState;
+    const coachAccount = bootstrapResults[3].status === 'fulfilled' ? bootstrapResults[3].value : {authenticated: false};
+
     try {
-        const [summary, adminData, workspaceSession, coachAccount] = await Promise.all([
-            fetchJsonOrThrow('/api/home/summary'),
-            fetchJsonOrThrow('/api/admin/check'),
-            fetchJsonOrThrow('/api/workspace/session'),
-            fetchJsonOrThrow('/api/coach/check'),
-        ]);
         homeSummary = summary || homeSummary;
         defaultAttributeVersionPlayerCount = Number(homeSummary.database_player_count || 0);
         currentAttributeVersion = String(homeSummary.default_attribute_version || '');
@@ -1123,12 +1268,16 @@ async function init() {
         syncLightweightAdminTabVisibility();
         updateAttributeVersionPlayerCountLabels();
         await initializeAppHistory();
+        if (failedBootstrapLabels.length && typeof showUiToast === 'function') {
+            showUiToast(`${failedBootstrapLabels.join('、')}暂时未读取，公开页面仍可使用；刷新页面即可重试。`, 'warning', {duration: 5200});
+        }
         if (currentCoachAccount.authenticated && (currentCoachAccount.must_change_password || !currentCoachAccount.qq_number)) {
             await ensureAppModule('coaches');
             beginCoachSecuritySetup();
         }
     } catch (error) {
-        console.error('Error:', error);
+        console.error('应用初始化失败:', error);
+        if (typeof showUiToast === 'function') showUiToast('页面初始化未完全完成，请刷新后重试。', 'danger', {duration: 5200});
     }
 }
 
@@ -1169,7 +1318,7 @@ async function loadSiteVisitStats() {
     if (!statsElement || !totalElement || !todayElement) return;
 
     try {
-        const response = await fetch('/api/site-visits', {method: 'POST'});
+        const response = await fetchWithTimeout('/api/site-visits', {method: 'POST'});
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const stats = await response.json();
         totalElement.textContent = Number(stats.total_count || 0).toLocaleString('zh-CN');
@@ -1181,7 +1330,7 @@ async function loadSiteVisitStats() {
 }
 
 async function refreshTeamDataset() {
-    const teamsRes = await fetch('/api/teams');
+    const teamsRes = await fetchWithTimeout('/api/teams');
     teams = await teamsRes.json();
     teamsLoadPromise = null;
     renderTeamsTable();
@@ -1199,7 +1348,7 @@ async function refreshTeamDataset() {
 }
 
 async function refreshPlayerDataset() {
-    const playersRes = await fetch('/api/players');
+    const playersRes = await fetchWithTimeout('/api/players');
     allPlayers = await playersRes.json();
     currentPlayers = [...allPlayers];
     playersLoadPromise = null;
@@ -1214,7 +1363,7 @@ async function refreshPlayerDataset() {
 }
 
 async function refreshLeagueInfoDataset() {
-    const infoRes = await fetch('/api/league/info');
+    const infoRes = await fetchWithTimeout('/api/league/info');
     leagueInfo = await infoRes.json();
     leagueInfoLoadPromise = null;
     renderOverview();
@@ -1256,6 +1405,7 @@ async function showTab(tabName, triggerElement = null, options = {}) {
     if (module && typeof module.onEnter === 'function') {
         await module.onEnter();
     }
+    (window.requestAnimationFrame || (callback => callback()))(() => refreshHorizontalScrollAffordances(document.getElementById(normalizedTab) || document));
     if (typeof renderCompareDock === 'function') {
         renderCompareDock();
     }
@@ -1429,7 +1579,7 @@ async function exportData() {
     const exportButton = document.getElementById('homeRosterExportButton');
     setUiButtonBusy(exportButton, true, '正在整理');
     try {
-        const response = await fetch('/api/export/excel');
+        const response = await fetchWithTimeout('/api/export/excel');
         if (!response.ok) {
             const errorText = await response.text();
             throw new Error(`HTTP ${response.status}: ${errorText || '导出失败'}`);

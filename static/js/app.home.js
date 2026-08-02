@@ -1,5 +1,8 @@
+var fetchWithTimeout = globalThis.fetchWithTimeout || ((...args) => globalThis.fetch(...args));
+
 const HOME_PROMOTION_DISMISSED_STORAGE_KEY = 'heigoHomePromotionsDismissed';
 const HOME_PROMOTION_MODAL_SEEN_STORAGE_KEY = 'heigoHomePromotionModalsSeen';
+const HOME_PROMOTION_MODAL_DELAY_MS = 6500;
 function homePromotionIconSvg(icon = 'megaphone') {
     const icons = {
         megaphone: '<path d="M4 13V9l11-4v12L4 13Z"/><path d="M7 14v4h4l-1.5-3.5M18 8.5c1 .8 1.5 2 1.5 3.5s-.5 2.7-1.5 3.5"/>',
@@ -17,6 +20,7 @@ let homePromotionsLoaded = false;
 let homePromotionsLoading = null;
 let activeHomePromotionModalId = 0;
 let homePromotionModalShownThisVisit = false;
+let homePromotionModalPendingTimer = null;
 let homeDashboardState = {data: null, teamId: 0, loadedAt: 0, error: ''};
 let homeDashboardLoading = null;
 
@@ -305,7 +309,7 @@ async function loadHomeDashboard(options = {}) {
     const container = document.getElementById('homeDashboard');
     container?.classList.add('is-refreshing');
     const query = teamId > 0 ? `?team_id=${teamId}` : '';
-    homeDashboardLoading = fetch(`/api/home/dashboard${query}`, {credentials: 'same-origin'})
+    homeDashboardLoading = fetchWithTimeout(`/api/home/dashboard${query}`, {credentials: 'same-origin'})
         .then(async response => {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
@@ -383,7 +387,7 @@ function getHomePromotionVersion(promotion) {
 
 function getHomePromotionMedia(promotion) {
     if (promotion.image_url) {
-        return `<span class="home-promotion-media"><img src="${escapeHtml(promotion.image_url)}" alt="" width="1600" height="900" decoding="async"></span>`;
+        return `<span class="home-promotion-media"><img src="${escapeHtml(promotion.image_url)}" alt="" width="1600" height="900" loading="lazy" decoding="async" fetchpriority="low"></span>`;
     }
     return `<span class="home-promotion-media is-symbol" aria-hidden="true">${homePromotionIconSvg(promotion.icon)}</span>`;
 }
@@ -488,11 +492,21 @@ function showHomePromotionModal(promotion, options = {}) {
 
 function showPendingHomePromotionModal() {
     if (homePromotionModalShownThisVisit || document.body?.dataset?.activeTab !== 'home') return;
+    if (currentCoachAccount?.authenticated || workspaceSessionState?.authenticated) return;
     const seen = getSeenHomePromotionModalVersions();
     const promotion = homePromotions.find(item => homePromotionUsesModal(item) && seen[item.id] !== getHomePromotionVersion(item));
     if (!promotion) return;
     homePromotionModalShownThisVisit = true;
-    window.setTimeout(() => showHomePromotionModal(promotion), 380);
+    window.clearTimeout(homePromotionModalPendingTimer);
+    homePromotionModalPendingTimer = window.setTimeout(() => {
+        homePromotionModalPendingTimer = null;
+        if (document.visibilityState !== 'visible' || document.body?.dataset?.activeTab !== 'home') {
+            homePromotionModalShownThisVisit = false;
+            return;
+        }
+        if (currentCoachAccount?.authenticated || workspaceSessionState?.authenticated) return;
+        showHomePromotionModal(promotion);
+    }, HOME_PROMOTION_MODAL_DELAY_MS);
 }
 
 function closeHomePromotionModal(options = {}) {
@@ -563,7 +577,7 @@ async function loadHomePromotions(options = {}) {
     if (homePromotionsLoading) return homePromotionsLoading;
     homePromotionsLoading = (async () => {
         try {
-            const response = await fetch('/api/home-promotions');
+            const response = await fetchWithTimeout('/api/home-promotions');
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             homePromotions = await response.json();
             homePromotionsLoaded = true;

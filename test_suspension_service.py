@@ -76,6 +76,16 @@ class SuspensionServiceTest(unittest.TestCase):
         self.assertEqual([item.player_uid for item in alpha.suspended], [103])
         self.assertIn("Alpha Three: 停赛备注", alpha.notes)
 
+    def test_suspensions_can_be_limited_to_one_level(self):
+        first_team = Team(name="First Team", level="甲级", manager="First Boss")
+        self.db.add(first_team)
+        self.db.commit()
+
+        response = suspension_service.get_suspensions(self.db, level="甲级")
+
+        self.assertEqual(response.levels, ["甲级"])
+        self.assertEqual([team.team_name for team in response.teams], ["First Team"])
+
     def test_suspension_progress_ahead_suppresses_unsynced_old_fixtures(self):
         for round_no in (1, 2, 3):
             self._add_match(round_no)

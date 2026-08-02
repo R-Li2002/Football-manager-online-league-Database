@@ -1574,21 +1574,26 @@
     }
 }
 
+html.player-detail-scroll-snap,
+body.player-detail-scroll-snap {
+    scroll-snap-type: y proximity;
+    scroll-padding-top: 20px;
+}
+
+body.player-detail-scroll-snap #playerDetailContent {
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+    scroll-margin-top: 20px;
+}
+
 @media (max-width: 780px) {
     html.player-detail-scroll-snap,
     body.player-detail-scroll-snap {
-        scroll-snap-type: y proximity;
-        scroll-padding-top: 68px;
+        scroll-padding-top: 12px;
     }
 
-    body.player-detail-scroll-snap #dbDetailView .detail-toolbar,
-    body.player-detail-scroll-snap #playerDetailContent .player-info-panel,
-    body.player-detail-scroll-snap #playerDetailContent .detail-section-skills > .detail-skills-grid > .attribute-group,
-    body.player-detail-scroll-snap #playerDetailContent .detail-section-hidden > .attribute-group,
-    body.player-detail-scroll-snap #playerDetailContent .detail-section-charts .detail-chart-panel {
-        scroll-snap-align: start;
-        scroll-snap-stop: always;
-        scroll-margin-top: 68px;
+    body.player-detail-scroll-snap #playerDetailContent {
+        scroll-margin-top: 12px;
     }
 
     #dbDetailView {
@@ -1980,6 +1985,13 @@
     #playerDetailContent .player-radar-svg {
         max-width: min(100%, 320px);
         margin-inline: auto;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html.player-detail-scroll-snap,
+    body.player-detail-scroll-snap {
+        scroll-snap-type: none;
     }
 }
 
@@ -2884,11 +2896,7 @@
 
 @media (max-width: 980px) {
     .team-center-picker {
-        grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
-    }
-
-    .team-center-enter-button {
-        grid-column: 2 / -1;
+        grid-template-columns: auto minmax(0, 1fr) auto;
     }
 
     .team-center-club-grid {
@@ -2966,10 +2974,6 @@
 
     .team-center-picker-heading {
         padding: 0 0 2px;
-    }
-
-    .team-center-picker-or {
-        display: none;
     }
 
     .team-center-enter-button {
@@ -5422,7 +5426,7 @@
 
     .mobile-schedule-edit-trigger {
         width: 100%;
-        min-height: 42px;
+        min-height: 44px;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -5440,7 +5444,7 @@
 
     .mobile-schedule-edit-actions {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1fr);
         gap: 7px;
     }
 
@@ -5605,6 +5609,34 @@
         font-size: 1.08rem;
     }
 
+    .match-event-score-editor {
+        grid-template-columns: minmax(0, 1fr) 52px 12px 52px minmax(0, 1fr);
+        gap: 6px;
+        padding: 10px;
+    }
+
+    .match-event-score-team strong {
+        font-size: 0.76rem;
+        white-space: normal;
+    }
+
+    .match-event-score-input input {
+        min-height: 44px;
+        padding-inline: 3px;
+        font-size: 1rem;
+    }
+
+    .match-event-status-field,
+    .match-event-score-note {
+        grid-column: 1 / -1;
+    }
+
+    .match-event-status-field {
+        grid-template-columns: 70px minmax(0, 1fr);
+        align-items: center;
+        gap: 8px;
+    }
+
     .match-event-modal-summary > span {
         display: grid;
         justify-items: center;
@@ -5687,7 +5719,7 @@
 
     .match-event-modal-footer > div {
         display: grid;
-        grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+        grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.12fr) minmax(0, 1.16fr);
     }
 
     .match-event-modal-footer .btn {
@@ -6600,6 +6632,50 @@
         scroll-padding-bottom: calc(var(--mobile-bottom-nav-height) + var(--mobile-safe-bottom) + 28px);
     }
 
+    body > .container {
+        padding-bottom: calc(var(--mobile-bottom-nav-height) + var(--mobile-safe-bottom) + 38px);
+    }
+
+    .has-horizontal-overflow {
+        position: relative;
+        overflow-x: auto !important;
+        overflow-y: hidden;
+        scroll-padding-right: 52px;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .has-horizontal-overflow::-webkit-scrollbar {
+        display: none;
+    }
+
+    .horizontal-scroll-hint {
+        position: sticky;
+        right: 2px;
+        z-index: 4;
+        flex: 0 0 auto;
+        align-self: center;
+        min-width: 30px;
+        min-height: 30px;
+        display: inline-grid;
+        place-items: center;
+        margin-left: 2px;
+        padding: 2px 5px;
+        border: 1px solid color-mix(in srgb, var(--accent-primary) 20%, var(--border-color));
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--surface-strong) 94%, transparent);
+        color: var(--accent-primary);
+        font-size: 1.2rem;
+        font-weight: 900;
+        box-shadow: -12px 0 18px color-mix(in srgb, var(--surface-strong) 92%, transparent);
+        pointer-events: none;
+        transition: opacity 160ms ease;
+    }
+
+    .is-horizontal-scroll-end > .horizontal-scroll-hint {
+        opacity: 0;
+    }
+
     body:not([data-active-tab="home"]) .shell-actions {
         margin-left: auto;
         flex: 0 0 auto;
@@ -6910,5 +6986,36 @@ body:not(.light-mode) .team-center-lineup-capture {
     .team-panel-header p {
         font-size: .75rem;
         line-height: 1.5;
+    }
+
+    .candidate-dock-handle-meta,
+    .compare-dock-handle-label,
+    .candidate-dock-handle-label,
+    #dbDetailView .detail-growth-label,
+    #playerDetailContent .player-mobile-summary-item span,
+    .power-card-score .power-relative-inline em,
+    .mobile-db-result-toolbar-main span,
+    .mobile-db-sort-control span,
+    .mobile-db-scope-banner span,
+    .mobile-db-scope-banner em,
+    .mobile-db-rating-stack em,
+    .mobile-db-power-metric em,
+    .mobile-db-power-metric small,
+    .power-card-meta,
+    .mobile-standings-points,
+    .mobile-standings-strip em,
+    .competition-image-btn,
+    .competition-excel-btn,
+    .suspension-update-note,
+    .standings-zone-chip,
+    .mobile-player-ranking-metric,
+    .mobile-player-ranking-stats em,
+    .mobile-schedule-team-role,
+    .match-event-matrix-columns,
+    .match-event-matrix-player small,
+    .mobile-standings-quick-stats small,
+    .brand-eyebrow,
+    .mobile-bottom-nav-item {
+        font-size: var(--text-xs) !important;
     }
 }

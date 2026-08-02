@@ -11,12 +11,12 @@
 
 .team-center-landing {
     display: grid;
-    gap: 18px;
+    gap: 14px;
 }
 
 .team-center-welcome {
-    min-height: 210px;
-    padding: 34px 38px;
+    min-height: 158px;
+    padding: 22px 28px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -47,7 +47,7 @@
 }
 
 .team-center-welcome-title-row {
-    margin: 8px 0 12px;
+    margin: 5px 0 8px;
     display: flex;
     align-items: center;
     gap: 18px;
@@ -55,15 +55,16 @@
 
 .team-center-welcome-copy h1 {
     margin: 0;
-    font-size: clamp(2rem, 4vw, 3.4rem);
+    font-size: clamp(1.8rem, 3vw, 2.65rem);
     line-height: 1.04;
 }
 
 .team-center-welcome-copy p {
     max-width: 620px;
     color: var(--text-secondary);
-    font-size: 1rem;
-    line-height: 1.7;
+    margin: 0;
+    font-size: .9rem;
+    line-height: 1.55;
 }
 
 .team-center-coach-access {
@@ -129,9 +130,9 @@ body:not(.light-mode) .team-center-coach-access {
 }
 
 .team-center-welcome-count {
-    min-width: 160px;
-    min-height: 144px;
-    padding: 22px;
+    min-width: 132px;
+    min-height: 112px;
+    padding: 16px;
     display: grid;
     place-content: center;
     text-align: center;
@@ -144,7 +145,7 @@ body:not(.light-mode) .team-center-coach-access {
 
 .team-center-welcome-count strong {
     color: var(--accent-primary);
-    font-size: 3.25rem;
+    font-size: 2.55rem;
     line-height: .9;
     font-variant-numeric: tabular-nums;
 }
@@ -161,9 +162,9 @@ body:not(.light-mode) .team-center-coach-access {
 }
 
 .team-center-picker {
-    padding: 20px;
+    padding: 15px 16px;
     display: grid;
-    grid-template-columns: auto minmax(220px, 1fr) auto minmax(220px, 1fr) auto;
+    grid-template-columns: auto minmax(280px, 1fr) auto;
     align-items: end;
     gap: 14px;
     border: 1px solid var(--border-color);
@@ -180,8 +181,12 @@ body:not(.light-mode) .team-center-coach-access {
     font-size: 1.16rem;
 }
 
-.team-center-search-field,
-.team-center-select-field {
+.team-center-search-combobox {
+    position: relative;
+    min-width: 0;
+}
+
+.team-center-search-field {
     min-width: 0;
     display: grid;
     gap: 7px;
@@ -190,8 +195,7 @@ body:not(.light-mode) .team-center-coach-access {
     font-weight: 750;
 }
 
-.team-center-search-field input,
-.team-center-select-field select {
+.team-center-search-field input {
     width: 100%;
     min-width: 0;
     min-height: 48px;
@@ -205,17 +209,70 @@ body:not(.light-mode) .team-center-coach-access {
 }
 
 .team-center-search-field input:focus,
-.team-center-select-field select:focus,
 .team-center-switcher-control select:focus {
     border-color: var(--accent-primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, transparent);
 }
 
-.team-center-picker-or {
-    align-self: center;
-    padding-top: 21px;
+.team-center-search-suggestions {
+    position: absolute;
+    z-index: 40;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    display: grid;
+    max-height: min(420px, 60vh);
+    padding: 6px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    background: var(--surface-strong);
+    box-shadow: 0 18px 46px rgba(15, 23, 42, .18);
+}
+
+.team-center-search-suggestions[hidden] {
+    display: none;
+}
+
+.team-center-search-option {
+    width: 100%;
+    min-height: 52px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+}
+
+.team-center-search-option > span:first-child {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+}
+
+.team-center-search-option strong,
+.team-center-search-option small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.team-center-search-option small {
     color: var(--text-secondary);
     font-size: .72rem;
+}
+
+.team-center-search-option:hover,
+.team-center-search-option.is-active,
+.team-center-search-option:focus-visible {
+    background: color-mix(in srgb, var(--accent-primary) 11%, transparent);
+    outline: none;
 }
 
 .team-center-enter-button {
@@ -234,6 +291,8 @@ body:not(.light-mode) .team-center-coach-access {
     border: 1px solid var(--border-color);
     border-radius: 18px;
     background: var(--bg-secondary);
+    content-visibility: auto;
+    contain-intrinsic-size: 380px;
 }
 
 .team-center-league-group > header {
@@ -466,9 +525,7 @@ body:not(.light-mode) .team-center-coach-access {
 }
 
 body:not(.light-mode) .team-center-switcher-control select,
-body:not(.light-mode) .team-center-switcher-control option,
-body:not(.light-mode) .team-center-select-field select,
-body:not(.light-mode) .team-center-select-field option {
+body:not(.light-mode) .team-center-switcher-control option {
     background-color: #1f2335;
     color: #c0caf5;
 }
@@ -2962,7 +3019,6 @@ body:not(.light-mode) .team-center-league-group {
 }
 
 .team-center-search-field,
-.team-center-select-field,
 .team-center-club-copy small,
 .team-center-club-stats,
 .team-center-switcher-copy small,

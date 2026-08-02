@@ -34,6 +34,11 @@ assert(team.includes('new AbortController()'), 'team switching should cancel the
 assert(team.includes("error?.name === 'AbortError'"), 'cancelled team requests should not render as user-facing failures');
 assert(team.includes('function renderTeamCenterLanding()'), 'team center landing page should render before a team is selected');
 assert(team.includes('id="teamCenterSearchInput"'), 'team center landing should include club and coach search');
+assert(team.includes('role="combobox"'), 'team center search should be the single accessible club picker');
+assert(team.includes('id="teamCenterSearchSuggestions"'), 'team center search should expose inline club suggestions');
+assert(team.includes('function handleTeamCenterSearchKeydown(event)'), 'team center search should support keyboard selection');
+assert(team.includes('team.manager'), 'team center suggestions should match coach names as well as club names');
+assert(!team.includes('id="teamCenterLandingSelect"'), 'the duplicate direct-select control should be removed');
 assert(team.includes('team-center-coach-access'), 'team center welcome should include a coach login shortcut');
 assert(team.includes("showCoachLoginPanel({context: 'team-center'})"), 'team center login should reuse the coach account login modal');
 assert(coaches.includes('coachLoginSuccessContext'), 'coach login should preserve the team-center success context');
@@ -128,6 +133,7 @@ assert(css.includes('.team-roster-view-switch'), 'team roster should have a dedi
 assert(css.includes('.team-roster-detail-table'), 'team roster detailed table should be styled');
 assert(css.includes('.team-roster-card-grid'), 'team roster card grid should be styled');
 assert(css.includes('.team-center-club-grid'), 'team center directory grid should exist');
+assert(css.includes('.team-center-search-suggestions'), 'the merged team picker should have a dedicated suggestions panel');
 assert(css.includes('.team-center-league-group.is-collapsed .team-center-club-grid'), 'mobile team directory should hide collapsed league groups');
 assert(team.includes('return options.compact ? renderLeagueLevelSignature'), 'team center should reuse the shared compact league signature');
 assert(team.includes('${renderLeagueTierSet()}'), 'team center welcome should display the three league signatures together');

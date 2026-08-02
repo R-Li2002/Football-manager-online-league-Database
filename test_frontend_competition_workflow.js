@@ -52,14 +52,25 @@ assert.match(competitionCode, /class="schedule-event-summary-bar"[^>]+openMatchE
 assert.doesNotMatch(competitionCode, /<details class="match-event-editor"/, 'match-event editing should no longer expand inside schedule cards');
 assert.match(competitionCode, /function renderMatchEventEditorDialog\(match\)/, 'schedule editors should use a dedicated match data dialog');
 assert.match(competitionCode, /data-match-event-team-tab="\$\{side\}"/, 'the dialog should switch between the home and away teams');
-assert.match(competitionCode, /localeCompare\(String\(b\.name \|\| ''\), 'en', \{sensitivity: 'base', numeric: true\}\)/, 'team players should be sorted alphabetically');
+assert.match(competitionCode, /function getMatchEventPositionSortRank\(position\)/, 'match editor players should expose a position order');
+assert.match(competitionCode, /getMatchEventPositionSortRank\(a\.position\) - getMatchEventPositionSortRank\(b\.position\)/, 'match editor players should sort by position before name');
+assert.match(competitionCode, /球员 · 按位置/, 'match editor should describe the position-based order');
 assert.match(competitionCode, /data-event-count="goal"/, 'each player row should expose a direct goal count');
 assert.match(competitionCode, /data-event-count="assist"/, 'each player row should expose a direct assist count');
 assert.match(competitionCode, /type="checkbox"[^>]+data-match-event-mvp/, 'each player row should allow selecting the match MVP');
 assert.match(competitionCode, /data-match-own-goals/, 'the matrix editor should preserve own-goal reporting');
 assert.match(competitionCode, /renderScheduleCompactMatchRow[\s\S]*?renderScheduleMatchEventSummary\(match\)/, 'desktop schedule cards should use a fixed-height event summary instead of full event lists');
-assert.match(competitionCode, /mobile-schedule-edit-actions[\s\S]*?比分与状态[\s\S]*?球员数据/, 'mobile cards should provide direct score and player-data actions');
-assert.match(competitionCode, /function readMatchScorePayload\(matchId, eventOverride = null\)/, 'dialog event data should save without resetting scores that are not rendered on mobile');
+assert.match(competitionCode, /mobile-schedule-edit-actions[\s\S]*?编辑比赛数据/, 'mobile cards should expose one unified match-data action');
+assert.doesNotMatch(competitionCode, /比分与状态|openMobileScheduleEditDrawer|buildAdminMatchControlGroup/, 'schedule cards should no longer own a separate score editor');
+assert.match(competitionCode, /function renderMatchEventScoreEditor\(match\)/, 'the match dialog should own score and status editing');
+assert.match(competitionCode, /id="match-home-\$\{Number\(match\.id\)\}"[\s\S]*?id="match-away-\$\{Number\(match\.id\)\}"/, 'the unified dialog should render both score inputs');
+assert.match(competitionCode, /<option value="scheduled"[\s\S]*?<option value="played"[\s\S]*?<option value="home_forfeit"/, 'the unified dialog should handle unplayed, normal and forfeit results');
+assert.match(competitionCode, /id="matchEventModalSaveNext"[\s\S]*?saveMatchEventEditor\(true\)/, 'the dialog should support save-and-next continuous entry');
+assert.match(competitionCode, /event\.key === 'Enter'[\s\S]*?sequence\[nextIndex\]/, 'Enter should advance through score and player number inputs');
+assert.match(competitionCode, /statusSelect\?\.value === 'scheduled'[\s\S]*?statusSelect\.value = 'played'/, 'typing a score while unplayed should switch the match to normal play');
+assert.match(competitionCode, /function clearMatchEventMatrixValues\(\)/, 'returning a match to unplayed should expose one complete event reset helper');
+assert.match(competitionCode, /isScheduled && \(options\.markDirty !== false \|\| options\.resetScheduled === true\)[\s\S]*?clearMatchEventMatrixValues\(\)/, 'an explicit unplayed selection should clear score and player data');
+assert.match(competitionCode, /function readMatchScorePayload\(matchId, eventOverride = null\)/, 'the dialog should submit result and event data together');
 assert.match(competitionCode, /isOwnGoal \? null : findMatchEventPlayer/, 'own goals should not require a player lookup');
 assert.match(competitionCode, /\['goal', 'own_goal'\]\.includes\(event\.event_type\)/, 'mobile match totals should include own goals');
 assert.doesNotMatch(
@@ -254,8 +265,12 @@ function assertMatchEventMatrixUsesRosterAndExistingValues() {
         {id: 2, name: 'Beta'},
     ];
     context.allPlayers = [
-        {uid: 12, name: 'Zed Forward', position: 'ST', team_id: 1, team_name: 'Alpha'},
-        {uid: 11, name: 'Aaron Midfielder', position: 'MC', team_id: 1, team_name: 'Alpha'},
+        {uid: 12, name: 'Zed Forward', position: 'AMRLC/ST', team_id: 1, team_name: 'Alpha'},
+        {uid: 13, name: 'Aaron Winger', position: 'D/WB/M/R', team_id: 1, team_name: 'Alpha'},
+        {uid: 11, name: 'Barry Midfielder', position: 'DM/MC', team_id: 1, team_name: 'Alpha'},
+        {uid: 14, name: 'Charlie Anchor', position: 'DM', team_id: 1, team_name: 'Alpha'},
+        {uid: 15, name: 'David Defender', position: 'D/WB/LC', team_id: 1, team_name: 'Alpha'},
+        {uid: 16, name: 'Evan Keeper', position: 'GK', team_id: 1, team_name: 'Alpha'},
         {uid: 21, name: 'Bob Defender', position: 'DC', team_id: 2, team_name: 'Beta'},
     ];
     context.uiIconSvg = () => '';
@@ -272,16 +287,47 @@ function assertMatchEventMatrixUsesRosterAndExistingValues() {
         status: 'played',
         events: [
             {team_name: 'Alpha', player_uid: 12, player_name: 'Zed Forward', event_type: 'goal', quantity: 2},
-            {team_name: 'Alpha', player_uid: 11, player_name: 'Aaron Midfielder', event_type: 'assist', quantity: 1},
+            {team_name: 'Alpha', player_uid: 11, player_name: 'Barry Midfielder', event_type: 'assist', quantity: 1},
             {team_name: 'Beta', player_uid: 21, player_name: 'Bob Defender', event_type: 'mvp', quantity: 1},
         ],
     });
-    assert.ok(html.indexOf('Aaron Midfielder') < html.indexOf('Zed Forward'), 'home players should render A-Z');
+    const orderedHomePlayers = ['Zed Forward', 'Aaron Winger', 'Barry Midfielder', 'Charlie Anchor', 'David Defender', 'Evan Keeper'];
+    orderedHomePlayers.slice(1).forEach((playerName, index) => {
+        assert.ok(html.indexOf(orderedHomePlayers[index]) < html.indexOf(playerName), `home players should render ${orderedHomePlayers[index]} before ${playerName}`);
+    });
     assert.match(html, /data-player-name="Zed Forward"[\s\S]*?data-event-count="goal"/);
     assert.match(html, /value="2" placeholder="0" data-event-count="goal"/);
     assert.match(html, /data-player-name="Bob Defender"[\s\S]*?type="checkbox" checked data-match-event-mvp/);
     assert.match(html, /data-match-event-team-tab="home"/);
     assert.match(html, /data-match-event-team-tab="away"/);
+}
+
+function assertUnifiedMatchResultPayloads() {
+    context.scheduleData = {matches: [{id: 101, level: '超级', home_score: null, away_score: null, status: 'scheduled', events: []}]};
+    const homeInput = {value: ''};
+    const awayInput = {value: ''};
+    const statusSelect = {value: 'scheduled'};
+    elements.set('match-home-101', homeInput);
+    elements.set('match-away-101', awayInput);
+    elements.set('match-status-101', statusSelect);
+
+    assert.equal(JSON.stringify(context.readMatchScorePayload(101, [])), JSON.stringify({match_id: 101, home_score: null, away_score: null, status: 'scheduled', events: []}));
+
+    const scheduledHtml = context.renderMatchEventScoreEditor({id: 101, home_team_name: 'Alpha', away_team_name: 'Beta', home_score: null, away_score: null, status: 'scheduled'});
+    assert.doesNotMatch(scheduledHtml.match(/id="match-home-101"[^>]*>/)?.[0] || '', /readonly/, 'unplayed matches should keep score inputs editable');
+
+    homeInput.value = '1';
+    awayInput.value = '0';
+    assert.equal(JSON.stringify(context.readMatchScorePayload(101, [])), JSON.stringify({match_id: 101, home_score: 1, away_score: 0, status: 'played', events: []}));
+    assert.equal(statusSelect.value, 'played');
+
+    statusSelect.value = 'played';
+    homeInput.value = '3';
+    awayInput.value = '2';
+    assert.equal(JSON.stringify(context.readMatchScorePayload(101, [])), JSON.stringify({match_id: 101, home_score: 3, away_score: 2, status: 'played', events: []}));
+
+    statusSelect.value = 'home_forfeit';
+    assert.equal(JSON.stringify(context.readMatchScorePayload(101, [{event_type: 'goal'}])), JSON.stringify({match_id: 101, home_score: 0, away_score: 0, status: 'home_forfeit', events: []}));
 }
 
 async function assertResponsibilityDialogRefreshesEligibleAccounts() {
@@ -317,6 +363,7 @@ async function assertResponsibilityDialogRefreshesEligibleAccounts() {
 async function assertCupInitializationUsesExplicitResetAndFeedback() {
     let requestedUrl = '';
     let modalPayload = null;
+    let toastMessage = '';
     let loadOptions = null;
     context.showConfirmDialog = async () => true;
     context.workJsonRequest = async url => {
@@ -332,6 +379,9 @@ async function assertCupInitializationUsesExplicitResetAndFeedback() {
     context.showModal = (title, body) => {
         modalPayload = {title, body};
     };
+    context.showSuccessToast = message => {
+        toastMessage = message;
+    };
     context.currentCompetitionLevel = '冠军杯';
     context.canManageSchedule = true;
 
@@ -339,8 +389,8 @@ async function assertCupInitializationUsesExplicitResetAndFeedback() {
 
     assert.equal(requestedUrl, '/api/admin/cups/champions_cup/initialize?reset=true');
     assert.equal(loadOptions?.force, true);
-    assert.equal(modalPayload.title, '初始化完成');
-    assert.match(modalPayload.body, /重置 15 个对阵槽位/);
+    assert.equal(modalPayload, null);
+    assert.match(toastMessage, /重置 15 个对阵槽位/);
     assert.equal(initializeButton.disabled, false);
     assert.equal(initializeButton.textContent, '初始化冠军杯');
 }
@@ -369,12 +419,24 @@ function assertCupGroupScoreEntryUsesIncrementalPairs() {
     assert.equal(context.canManageCurrentCupStandings(), true);
 }
 
+function assertMatchEventDraftAndUndoProtection() {
+    assert.match(competitionCode, /MATCH_EVENT_DRAFT_STORAGE_PREFIX/);
+    assert.match(competitionCode, /function persistMatchEventDraftNow/);
+    assert.match(competitionCode, /function restoreStoredMatchEventDraft/);
+    assert.match(competitionCode, /本机草稿/);
+    assert.match(competitionCode, /homeScore:[\s\S]*?awayScore:[\s\S]*?status:/, 'drafts should preserve score and match status');
+    assert.match(competitionCode, /actionLabel: '撤销'/);
+    assert.match(competitionCode, /function restoreScheduleMatchSnapshot/);
+}
+
 async function main() {
     assertWorkPanelShowsActionableRoundProgress();
     assertReviewActionsFollowBackendCapabilities();
     assertTaskFiltersUseBackendIssueCodes();
     assertSaveStateIsVisibleAndRetryable();
     assertMatchEventMatrixUsesRosterAndExistingValues();
+    assertUnifiedMatchResultPayloads();
+    assertMatchEventDraftAndUndoProtection();
     await assertResponsibilityDialogRefreshesEligibleAccounts();
     await assertCupInitializationUsesExplicitResetAndFeedback();
     assertCupGroupScoreEntryUsesIncrementalPairs();

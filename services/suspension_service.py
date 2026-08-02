@@ -202,8 +202,15 @@ def _build_suspension_progress(
     )
 
 
-def get_suspensions(db: Session, *, team_id: int | None = None) -> SuspensionsResponse:
+def get_suspensions(
+    db: Session,
+    *,
+    team_id: int | None = None,
+    level: str | None = None,
+) -> SuspensionsResponse:
     team_query = db.query(Team).filter(Team.level.in_(LEAGUE_LEVELS))
+    if level is not None:
+        team_query = team_query.filter(Team.level == level)
     if team_id is not None:
         team_query = team_query.filter(Team.id == team_id)
     teams = team_query.all()

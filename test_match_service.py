@@ -97,6 +97,32 @@ class MatchServiceTest(unittest.TestCase):
         self.assertEqual(rows[1].points, 1)
         self.assertEqual((rows[1].away_wins, rows[1].away_draws, rows[1].away_losses), (0, 1, 0))
 
+    def test_standings_can_be_limited_to_one_level(self):
+        first_home = Team(name="First Home", level="甲级", manager="First Home Boss")
+        first_away = Team(name="First Away", level="甲级", manager="First Away Boss")
+        self.db.add_all([first_home, first_away])
+        self.db.commit()
+        self.db.add(
+            Match(
+                level="甲级",
+                round_no=1,
+                home_team_id=first_home.id,
+                home_team_name=first_home.name,
+                away_team_id=first_away.id,
+                away_team_name=first_away.name,
+                home_score=1,
+                away_score=0,
+                status="played",
+            )
+        )
+        self.db.commit()
+
+        standings = match_service.get_standings(self.db, level="甲级")
+
+        self.assertEqual(standings.levels, ["甲级"])
+        self.assertEqual([row.team_name for row in standings.rows], ["First Home", "First Away"])
+        self.assertTrue(all(row.level == "甲级" for row in standings.rows))
+
     def test_standings_resolve_legacy_schedule_alias_names(self):
         self.db.add(Team(name="RB Leipzig", level="超级", manager="RB Leipzig Boss"))
         self.db.commit()
@@ -342,6 +368,13 @@ class MatchServiceTest(unittest.TestCase):
         self.assertEqual(coverage.played_matches, 1)
         self.assertEqual(coverage.matches_with_events, 0)
         self.assertEqual(coverage.matches_missing_events, 1)
+
+    def test_player_rankings_can_be_limited_to_one_level(self):
+        rankings = player_ranking_service.get_player_rankings(self.db, level="甲级")
+
+        self.assertEqual(rankings.levels, ["甲级"])
+        self.assertEqual(rankings.rows, [])
+        self.assertEqual([item.level for item in rankings.coverage], ["甲级"])
 
 
 if __name__ == "__main__":

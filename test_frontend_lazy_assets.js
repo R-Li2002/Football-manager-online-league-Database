@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const html = fs.readFileSync('static/app.html', 'utf8');
 const app = fs.readFileSync('static/app.js', 'utf8');
 const admin = fs.readFileSync('static/js/app.admin.js', 'utf8');
+const coaches = fs.readFileSync('static/js/app.coaches.js', 'utf8');
 const competition = fs.readFileSync('static/js/app.competition.js', 'utf8');
 const database = fs.readFileSync('static/js/app.database.js', 'utf8');
 const databaseSearch = fs.readFileSync('static/js/database.search.js', 'utf8');
@@ -19,6 +20,9 @@ assert.match(app, /document\.head\.insertBefore\(link, responsiveStyle \|\| null
 
 assert.match(app, /competition:\s*\['\/static\/js\/app\.competition\.js'\]/, 'competition should load one feature script');
 assert.doesNotMatch(app, /competition:\s*\[[^\]]*(?:app\.admin|html-to-image)/, 'competition should not preload admin or screenshot code');
+assert.match(app, /function renderCoachProfileLink\(/, 'coach profile links should be available before feature modules load');
+assert.match(app, /function openCoachProfileLinkByName\([\s\S]*ensureAppModule\('coaches'\)/, 'coach profile clicks should lazy-load the full coach module');
+assert.doesNotMatch(coaches, /function renderCoachProfileLink\(/, 'the coach module should not own the shared link renderer');
 assert.match(app, /tabName === 'competition'[\s\S]{0,180}ensureTeamsLoaded\(\)/, 'competition should load its team directory');
 assert.doesNotMatch(app, /tabName === 'competition'[\s\S]{0,220}ensurePlayersLoaded\(\)/, 'competition should not load all players on entry');
 assert.match(competition, /async function ensureCompetitionPlayersLoaded\(\)/, 'competition should load players at editor boundaries');
@@ -36,5 +40,6 @@ assert.match(admin, /function loadWorkspaceAdminOperations\(\)[\s\S]*ensureAppMo
 
 assert.match(app, /function ensureHtmlToImage\(\)/, 'screenshot rendering should have an on-demand loader');
 assert.doesNotMatch(app, /(?:team|database|competition):\s*\[[^\]]*html-to-image/, 'feature modules should not preload screenshot rendering');
+assert.match(app, /function refreshHorizontalScrollAffordances/, 'mobile horizontal navigation should expose a shared overflow affordance');
 
 console.log('frontend lazy asset checks passed');

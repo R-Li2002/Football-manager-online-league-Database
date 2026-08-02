@@ -1,3 +1,5 @@
+var fetchWithTimeout = globalThis.fetchWithTimeout || ((...args) => globalThis.fetch(...args));
+
 var currentTeamOverviewView = 'table';
 
 const TEAM_SORT_CONFIG = {
@@ -472,7 +474,7 @@ async function uploadTeamLogo(teamId) {
         ? `/api/admin/teams/${encodeURIComponent(team.id)}/logo`
         : '/api/coach/me/team-logo';
     try {
-        const response = await fetch(endpoint, {
+        const response = await fetchWithTimeout(endpoint, {
             method: 'POST',
             credentials: 'same-origin',
             body: formData,
@@ -481,7 +483,7 @@ async function uploadTeamLogo(teamId) {
         if (!response.ok) throw new Error(payload.detail || payload.message || '队徽上传失败');
         await refreshTeamDataset();
         if (typeof closeModal === 'function') closeModal();
-        showModal('上传成功', '队徽已更新。');
+        showSuccessToast('队徽已更新');
     } catch (error) {
         showModal('上传失败', escapeHtml(error.message || '队徽上传失败'));
     }

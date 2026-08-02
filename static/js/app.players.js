@@ -1,3 +1,5 @@
+var fetchWithTimeout = globalThis.fetchWithTimeout || ((...args) => globalThis.fetch(...args));
+
 const ROSTER_SORT_FIELD_CONFIG = {
     uid: {label: 'UID', type: 'number', align: 'center'},
     name: {label: '姓名', type: 'text', align: 'left'},
@@ -385,7 +387,7 @@ async function ensureRosterStandingsLoaded() {
     if (rosterStandingsLoaded || rosterStandingsLoading) return;
     rosterStandingsLoading = true;
     try {
-        const response = await fetch('/api/standings');
+        const response = await fetchWithTimeout('/api/standings');
         if (!response.ok) throw new Error('standings-load-failed');
         rosterStandingsData = await response.json();
         rosterStandingsLoaded = true;
@@ -920,7 +922,7 @@ async function saveRosterFormation() {
     rosterFormationState.saveState = 'saving';
     refreshRosterFormationModal();
     try {
-        const response = await fetch(`/api/teams/${rosterFormationState.teamId}/lineup`, {
+        const response = await fetchWithTimeout(`/api/teams/${rosterFormationState.teamId}/lineup`, {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({formation: rosterFormationState.formation, picks: rosterFormationState.picks}),
@@ -1018,7 +1020,7 @@ async function getRosterPlayerWageDetail(uid) {
     if (playerDetailCache[normalizedUid]) {
         return playerDetailCache[normalizedUid];
     }
-    const res = await fetch(`/api/player/wage-detail/${normalizedUid}`);
+    const res = await fetchWithTimeout(`/api/player/wage-detail/${normalizedUid}`);
     if (!res.ok) {
         throw new Error(`wage-detail-${res.status}`);
     }
@@ -1399,7 +1401,7 @@ async function togglePlayerDetail(uid) {
             updateDetailDisplay(uid, playerDetailCache[uid]);
         } else {
             try {
-                const res = await fetch(`/api/player/wage-detail/${uid}`);
+                const res = await fetchWithTimeout(`/api/player/wage-detail/${uid}`);
                 const data = await res.json();
                 playerDetailCache[uid] = data;
                 updateDetailDisplay(uid, data);

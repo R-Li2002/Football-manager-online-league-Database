@@ -34,7 +34,7 @@ assert.match(ratingBoard.innerHTML, /排位积分榜/);
 assert.match(ratingBoard.innerHTML, /Excel表格/);
 assert.match(ratingBoard.innerHTML, /保存图片/);
 assert.match(ratingBoard.innerHTML, /data-export-view="rankings-HEIGO"/);
-assert.match(code, /fetch\('\/api\/export\/rankings\.xlsx'\)/);
+assert.match(code, /fetchWithTimeout\('\/api\/export\/rankings\.xlsx'\)/);
 assert.match(code, /saveCompetitionImage\('rankings', 'HEIGO'\)/);
 assert.match(ratingBoard.innerHTML, /基础分/);
 assert.match(ratingBoard.innerHTML, /总分/);

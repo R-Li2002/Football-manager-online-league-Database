@@ -1,3 +1,5 @@
+var fetchWithTimeout = globalThis.fetchWithTimeout || ((...args) => globalThis.fetch(...args));
+
 const COMPARE_SLOT_COUNT = 4;
 const COMPARE_ACCENT_CLASSES = ['is-blue', 'is-red', 'is-gold', 'is-mint'];
 const COMPARISON_ADVANTAGE_FULL_DIFF = 10;

@@ -8,7 +8,7 @@ const appJs = fs.readFileSync('static/app.js', 'utf8');
 
 assert.match(html, /id="homeDashboard"/);
 assert.doesNotMatch(html, /<div class="home-shortcuts">/);
-assert.match(homeJs, /fetch\(`\/api\/home\/dashboard\$\{query\}`/);
+assert.match(homeJs, /fetchWithTimeout\(`\/api\/home\/dashboard\$\{query\}`/);
 assert.match(homeJs, /currentCoachAccount/);
 assert.match(homeJs, /account\.team_id/);
 assert.match(homeJs, /data\.league_statuses/);
@@ -34,5 +34,8 @@ assert.match(css, /\.home-promotion-board-head\s*\{[\s\S]*?display:\s*none/, 'mo
 assert.match(css, /\.home-search-bar\s*>\s*input\s*\{[\s\S]*?grid-column:\s*1\s*\/\s*-1/, 'mobile search input should occupy a clear first row');
 assert.match(css, /\.hero-mode-badge\s*\{[\s\S]*?display:\s*none/, 'secondary mode metadata should not consume mobile first-screen space');
 assert.match(homeJs, /登录后查看你的球队/, 'guest MY CLUB should use concise Phase 2 copy');
+assert.match(homeJs, /HOME_PROMOTION_MODAL_DELAY_MS = 6500/, 'promotional modal should not block the first interaction');
+assert.match(homeJs, /currentCoachAccount\?\.authenticated \|\| workspaceSessionState\?\.authenticated/, 'signed-in users should not receive automatic promotional modals');
+assert.match(homeJs, /loading="lazy" decoding="async" fetchpriority="low"/, 'promotion media should stay off the critical loading path');
 
 console.log('home dashboard frontend checks passed');

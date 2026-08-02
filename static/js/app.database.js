@@ -1,3 +1,5 @@
+var fetchWithTimeout = globalThis.fetchWithTimeout || ((...args) => globalThis.fetch(...args));
+
 const DB_SORT_FIELD_CONFIG = {
     name: {label: '姓名', type: 'text'},
     position: {label: '位置', type: 'text'},
@@ -178,6 +180,7 @@ function syncDatabaseSubtabUI() {
     if (activeButton && tablist && tablist.scrollWidth > tablist.clientWidth) {
         requestAnimationFrame(() => activeButton.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'}));
     }
+    (globalThis.requestAnimationFrame || (callback => callback()))(() => globalThis.refreshHorizontalScrollAffordances?.(document.getElementById('database') || document));
 }
 
 function populateReactionLeaderboardTeamSelect() {
@@ -273,7 +276,7 @@ async function showPlayerDetail(uid, options = {}) {
     document.getElementById('playerDetailContent').innerHTML = '<div class="loading">加载中...</div>';
     const detailToolbar = document.getElementById('playerDetailToolbar');
     if (detailToolbar) detailToolbar.innerHTML = '';
-    const res = await fetch(buildAttributeVersionedPath(`/api/attributes/${uid}`, getCurrentAttributeVersion()));
+    const res = await fetchWithTimeout(buildAttributeVersionedPath(`/api/attributes/${uid}`, getCurrentAttributeVersion()));
     const player = await res.json();
     if (!player) {
         document.getElementById('playerDetailContent').innerHTML = `<div class="no-data">${escapeHtml(getCurrentAttributeVersion() || '当前')} 版本下找不到球员信息</div>`;
@@ -881,7 +884,7 @@ async function loadHeigoPowerCalibration(version = '') {
     try {
         const params = new URLSearchParams();
         if (normalizedVersion) params.set('version', normalizedVersion);
-        const response = await fetch(`/api/attributes/power-calibration${params.size ? `?${params.toString()}` : ''}`);
+        const response = await fetchWithTimeout(`/api/attributes/power-calibration${params.size ? `?${params.toString()}` : ''}`);
         const payload = await response.json();
         if (!response.ok) throw new Error(payload?.detail || `HTTP ${response.status}`);
         const calibration = {
@@ -1179,7 +1182,7 @@ async function submitPlayerReaction(reactionType) {
     renderPlayerReactionControls(currentDetailPlayer);
 
     try {
-        const response = await fetch(buildAttributeVersionedPath(`/api/attributes/${currentDetailPlayer.uid}/reactions/${reactionType}`, getPlayerDataVersion(currentDetailPlayer)), {
+        const response = await fetchWithTimeout(buildAttributeVersionedPath(`/api/attributes/${currentDetailPlayer.uid}/reactions/${reactionType}`, getPlayerDataVersion(currentDetailPlayer)), {
             method: 'POST',
         });
         const payload = await response.json();

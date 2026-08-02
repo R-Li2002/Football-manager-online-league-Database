@@ -1,3 +1,5 @@
+var fetchWithTimeout = globalThis.fetchWithTimeout || ((...args) => globalThis.fetch(...args));
+
 var coachesData = {levels: [], coaches: []};
 var coachesLoaded = false;
 var currentCoachDetail = null;
@@ -83,16 +85,10 @@ function findCoachByName(name) {
 
 async function ensureCoachesDataLoaded(options = {}) {
     if (coachesLoaded && options.force !== true) return;
-    const response = await fetch('/api/coaches');
+    const response = await fetchWithTimeout('/api/coaches');
     if (!response.ok) throw new Error('coach-load-failed');
     coachesData = await response.json();
     coachesLoaded = true;
-}
-
-function renderCoachProfileLink(name, className = 'coach-profile-link') {
-    const clean = String(name || '').trim();
-    if (!clean || clean === '-') return escapeHtml(clean || '-');
-    return `<button class="${className}" type="button" onclick="openCoachProfileByName(${htmlJsString(clean)})" title="查看${escapeHtml(clean)}的教练主页">${escapeHtml(clean)}</button>`;
 }
 
 async function openCoachProfileByName(name) {
@@ -201,14 +197,14 @@ function syncWorkPermissionsFromCoachAccount() {
 
 async function syncCoachAuthStatus() {
     try {
-        const response = await fetch('/api/coach/check', {credentials: 'same-origin'});
+        const response = await fetchWithTimeout('/api/coach/check', {credentials: 'same-origin'});
         currentCoachAccount = response.ok ? await response.json() : {authenticated: false};
     } catch (error) {
         currentCoachAccount = {authenticated: false};
     }
     syncWorkPermissionsFromCoachAccount();
     try {
-        const workspaceResponse = await fetch('/api/workspace/session', {credentials: 'same-origin'});
+        const workspaceResponse = await fetchWithTimeout('/api/workspace/session', {credentials: 'same-origin'});
         workspaceSessionState = workspaceResponse.ok ? await workspaceResponse.json() : {authenticated: false, identity: null};
     } catch (error) {
         workspaceSessionState = {authenticated: false, identity: null};
@@ -253,7 +249,7 @@ function showCoachLoginPanel(options = {}) {
 }
 
 async function finalizeCoachLogin(data, successContext = '') {
-    const workspaceResponse = await fetch('/api/workspace/session', {credentials: 'same-origin'});
+    const workspaceResponse = await fetchWithTimeout('/api/workspace/session', {credentials: 'same-origin'});
     workspaceSessionState = workspaceResponse.ok ? await workspaceResponse.json() : {authenticated: false, identity: null};
     if (typeof syncLightweightAdminTabVisibility === 'function') syncLightweightAdminTabVisibility();
     renderCoachAuthBox();
@@ -266,6 +262,7 @@ async function finalizeCoachLogin(data, successContext = '') {
     if (successContext === 'team-center' && typeof openCoachLinkedTeam === 'function') {
         await openCoachLinkedTeam(data);
     }
+    if (typeof resumePendingWorkContext === 'function') await resumePendingWorkContext();
 }
 
 async function coachLogin() {
@@ -285,7 +282,7 @@ async function coachLogin() {
     }
     setUiButtonBusy(submitButton, true, '正在登录');
     try {
-        const response = await fetch('/api/coach/login', {
+        const response = await fetchWithTimeout('/api/coach/login', {
             method: 'POST',
             credentials: 'same-origin',
             headers: {'Content-Type': 'application/json'},
@@ -315,7 +312,7 @@ async function openCoachWorkspace() {
 }
 
 async function coachLogout() {
-    await fetch('/api/coach/logout', {method: 'POST', credentials: 'same-origin'});
+    await fetchWithTimeout('/api/coach/logout', {method: 'POST', credentials: 'same-origin'});
     currentCoachAccount = {authenticated: false};
     workspaceSessionState = {authenticated: false, identity: null};
     syncWorkPermissionsFromCoachAccount();
@@ -401,7 +398,7 @@ async function openCoachDetail(coachUid) {
     const board = document.getElementById('coachDetailBoard');
     if (board) board.innerHTML = '<div class="loading">加载中...</div>';
     try {
-        const response = await fetch(`/api/coaches/${encodeURIComponent(coachUid)}`);
+        const response = await fetchWithTimeout(`/api/coaches/${encodeURIComponent(coachUid)}`);
         if (!response.ok) throw new Error('coach-detail-failed');
         currentCoachDetail = await response.json();
         renderCoachDetail();
@@ -692,7 +689,7 @@ async function bindCoachQq(options = {}) {
         if (typeof handler === 'function') await handler();
         return;
     }
-    showModal('绑定成功', `以后可以使用 QQ ${escapeHtml(currentCoachAccount.qq_number || payload.qq_number)} 和密码登录。`);
+    showSuccessToast(`QQ ${currentCoachAccount.qq_number || payload.qq_number} 已绑定，可用于登录`);
     if (currentCoachDetail) renderCoachDetail();
 }
 
@@ -794,7 +791,7 @@ async function submitCoachReaction(reactionType) {
     coachReactionAnimatingType = reactionType;
     renderCoachReactionControls();
     try {
-        const response = await fetch(`/api/coaches/${encodeURIComponent(currentCoachDetail.uid)}/reactions/${reactionType}`, {method: 'POST'});
+        const response = await fetchWithTimeout(`/api/coaches/${encodeURIComponent(currentCoachDetail.uid)}/reactions/${reactionType}`, {method: 'POST'});
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.detail || 'reaction-failed');
         currentCoachDetail.reaction_summary = normalizeCoachReactionSummary(payload.summary);
@@ -975,7 +972,7 @@ async function deleteCoachAssistant(assistantId) {
 
 async function coachJsonRequest(url, options = {}, useAdmin = false) {
     if (useAdmin) return adminJsonRequest(url, options);
-    const response = await fetch(url, {...options, credentials: 'same-origin'});
+    const response = await fetchWithTimeout(url, {...options, credentials: 'same-origin'});
     const data = await response.json();
     if (response.status === 401) {
         showModal('需要登录', '请先登录自己的教练账号。');
@@ -1065,7 +1062,7 @@ async function saveCoachAccount() {
     }
     document.getElementById('coachAccountPassword').value = '';
     await loadCoachAccountStatus();
-    showModal('保存成功', '教练账号已更新。');
+    showSuccessToast('教练账号已更新');
 }
 
 async function changeCoachPassword(options = {}) {
@@ -1107,5 +1104,5 @@ async function changeCoachPassword(options = {}) {
         else await syncCoachAuthStatus();
         return;
     }
-    showModal('修改成功', '密码已更新。');
+    showSuccessToast('密码已更新');
 }

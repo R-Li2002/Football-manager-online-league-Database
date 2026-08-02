@@ -4930,7 +4930,7 @@ body.light-mode .coach-list-main .coach-title-blackgold {
 
 .data-status-host {
     width: 100%;
-    margin: 0 0 12px;
+    margin: 0 0 8px;
 }
 
 .data-status-host[hidden] {
@@ -4963,8 +4963,8 @@ body.light-mode .coach-list-main .coach-title-blackgold {
     align-items: center;
     gap: 10px;
     width: 100%;
-    min-height: 52px;
-    padding: 8px 12px;
+    min-height: 46px;
+    padding: 6px 12px;
     border: 1px solid color-mix(in srgb, var(--data-status-tone) 28%, var(--border-color));
     border-radius: 12px;
     background: linear-gradient(110deg, color-mix(in srgb, var(--data-status-tone) 8%, var(--surface-strong)), color-mix(in srgb, var(--surface-strong) 94%, transparent));
@@ -9242,4 +9242,32 @@ body:not(.light-mode) .home-dashboard-card {
 }
 
 @media (prefers-reduced-motion: reduce) {
+}
+
+/* Desktop roster table: preserve column context without adding a nested vertical scroller. */
+@media (min-width: 781px) {
+    .players-list-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 4;
+        background: var(--surface-strong, var(--bg-secondary));
+        box-shadow: inset 0 -1px 0 var(--border-color);
+    }
+
+    .players-list-table th:nth-child(2),
+    .players-list-table td:nth-child(2) {
+        position: sticky;
+        left: 0;
+        z-index: 3;
+        background: var(--surface-strong, var(--bg-secondary));
+        box-shadow: 8px 0 14px -12px rgba(15, 23, 42, .72);
+    }
+
+    .players-list-table thead th:nth-child(2) {
+        z-index: 6;
+    }
+
+    .players-list-table tr.row-selected td:nth-child(2) {
+        background: color-mix(in srgb, var(--accent-bg) 72%, var(--surface-strong, var(--bg-secondary)));
+    }
 }

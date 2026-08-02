@@ -1,3 +1,5 @@
+var fetchWithTimeout = globalThis.fetchWithTimeout || ((...args) => globalThis.fetch(...args));
+
 let pendingUndoLogId = null;
 const ADMIN_UNAUTHORIZED_ERROR = 'ADMIN_UNAUTHORIZED';
 let lastAdminUnauthorizedNoticeAt = 0;
@@ -53,7 +55,7 @@ function showWorkspaceLoginMode(mode) {
 
 async function loadWorkspaceSession(options = {}) {
     if (workspaceSessionData && options.force !== true) return workspaceSessionData;
-    const response = await fetch('/api/workspace/session', {credentials: 'same-origin'});
+    const response = await fetchWithTimeout('/api/workspace/session', {credentials: 'same-origin'});
     workspaceSessionData = response.ok ? await response.json() : {authenticated: false, identity: null};
     workspaceSessionState = workspaceSessionData;
     const identity = workspaceSessionData.identity;
@@ -176,7 +178,7 @@ async function loadWorkspaceLogoMatcher(options = {}) {
     }
     const list = document.getElementById('workspaceLogoTeamList');
     if (list) list.innerHTML = '<div class="loading">读取联赛球队...</div>';
-    const response = await fetch('/api/admin/team-logo-match/overview', {credentials: 'same-origin'});
+    const response = await fetchWithTimeout('/api/admin/team-logo-match/overview', {credentials: 'same-origin'});
     if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         if (list) list.innerHTML = `<div class="workspace-logo-empty">${escapeHtml(payload.detail || '球队读取失败')}</div>`;
@@ -305,7 +307,7 @@ async function searchWorkspaceLogoCandidates() {
     if (button) { button.disabled = true; button.textContent = '检索中...'; }
     if (list) list.innerHTML = '<div class="loading">正在连接 FCLOGO...</div>';
     try {
-        const response = await fetch(`/api/admin/team-logo-match/search?team_id=${encodeURIComponent(workspaceLogoSelectedTeamId)}&q=${encodeURIComponent(query)}`, {credentials: 'same-origin'});
+        const response = await fetchWithTimeout(`/api/admin/team-logo-match/search?team_id=${encodeURIComponent(workspaceLogoSelectedTeamId)}&q=${encodeURIComponent(query)}`, {credentials: 'same-origin'});
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.detail || '搜索失败');
         workspaceLogoCandidates = payload.candidates || [];
@@ -382,9 +384,9 @@ async function applyWorkspaceLogoCandidate() {
             formData.append('team_id', String(team.id));
             formData.append('confirmed', 'true');
             formData.append('logo', workspaceLogoLocalFile, workspaceLogoLocalFile.name);
-            response = await fetch('/api/admin/team-logo-match/upload', {method: 'POST', credentials: 'same-origin', body: formData});
+            response = await fetchWithTimeout('/api/admin/team-logo-match/upload', {method: 'POST', credentials: 'same-origin', body: formData});
         } else {
-            response = await fetch('/api/admin/team-logo-match/apply', {
+            response = await fetchWithTimeout('/api/admin/team-logo-match/apply', {
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: {'Content-Type': 'application/json'},
@@ -402,7 +404,7 @@ async function applyWorkspaceLogoCandidate() {
         }
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.detail || '队徽保存失败');
-        showModal('成功', payload.message || '队徽已更新');
+        showSuccessToast(payload.message || '队徽已更新');
         workspaceLogoMatcherData = null;
         workspaceLogoCandidates = [];
         workspaceLogoSelectedCandidateIndex = -1;
@@ -555,7 +557,7 @@ async function loadWorkspaceDashboard(options = {}) {
         renderWorkspaceRecentActions();
         return;
     }
-    const response = await fetch('/api/workspace/dashboard', {credentials: 'same-origin'});
+    const response = await fetchWithTimeout('/api/workspace/dashboard', {credentials: 'same-origin'});
     if (!response.ok) {
         workspaceDashboardData = {metrics: [], tasks: [], data_statuses: [], recent_actions: []};
         renderWorkspaceMetrics();
@@ -618,7 +620,7 @@ async function loadWorkspaceAccounts(options = {}) {
         renderWorkspaceAccounts();
         return;
     }
-    const response = await fetch('/api/workspace/accounts', {credentials: 'same-origin'});
+    const response = await fetchWithTimeout('/api/workspace/accounts', {credentials: 'same-origin'});
     if (!response.ok) {
         document.getElementById('workspaceAccountsTable').innerHTML = '<div class="workspace-empty">账号列表加载失败或当前身份没有权限。</div>';
         return;
@@ -690,7 +692,7 @@ function showWorkspaceAccountEditor(coachUid) {
 
 async function saveWorkspaceCoachTeam(coachUid) {
     const rawTeamId = document.getElementById('workspaceEditTeam')?.value || '';
-    const response = await fetch(`/api/admin/coaches/${encodeURIComponent(coachUid)}/team`, {
+    const response = await fetchWithTimeout(`/api/admin/coaches/${encodeURIComponent(coachUid)}/team`, {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'},
@@ -733,7 +735,7 @@ function showWorkspaceMergeConfirmation(sourceCoachUid) {
 }
 
 async function mergeWorkspaceCoach(sourceCoachUid, targetCoachUid) {
-    const response = await fetch(`/api/admin/coaches/${encodeURIComponent(sourceCoachUid)}/merge`, {
+    const response = await fetchWithTimeout(`/api/admin/coaches/${encodeURIComponent(sourceCoachUid)}/merge`, {
         method: 'POST',
         credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'},
@@ -750,7 +752,7 @@ async function mergeWorkspaceCoach(sourceCoachUid, targetCoachUid) {
 }
 
 async function unbindWorkspaceCoachQq(coachUid) {
-    const response = await fetch(`/api/admin/coaches/${encodeURIComponent(coachUid)}/qq`, {
+    const response = await fetchWithTimeout(`/api/admin/coaches/${encodeURIComponent(coachUid)}/qq`, {
         method: 'DELETE',
         credentials: 'same-origin',
     });
@@ -761,7 +763,7 @@ async function unbindWorkspaceCoachQq(coachUid) {
     }
     workspaceAccountsData = [];
     await loadWorkspaceAccounts({force: true});
-    showModal('QQ 已解绑', escapeHtml(data.message));
+    showSuccessToast(data.message || 'QQ 已解绑');
 }
 
 async function saveWorkspaceAccount(coachUid) {
@@ -775,7 +777,7 @@ async function saveWorkspaceAccount(coachUid) {
         can_manage_suspensions: Boolean(document.getElementById('workspaceEditSuspensions')?.checked),
         can_manage_candidate_lists: Boolean(document.getElementById('workspaceEditCandidates')?.checked),
     };
-    const response = await fetch(`/api/admin/coaches/${encodeURIComponent(coachUid)}/account`, {
+    const response = await fetchWithTimeout(`/api/admin/coaches/${encodeURIComponent(coachUid)}/account`, {
         method: 'POST',
         credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'},
@@ -873,7 +875,7 @@ async function loadWorkspacePromotions(options = {}) {
         renderWorkspacePromotions();
         return workspacePromotionsData;
     }
-    const response = await fetch('/api/workspace/home-promotions', {credentials: 'same-origin'});
+    const response = await fetchWithTimeout('/api/workspace/home-promotions', {credentials: 'same-origin'});
     if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         document.getElementById('workspacePromotionsList').innerHTML = `<div class="workspace-empty">${escapeHtml(data.detail || '主页宣传加载失败或当前身份没有权限。')}</div>`;
@@ -962,7 +964,7 @@ async function uploadWorkspacePromotionImage(input) {
     const formData = new FormData();
     formData.append('image', file);
     try {
-        const response = await fetch('/api/workspace/home-promotions/image', {method: 'POST', credentials: 'same-origin', body: formData});
+        const response = await fetchWithTimeout('/api/workspace/home-promotions/image', {method: 'POST', credentials: 'same-origin', body: formData});
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.image_url) throw new Error(data.detail || '图片上传失败');
         const urlInput = document.getElementById('workspacePromotionImage');
@@ -1062,7 +1064,7 @@ async function refreshHomePromotionsAfterAdminChange() {
 }
 
 async function saveWorkspacePromotion(promotionId = 0) {
-    const response = await fetch(promotionId ? `/api/workspace/home-promotions/${promotionId}` : '/api/workspace/home-promotions', {
+    const response = await fetchWithTimeout(promotionId ? `/api/workspace/home-promotions/${promotionId}` : '/api/workspace/home-promotions', {
         method: promotionId ? 'PATCH' : 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(readWorkspacePromotionEditor()),
     });
     const data = await response.json().catch(() => ({}));
@@ -1077,7 +1079,7 @@ async function saveWorkspacePromotion(promotionId = 0) {
 async function toggleWorkspacePromotion(promotionId) {
     const item = workspacePromotionsData.find(entry => Number(entry.id) === Number(promotionId));
     if (!item) return;
-    const response = await fetch(`/api/workspace/home-promotions/${promotionId}`, {method: 'PATCH', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(workspacePromotionRequestPayload(item, {is_active: !item.is_active}))});
+    const response = await fetchWithTimeout(`/api/workspace/home-promotions/${promotionId}`, {method: 'PATCH', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(workspacePromotionRequestPayload(item, {is_active: !item.is_active}))});
     if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         showModal('操作失败', escapeHtml(data.detail || '宣传状态更新失败'));
@@ -1104,7 +1106,7 @@ function confirmDeleteWorkspacePromotion(promotionId) {
 }
 
 async function deleteWorkspacePromotion(promotionId) {
-    const response = await fetch(`/api/workspace/home-promotions/${promotionId}`, {method: 'DELETE', credentials: 'same-origin'});
+    const response = await fetchWithTimeout(`/api/workspace/home-promotions/${promotionId}`, {method: 'DELETE', credentials: 'same-origin'});
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
         showModal('删除失败', escapeHtml(data.detail || '主页宣传删除失败'));
@@ -1115,7 +1117,7 @@ async function deleteWorkspacePromotion(promotionId) {
 }
 
 async function syncWorkspaceChampionPromotions() {
-    const response = await fetch('/api/workspace/home-promotions/sync-cup-champions', {method: 'POST', credentials: 'same-origin'});
+    const response = await fetchWithTimeout('/api/workspace/home-promotions/sync-cup-champions', {method: 'POST', credentials: 'same-origin'});
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
         showModal('同步失败', escapeHtml(data.detail || '当前杯赛冠军同步失败'));
@@ -1130,7 +1132,7 @@ async function syncWorkspaceChampionPromotions() {
 }
 
 async function syncWorkspaceLeagueChampionPromotions() {
-    const response = await fetch('/api/workspace/home-promotions/sync-league-champions', {method: 'POST', credentials: 'same-origin'});
+    const response = await fetchWithTimeout('/api/workspace/home-promotions/sync-league-champions', {method: 'POST', credentials: 'same-origin'});
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
         showModal('同步失败', escapeHtml(data.detail || '联赛冠军同步失败'));
@@ -1153,7 +1155,7 @@ async function syncWorkspaceLeagueChampionPromotions() {
 async function workspaceCoachLogin() {
     const username = document.getElementById('workspaceCoachUsername')?.value || '';
     const password = document.getElementById('workspaceCoachPassword')?.value || '';
-    const response = await fetch('/api/coach/login', {
+    const response = await fetchWithTimeout('/api/coach/login', {
         method: 'POST',
         credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'},
@@ -1177,12 +1179,13 @@ async function finishWorkspaceCoachLogin(data) {
     workspaceSessionData = null;
     workspaceDashboardData = null;
     await openWorkspace({force: true});
+    if (typeof resumePendingWorkContext === 'function') await resumePendingWorkContext();
 }
 
 async function workspaceLogout() {
     const source = workspaceSessionData?.identity?.source;
     const endpoint = source === 'coach_account' ? '/api/coach/logout' : '/api/admin/logout';
-    await fetch(endpoint, {method: 'POST', credentials: 'same-origin'});
+    await fetchWithTimeout(endpoint, {method: 'POST', credentials: 'same-origin'});
     workspaceSessionData = null;
     workspaceDashboardData = null;
     workspaceAccountsData = [];
@@ -1313,11 +1316,14 @@ async function adminFetch(url, options = {}) {
         activateAdminTabOnUnauthorized = true,
         ...fetchOptions
     } = options;
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
         credentials: 'same-origin',
         ...fetchOptions,
     });
     if (response.status === 401) {
+        if (typeof capturePendingWorkContext === 'function') {
+            capturePendingWorkContext({reason: 'admin-session-expired'});
+        }
         if (isCoachWorkAccountActive()) {
             await handleCoachWorkUnauthorized('工作账号登录已失效，请重新登录教练账号。');
             const error = new Error(ADMIN_UNAUTHORIZED_ERROR);
@@ -1350,7 +1356,7 @@ async function adminJsonRequest(url, options = {}) {
 }
 
 async function syncAdminAuthStatus(options = {}) {
-    const response = await fetch('/api/admin/check', {credentials: 'same-origin'});
+    const response = await fetchWithTimeout('/api/admin/check', {credentials: 'same-origin'});
     if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
     }
@@ -1709,7 +1715,7 @@ async function adminLogin() {
     const password = document.getElementById('adminPassword').value;
     if (!username || !password) { showModal('错误', '请输入用户名和密码'); return; }
     try {
-        const res = await fetch('/api/admin/login', {
+        const res = await fetchWithTimeout('/api/admin/login', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             credentials: 'same-origin',
@@ -1731,7 +1737,10 @@ async function adminLogin() {
             workspaceDashboardData = null;
             await loadWorkspaceSession({force: true});
             await showTab('admin', null, {syncHistory: false});
-            showModal('登录成功', `欢迎，${escapeHtml(data.username)}！已进入联赛工作台。`);
+            const resumed = typeof resumePendingWorkContext === 'function'
+                ? await resumePendingWorkContext()
+                : false;
+            if (!resumed) showSuccessToast(`欢迎 ${data.username}，已进入联赛工作台`);
         }
     } catch (e) {
         if (isAdminUnauthorizedError(e)) return;
@@ -1742,7 +1751,7 @@ async function adminLogin() {
 
 async function adminLogout() {
     try {
-        await fetch('/api/admin/logout', {method: 'POST', credentials: 'same-origin'});
+        await fetchWithTimeout('/api/admin/logout', {method: 'POST', credentials: 'same-origin'});
     } catch (e) {
         console.error('登出错误:', e);
     }
@@ -1819,7 +1828,7 @@ async function confirmUndo() {
         if (!result) return;
         const {data} = result;
         if (data.success) {
-            showModal('成功', data.message);
+            showSuccessToast(data.message || '撤销成功');
             await refreshPlayerDataset();
             await refreshTeamDataset();
             loadTransferLogs();
@@ -1861,12 +1870,12 @@ async function transferPlayer() {
         const result = await adminJsonRequest('/api/admin/transfer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({player_uid: uid, to_team: team, notes})});
         if (!result) return;
         const {data} = result;
-        showModal(data.success ? '成功' : '错误', data.message || data.detail);
         if (data.success) {
+            showSuccessToast(data.message || '球员交易已完成');
             document.getElementById('transferUid').value = '';
             document.getElementById('transferNotes').value = '';
             await refreshAdminAfterMutation();
-        }
+        } else showModal('错误', data.detail || data.message || '交易失败');
     } catch (e) {
         showModal('错误', '交易请求失败');
     }
@@ -1885,12 +1894,12 @@ async function seaFishPlayer() {
         });
         if (!result) return;
         const {response, data} = result;
-        showModal(response.ok && data.success ? '成功' : '错误', data.message || data.detail || '海捞失败');
         if (response.ok && data.success) {
+            showSuccessToast(data.message || '海捞已完成');
             document.getElementById('seaFishUid').value = '';
             document.getElementById('seaFishNotes').value = '';
             await refreshAdminAfterMutation();
-        }
+        } else showModal('错误', data.detail || data.message || '海捞失败');
     } catch (e) {
         showModal('错误', '海捞请求失败');
     }
@@ -1904,12 +1913,12 @@ async function releasePlayer() {
         const result = await adminJsonRequest('/api/admin/release', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({player_uid: uid, to_team: '大海', notes})});
         if (!result) return;
         const {data} = result;
-        showModal(data.success ? '成功' : '错误', data.message || data.detail);
         if (data.success) {
+            showSuccessToast(data.message || '球员解约已完成');
             document.getElementById('releaseUid').value = '';
             document.getElementById('releaseNotes').value = '';
             await refreshAdminAfterMutation();
-        }
+        } else showModal('错误', data.detail || data.message || '解约失败');
     } catch (e) {
         showModal('错误', '解约请求失败');
     }
@@ -1925,13 +1934,13 @@ async function consumePlayer() {
         const result = await adminJsonRequest('/api/admin/consume', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({player_uid: uid, ca_change: caChange, pa_change: paChange})});
         if (!result) return;
         const {data} = result;
-        showModal(data.success ? '成功' : '错误', data.message || data.detail);
         if (data.success) {
+            showSuccessToast(data.message || '球员属性调整已完成');
             document.getElementById('consumeUid').value = '';
             document.getElementById('consumeCa').value = '';
             document.getElementById('consumePa').value = '';
             await refreshAdminAfterMutation();
-        }
+        } else showModal('错误', data.detail || data.message || '消费失败');
     } catch (e) {
         showModal('错误', '消费请求失败');
     }
@@ -2152,13 +2161,13 @@ async function rebuildTeamStatCaches() {
         const result = await adminJsonRequest('/api/admin/team-stats/rebuild-cache', {method: 'POST'});
         if (!result) return;
         const {data} = result;
-        showModal(data.success ? '成功' : '错误', data.message || data.detail);
         if (data.success) {
+            showSuccessToast(data.message || '球队统计已重算');
             await refreshTeamDataset();
             loadSchemaBootstrapStatus();
             loadOperationsAudit();
             loadLogFile();
-        }
+        } else showModal('错误', data.detail || data.message || '球队统计重算失败');
     } catch (e) {
         showModal('错误', '安全全量重算请求失败');
     }
@@ -2171,14 +2180,14 @@ async function recalculateWages() {
         const result = await adminJsonRequest('/api/admin/recalculate-wages', {method: 'POST'});
         if (!result) return;
         const {data} = result;
-        showModal(data.success ? '成功' : '错误', data.message || data.detail);
         if (data.success) {
+            showSuccessToast(data.message || '工资已重算');
             await refreshPlayerDataset();
             await refreshTeamDataset();
             loadSchemaBootstrapStatus();
             loadOperationsAudit();
             loadLogFile();
-        }
+        } else showModal('错误', data.detail || data.message || '工资重算失败');
     } catch (e) {
         showModal('错误', '工资重算请求失败');
     }
@@ -2225,7 +2234,7 @@ async function saveTeamInfo(originalName) {
         const {data} = result;
         if (data.success) {
             closeModal();
-            showModal('成功', data.message);
+            showSuccessToast(data.message || '球队信息已保存');
             await refreshTeamDataset();
         } else {
             showModal('错误', data.detail || '保存失败');
@@ -2312,7 +2321,7 @@ async function updatePlayerUid(oldUid, newUid) {
         const {data} = result;
         if (data.success) {
             await refreshPlayerDataset();
-            showModal('成功', `UID 已从 ${oldUid} 更新为 ${newUid}`);
+            showSuccessToast(`UID 已从 ${oldUid} 更新为 ${newUid}`);
         } else {
             showModal('错误', data.detail || '更新 UID 失败');
             await refreshPlayerDataset();

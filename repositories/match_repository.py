@@ -26,17 +26,15 @@ def delete_match_events(db: Session, match_id: int) -> None:
     db.query(MatchPlayerEvent).filter(MatchPlayerEvent.match_id == match_id).delete(synchronize_session=False)
 
 
-def list_played_matches(db: Session) -> list[Match]:
-    return (
-        db.query(Match)
-        .filter(
-            Match.status.in_(("played", "home_forfeit", "away_forfeit", "double_forfeit")),
-            Match.home_score.is_not(None),
-            Match.away_score.is_not(None),
-        )
-        .order_by(Match.level, Match.round_no, Match.id)
-        .all()
+def list_played_matches(db: Session, *, level: str | None = None) -> list[Match]:
+    query = db.query(Match).filter(
+        Match.status.in_(("played", "home_forfeit", "away_forfeit", "double_forfeit")),
+        Match.home_score.is_not(None),
+        Match.away_score.is_not(None),
     )
+    if level:
+        query = query.filter(Match.level == level)
+    return query.order_by(Match.level, Match.round_no, Match.id).all()
 
 
 def get_match_by_id(db: Session, match_id: int) -> Match | None:

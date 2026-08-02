@@ -5,12 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HEIGO 联赛数据台</title>
     <link rel="icon" href="/favicon.ico">
+    <script>
+        (() => {
+            let themeMode = 'light';
+            try {
+                themeMode = localStorage.getItem('themeMode') === 'dark' ? 'dark' : 'light';
+            } catch (error) {
+                themeMode = 'light';
+            }
+            document.documentElement.dataset.themeMode = themeMode;
+            document.documentElement.style.colorScheme = themeMode;
+        })();
+    </script>
     <link rel="stylesheet" href="/static/app.css?v=__STATIC_ASSET_VERSION__">
     <link rel="stylesheet" href="/static/css/ui-foundation.css?v=__STATIC_ASSET_VERSION__">
     <link rel="stylesheet" href="/static/css/shell.css?v=__STATIC_ASSET_VERSION__">
     <link rel="stylesheet" href="/static/css/responsive.css?v=__STATIC_ASSET_VERSION__">
 </head>
-<body class="light-mode">
+<body>
+    <script>document.body.classList.toggle('light-mode', document.documentElement.dataset.themeMode !== 'dark');</script>
     <a class="skip-link" href="#mainContent">跳到主要内容</a>
     <div class="container">
         <header class="shell-header">

@@ -1,3 +1,5 @@
+var fetchWithTimeout = globalThis.fetchWithTimeout || ((...args) => globalThis.fetch(...args));
+
 const ADVANCED_DB_SEARCH_LIMIT = 200;
 const ADVANCED_POSITION_SCORE_STEPS = [10, 15, 18];
 var currentAdvancedSearchTab = 'base';
@@ -311,7 +313,7 @@ async function applyDatabaseBatchScope(rawValue, options = {}) {
         return databaseBatchScope;
     }
 
-    const response = await fetch('/api/attributes/batch-lookup', {
+    const response = await fetchWithTimeout('/api/attributes/batch-lookup', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({tokens, version}),
@@ -1445,7 +1447,7 @@ function renderPublicCandidateListsBoard() {
 }
 
 async function fetchCandidateJson(url, options = {}) {
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
         credentials: 'same-origin',
         ...options,
         headers: {
@@ -2002,7 +2004,7 @@ async function commitCandidateBatchAddFromModal(listId) {
     const result = await commitCandidatePlayers(listId);
     const addedCount = Number(result?.added_count || 0);
     if (typeof closeModal === 'function') closeModal();
-    showModal('批量添加完成', `已添加 ${addedCount} 名球员。`);
+    showSuccessToast(`已添加 ${addedCount} 名球员`);
 }
 
 async function addCurrentDbResultsToCandidateList(listId) {
@@ -2012,7 +2014,7 @@ async function addCurrentDbResultsToCandidateList(listId) {
         return;
     }
     const result = await commitCandidatePlayers(listId, uids);
-    showModal('候选名单夹', `已添加 ${Number(result?.added_count || 0)} 名球员。`);
+    showSuccessToast(`已添加 ${Number(result?.added_count || 0)} 名球员`);
 }
 
 function getCandidateAdminListVersion(listId) {
@@ -2389,7 +2391,7 @@ async function loadReactionLeaderboard(options = {}) {
         params.set('version', version);
     }
     try {
-        const response = await fetch(`/api/reactions/leaderboard?${params.toString()}`);
+        const response = await fetchWithTimeout(`/api/reactions/leaderboard?${params.toString()}`);
         let payload = null;
         try {
             payload = await response.json();
@@ -2531,7 +2533,7 @@ async function loadPowerRanking(options = {}) {
     const version = getCurrentAttributeVersion();
     if (version) params.set('version', version);
     try {
-        const response = await fetch(`/api/attributes/power-ranking?${params.toString()}`);
+        const response = await fetchWithTimeout(`/api/attributes/power-ranking?${params.toString()}`);
         const payload = await response.json();
         if (!response.ok) throw new Error(payload?.detail || `HTTP ${response.status}`);
         renderPowerRanking(payload);

@@ -1,3 +1,5 @@
+var fetchWithTimeout = globalThis.fetchWithTimeout || ((...args) => globalThis.fetch(...args));
+
 const DB_TACTICS_STORAGE_KEY = 'heigo_database_tactics_board_v1';
 const DB_TACTICS_GROWTH_THRESHOLDS = {1: 11, 2: 30, 3: 50, 4: 70, 5: 90};
 const DB_TACTICS_FORMATIONS = {
@@ -145,7 +147,7 @@ function normalizeDatabaseTacticsPicks() {
 }
 
 async function fetchDatabaseTacticsPlayer(uid, version = databaseTacticsState.version) {
-    const response = await fetch(buildAttributeVersionedPath(`/api/attributes/${Number(uid)}`, version));
+    const response = await fetchWithTimeout(buildAttributeVersionedPath(`/api/attributes/${Number(uid)}`, version));
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload?.uid) throw new Error(payload?.detail || `找不到 UID ${uid}`);
     return payload;
@@ -324,7 +326,7 @@ async function searchDatabaseTacticsPlayers() {
             results = [{...player, weighted_power: metrics?.weightedPower, heigo_power: metrics?.heigoPower}];
         } else {
             const path = buildAttributeVersionedPath(`/api/attributes/search/${encodeURIComponent(query)}`, databaseTacticsState.version);
-            const response = await fetch(path);
+            const response = await fetchWithTimeout(path);
             const payload = await response.json().catch(() => []);
             if (!response.ok) throw new Error(payload?.detail || `HTTP ${response.status}`);
             results = Array.isArray(payload) ? payload : [];

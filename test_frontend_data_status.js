@@ -15,8 +15,12 @@ for (const id of ['rosterDataStatus', 'databaseDataStatus', 'competitionDataStat
     assert.match(html, new RegExp(`id="${id}"`));
 }
 
-assert.match(core, /fetch\('\/api\/data-status'\)/);
+assert.match(core, /fetchWithTimeout\('\/api\/data-status'\)/);
 assert.match(core, /function renderDataStatusStrip/);
+assert.match(core, /function getDataStatusDisplayLabel/);
+assert.match(core, /已核对第/);
+assert.match(core, /适用于第/);
+assert.match(core, /来源 \$\{item\.source\}/);
 assert.match(core, /function openDataStatusItem/);
 assert.match(core, /dataStatusIconSvg/);
 assert.match(core, /aria-label=/);
@@ -25,6 +29,7 @@ assert.match(app, /renderDataStatusStrip\('rosterDataStatus'/);
 assert.match(app, /renderDataStatusStrip\('databaseDataStatus'/);
 
 assert.match(competition, /function renderCompetitionDataStatus/);
+assert.match(competition, /competition-module-status-meta/);
 assert.match(competition, /standings: 'standings'/);
 assert.match(competition, /schedule: 'schedule'/);
 assert.match(competition, /playerRankings: 'player_rankings'/);

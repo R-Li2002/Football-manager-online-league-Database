@@ -287,8 +287,11 @@ def get_schedule(db: Session, *, level: str | None = None, round_no: int | None 
     )
 
 
-def get_standings(db: Session) -> StandingsResponse:
-    teams = sorted(list_visible_teams(db, VISIBLE_LEVEL), key=lambda team: (LEVEL_ORDER.get(team.level, 99), team.name))
+def get_standings(db: Session, *, level: str | None = None) -> StandingsResponse:
+    teams = list_visible_teams(db, VISIBLE_LEVEL)
+    if level:
+        teams = [team for team in teams if team.level == level]
+    teams = sorted(teams, key=lambda team: (LEVEL_ORDER.get(team.level, 99), team.name))
     rows_by_team = {
         team.name: {
             "level": team.level,
@@ -346,7 +349,7 @@ def get_standings(db: Session) -> StandingsResponse:
         if normalized:
             rows_by_normalized_name.setdefault(normalized, row)
 
-    for match in list_played_matches(db):
+    for match in list_played_matches(db, level=level):
         home = rows_by_team_id.get(match.home_team_id) if match.home_team_id is not None else None
         away = rows_by_team_id.get(match.away_team_id) if match.away_team_id is not None else None
         home = home or rows_by_lookup_name.get(match.home_team_name)

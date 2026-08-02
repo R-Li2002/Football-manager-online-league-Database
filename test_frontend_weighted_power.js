@@ -121,4 +121,6 @@ assert.ok(comparisonMarkup.includes(`>${comparisonEntry.weightedPower.score.toFi
 assert.match(databaseCode, /player-detail-scroll-snap/);
 assert.match(appCss, /scroll-snap-type:\s*y proximity/);
 assert.match(appCss, /scroll-snap-stop:\s*always/);
-assert.match(appCss, /detail-section-skills > \.detail-skills-grid > \.attribute-group/);
+assert.match(appCss, /player-detail-scroll-snap #playerDetailContent\s*\{/);
+assert.match(appCss, /prefers-reduced-motion:\s*reduce[\s\S]*player-detail-scroll-snap[\s\S]*scroll-snap-type:\s*none/);
+assert.doesNotMatch(appCss, /detail-section-skills > \.detail-skills-grid > \.attribute-group[^{]*\{[^}]*scroll-snap-align/);

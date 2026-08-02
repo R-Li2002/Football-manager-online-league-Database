@@ -1,3 +1,5 @@
+var fetchWithTimeout = globalThis.fetchWithTimeout || ((...args) => globalThis.fetch(...args));
+
 let currentTeamDetailName = '';
 let teamDetailLoadSequence = 0;
 let teamDetailAbortController = null;
@@ -14,6 +16,8 @@ const TEAM_DETAIL_CACHE_TTL_MS = 60 * 1000;
 const TEAM_ROSTER_VIEW_MODES = new Set(['compact', 'detail', 'cards']);
 const teamCenterExpandedLevels = new Set();
 let teamCenterExpandedInitialized = false;
+let teamCenterSearchQuery = '';
+let teamCenterSearchActiveIndex = -1;
 
 function getCachedTeamDetail(teamName) {
     const cached = teamDetailCache.get(teamName);
@@ -290,6 +294,7 @@ function teamDetailJourneyPanel(team, leagueSeries, cupPayload) {
 function setTeamJourneyView(view) {
     currentTeamJourneyView = String(view || 'league');
     if (currentTeamDetailData) renderTeamDetailLoaded(currentTeamDetailData);
+    if (typeof syncAppHistory === 'function') syncAppHistory('replace');
 }
 
 function teamDetailGrowthStepFromCa(player) {
@@ -734,7 +739,7 @@ async function copyTeamLineupImage() {
         const fileName = buildTeamLineupImageFileName(currentTeamDetailData.team.name, formation);
         const copied = copyPromise ? await copyPromise : false;
         if (copied) {
-            showModal('复制成功', '阵容图片已复制到剪贴板。');
+            showSuccessToast('阵容图片已复制到剪贴板');
         } else {
             showTeamLineupImageFallback(blob, fileName);
         }
@@ -782,7 +787,7 @@ async function copyTeamRosterImage() {
         const fileName = buildTeamRosterImageFileName(currentTeamDetailData.team.name);
         const copied = copyPromise ? await copyPromise : false;
         if (copied) {
-            showModal('复制成功', '球队名单图片已复制到剪贴板。');
+            showSuccessToast('球队名单图片已复制到剪贴板');
         } else {
             showTeamRosterImageFallback(blob, fileName);
         }
@@ -815,12 +820,89 @@ function teamDetailTeamSwitcher(activeTeam) {
     </section>`;
 }
 
-function teamCenterLandingOptions() {
-    const levels = ['超级', '甲级', '乙级'];
-    return levels.map(level => {
-        const levelTeams = teams.filter(team => team.level === level).sort((a, b) => a.name.localeCompare(b.name));
-        return `<optgroup label="${level}">${levelTeams.map(team => `<option value="${escapeHtml(team.name)}">${escapeHtml(team.name)}</option>`).join('')}</optgroup>`;
-    }).join('');
+function getTeamCenterSearchMatches(query, limit = 8) {
+    const normalizedQuery = String(query || '').trim().toLocaleLowerCase();
+    if (!normalizedQuery) return [];
+    return [...(teams || [])]
+        .filter(team => [team.name, team.manager].some(value => String(value || '').toLocaleLowerCase().includes(normalizedQuery)))
+        .sort((a, b) => {
+            const aName = String(a.name || '').toLocaleLowerCase();
+            const bName = String(b.name || '').toLocaleLowerCase();
+            const aExact = aName === normalizedQuery ? 0 : aName.startsWith(normalizedQuery) ? 1 : 2;
+            const bExact = bName === normalizedQuery ? 0 : bName.startsWith(normalizedQuery) ? 1 : 2;
+            return aExact - bExact || String(a.name || '').localeCompare(String(b.name || ''));
+        })
+        .slice(0, Math.max(1, Number(limit) || 8));
+}
+
+function closeTeamCenterSuggestions() {
+    const panel = document.getElementById('teamCenterSearchSuggestions');
+    const input = document.getElementById('teamCenterSearchInput');
+    if (panel) {
+        panel.hidden = true;
+        panel.innerHTML = '';
+    }
+    if (input) {
+        input.setAttribute('aria-expanded', 'false');
+        input.removeAttribute('aria-activedescendant');
+    }
+    teamCenterSearchActiveIndex = -1;
+}
+
+function renderTeamCenterSearchSuggestions(query = teamCenterSearchQuery) {
+    const panel = document.getElementById('teamCenterSearchSuggestions');
+    const input = document.getElementById('teamCenterSearchInput');
+    if (!panel || !input) return;
+    const matches = getTeamCenterSearchMatches(query);
+    if (!String(query || '').trim() || !matches.length) {
+        closeTeamCenterSuggestions();
+        return;
+    }
+    teamCenterSearchActiveIndex = Math.min(teamCenterSearchActiveIndex, matches.length - 1);
+    panel.innerHTML = matches.map((team, index) => `
+        <button id="teamCenterSuggestion${index}" class="team-center-search-option ${index === teamCenterSearchActiveIndex ? 'is-active' : ''}" type="button" role="option" aria-selected="${index === teamCenterSearchActiveIndex ? 'true' : 'false'}" onmousedown="event.preventDefault()" onclick="selectTeamCenterSuggestion('${teamDetailHandlerArg(team.name)}')">
+            <span><strong>${escapeHtml(team.name)}</strong><small>主教练 ${escapeHtml(team.manager || '待定')}</small></span>
+            ${teamDetailLevelBadge(team.level, {compact: true})}
+        </button>
+    `).join('');
+    panel.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+    if (teamCenterSearchActiveIndex >= 0) {
+        input.setAttribute('aria-activedescendant', `teamCenterSuggestion${teamCenterSearchActiveIndex}`);
+    } else {
+        input.removeAttribute('aria-activedescendant');
+    }
+}
+
+function selectTeamCenterSuggestion(teamName) {
+    const normalizedName = decodeURIComponent(String(teamName || ''));
+    if (!teams.some(team => team.name === normalizedName)) return;
+    teamCenterSearchQuery = normalizedName;
+    closeTeamCenterSuggestions();
+    openTeamDetail(normalizedName);
+}
+
+function handleTeamCenterSearchKeydown(event) {
+    const matches = getTeamCenterSearchMatches(event.currentTarget?.value || teamCenterSearchQuery);
+    if (event.key === 'Escape') {
+        closeTeamCenterSuggestions();
+        return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        if (!matches.length) return;
+        event.preventDefault();
+        const direction = event.key === 'ArrowDown' ? 1 : -1;
+        teamCenterSearchActiveIndex = teamCenterSearchActiveIndex < 0
+            ? (direction > 0 ? 0 : matches.length - 1)
+            : (teamCenterSearchActiveIndex + direction + matches.length) % matches.length;
+        renderTeamCenterSearchSuggestions(event.currentTarget.value);
+        return;
+    }
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        const selected = matches[teamCenterSearchActiveIndex >= 0 ? teamCenterSearchActiveIndex : 0];
+        if (selected) selectTeamCenterSuggestion(encodeURIComponent(selected.name));
+    }
 }
 
 function teamCenterDirectoryCard(team) {
@@ -858,6 +940,7 @@ function toggleTeamCenterLeague(level) {
         teamCenterExpandedLevels.add(level);
     }
     renderTeamCenterDirectory(document.getElementById('teamCenterSearchInput')?.value || '');
+    if (typeof syncAppHistory === 'function') syncAppHistory('replace');
 }
 
 function renderTeamCenterDirectory(query = '') {
@@ -883,7 +966,11 @@ function renderTeamCenterDirectory(query = '') {
 }
 
 function filterTeamCenterDirectory(query) {
-    renderTeamCenterDirectory(query);
+    teamCenterSearchQuery = String(query || '');
+    teamCenterSearchActiveIndex = -1;
+    renderTeamCenterDirectory(teamCenterSearchQuery);
+    renderTeamCenterSearchSuggestions(teamCenterSearchQuery);
+    if (typeof syncAppHistory === 'function') syncAppHistory('replace');
 }
 
 function clearTeamCenterSearch() {
@@ -892,13 +979,23 @@ function clearTeamCenterSearch() {
         input.value = '';
         input.focus();
     }
+    teamCenterSearchQuery = '';
+    closeTeamCenterSuggestions();
     renderTeamCenterDirectory();
+    if (typeof syncAppHistory === 'function') syncAppHistory('replace');
 }
 
 function openSelectedTeamCenter() {
-    const select = document.getElementById('teamCenterLandingSelect');
-    if (!select?.value) return;
-    openTeamDetail(select.value);
+    const input = document.getElementById('teamCenterSearchInput');
+    const query = String(input?.value || teamCenterSearchQuery).trim();
+    const exactMatch = teams.find(team => String(team.name || '').toLocaleLowerCase() === query.toLocaleLowerCase());
+    const selected = exactMatch || getTeamCenterSearchMatches(query, 1)[0];
+    if (selected) {
+        selectTeamCenterSuggestion(encodeURIComponent(selected.name));
+        return;
+    }
+    input?.focus();
+    renderTeamCenterSearchSuggestions(query);
 }
 
 function renderTeamCenterLanding() {
@@ -911,14 +1008,15 @@ function renderTeamCenterLanding() {
         </section>
         <section class="team-center-picker surface-card" aria-labelledby="teamCenterPickerTitle">
             <div class="team-center-picker-heading"><span class="panel-kicker">Find a Club</span><h2 id="teamCenterPickerTitle">查找球队</h2></div>
-            <label class="team-center-search-field" for="teamCenterSearchInput"><span>搜索球队或主教练</span><input id="teamCenterSearchInput" type="search" autocomplete="off" placeholder="输入名称快速筛选" oninput="filterTeamCenterDirectory(this.value)"></label>
-            <span class="team-center-picker-or">或</span>
-            <label class="team-center-select-field" for="teamCenterLandingSelect"><span>直接选择球队</span><select id="teamCenterLandingSelect"><option value="">请选择球队</option>${teamCenterLandingOptions()}</select></label>
+            <div class="team-center-search-combobox">
+                <label class="team-center-search-field" for="teamCenterSearchInput"><span>搜索球队或主教练</span><input id="teamCenterSearchInput" type="search" role="combobox" aria-autocomplete="list" aria-controls="teamCenterSearchSuggestions" aria-expanded="false" autocomplete="off" placeholder="输入球队名或主教练" value="${escapeHtml(teamCenterSearchQuery)}" oninput="filterTeamCenterDirectory(this.value)" onfocus="renderTeamCenterSearchSuggestions(this.value)" onblur="window.setTimeout(closeTeamCenterSuggestions, 120)" onkeydown="handleTeamCenterSearchKeydown(event)"></label>
+                <div id="teamCenterSearchSuggestions" class="team-center-search-suggestions" role="listbox" aria-label="球队搜索建议" hidden></div>
+            </div>
             <button class="btn btn-primary team-center-enter-button" type="button" onclick="openSelectedTeamCenter()">进入球队中心</button>
         </section>
         <div id="teamCenterDirectory" class="team-center-directory" aria-live="polite"></div>
     </div>`;
-    renderTeamCenterDirectory();
+    renderTeamCenterDirectory(teamCenterSearchQuery);
 }
 
 function renderTeamDetailLoaded(data) {

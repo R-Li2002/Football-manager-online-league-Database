@@ -275,7 +275,7 @@ header.shell-header {
     max-width: 128px;
     overflow: hidden;
     color: var(--text-muted);
-    font-size: 0.61rem;
+    font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -328,7 +328,7 @@ header.shell-header {
 .global-coach-menu-head span,
 .global-coach-menu-head small {
     color: var(--text-secondary);
-    font-size: 0.66rem;
+    font-size: var(--text-xs);
 }
 
 .global-coach-menu-head small {
@@ -401,7 +401,7 @@ header.shell-header {
 .global-coach-menu-actions small,
 .global-coach-menu-alert small {
     color: var(--text-muted);
-    font-size: 0.62rem;
+    font-size: var(--text-xs);
 }
 
 .global-coach-menu-alert {
@@ -741,37 +741,43 @@ body:not(.light-mode) .nav-tab.active .nav-tab-icon {
 }
 
 body:not([data-active-tab="home"]) header.shell-header {
-    margin-bottom: 20px;
+    margin-bottom: 14px;
 }
 
 body:not([data-active-tab="home"]) .shell-topbar {
-    min-height: 110px;
-    padding: 18px 22px;
-    margin-bottom: 20px;
-    border-radius: 28px;
+    min-height: 78px;
+    padding: 10px 16px;
+    margin-bottom: 12px;
+    border-radius: 20px;
 }
 
 body:not([data-active-tab="home"]) .header-logo {
-    width: 74px;
-    height: 74px;
-    padding: 8px;
-    border-radius: 26px;
+    width: 52px;
+    height: 52px;
+    padding: 5px;
+    border-radius: 17px;
 }
 
 body:not([data-active-tab="home"]) .brand-stack {
-    gap: 18px;
+    gap: 12px;
 }
 
 body:not([data-active-tab="home"]) .brand-copy h1 {
-    margin: 0 0 8px;
-    font-size: clamp(2rem, 3vw, 2.85rem);
-    line-height: 1.05;
+    margin: 0;
+    font-size: clamp(1.42rem, 2vw, 1.82rem);
+    line-height: 1.08;
 }
 
 body:not([data-active-tab="home"]) .brand-copy .brand-eyebrow {
-    display: inline-flex;
+    display: none;
 }
 
 body:not([data-active-tab="home"]) .brand-copy p {
-    display: block;
+    display: none;
+}
+
+body:not([data-active-tab="home"]) .global-coach-login,
+body:not([data-active-tab="home"]) .global-coach-trigger,
+body:not([data-active-tab="home"]) .shell-utility-button {
+    min-height: 42px;
 }

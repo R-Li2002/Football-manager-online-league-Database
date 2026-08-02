@@ -172,20 +172,29 @@ def build_public_router(get_db):
         return read_service.get_schedule(db, level=level, round_no=round_no)
 
     @router.get("/api/standings", response_model=StandingsResponse)
-    def get_standings(db: Session = Depends(get_db)):
-        return read_service.get_standings(db)
+    def get_standings(
+        level: str | None = Query(None, pattern="^(超级|甲级|乙级)$"),
+        db: Session = Depends(get_db),
+    ):
+        return read_service.get_standings(db, level=level)
 
     @router.get("/api/player-rankings", response_model=PlayerRankingsResponse)
-    def get_player_rankings(db: Session = Depends(get_db)):
-        return player_ranking_service.get_player_rankings(db)
+    def get_player_rankings(
+        level: str | None = Query(None, pattern="^(超级|甲级|乙级)$"),
+        db: Session = Depends(get_db),
+    ):
+        return player_ranking_service.get_player_rankings(db, level=level)
 
     @router.get("/api/rankings", response_model=RankingsResponse)
     def get_rankings(db: Session = Depends(get_db)):
         return ranking_service.get_rankings(db)
 
     @router.get("/api/suspensions", response_model=SuspensionsResponse)
-    def get_suspensions(db: Session = Depends(get_db)):
-        return suspension_service.get_suspensions(db)
+    def get_suspensions(
+        level: str | None = Query(None, pattern="^(超级|甲级|乙级)$"),
+        db: Session = Depends(get_db),
+    ):
+        return suspension_service.get_suspensions(db, level=level)
 
     @router.get("/api/site-notes", response_model=list[SiteNoteResponse])
     def get_site_notes(db: Session = Depends(get_db)):

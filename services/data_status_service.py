@@ -16,11 +16,11 @@ from services.site_note_service import build_suspension_note_key, build_suspensi
 
 LEAGUE_LEVELS = ("超级", "甲级", "乙级")
 STATUS_LABELS = {
-    "normal": "数据正常",
-    "pending": "存在待补",
-    "stale": "需要更新",
-    "error": "数据异常",
-    "unknown": "状态未知",
+    "normal": "已同步",
+    "pending": "待补录",
+    "stale": "已延迟",
+    "error": "需修正",
+    "unknown": "待确认",
 }
 
 

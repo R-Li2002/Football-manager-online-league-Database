@@ -200,8 +200,8 @@ def get_schedule(db: Session, *, level: str | None = None, round_no: int | None 
     return match_service.get_schedule(db, level=level, round_no=round_no)
 
 
-def get_standings(db: Session):
-    return match_service.get_standings(db)
+def get_standings(db: Session, *, level: str | None = None):
+    return match_service.get_standings(db, level=level)
 
 
 def search_player_attributes(

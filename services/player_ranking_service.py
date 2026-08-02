@@ -38,7 +38,8 @@ def _rank_rows(rows: list[dict], *, metric: str) -> list[PlayerRankingRowRespons
     ]
 
 
-def _build_coverage(db: Session) -> list[PlayerRankingCoverageResponse]:
+def _build_coverage(db: Session, *, levels: list[str] | None = None) -> list[PlayerRankingCoverageResponse]:
+    active_levels = levels or LEAGUE_LEVELS
     coverage_by_level: dict[str, dict[str, int | str]] = {
         level: {
             "level": level,
@@ -50,12 +51,12 @@ def _build_coverage(db: Session) -> list[PlayerRankingCoverageResponse]:
             "assist_quantity": 0,
             "mvp_quantity": 0,
         }
-        for level in LEAGUE_LEVELS
+        for level in active_levels
     }
 
     played_rows = (
         db.query(Match.level.label("level"), func.count(Match.id).label("played_matches"))
-        .filter(Match.level.in_(LEAGUE_LEVELS), Match.status == "played")
+        .filter(Match.level.in_(active_levels), Match.status == "played")
         .group_by(Match.level)
         .all()
     )
@@ -73,7 +74,7 @@ def _build_coverage(db: Session) -> list[PlayerRankingCoverageResponse]:
             func.sum(case((MatchPlayerEvent.event_type == "mvp", MatchPlayerEvent.quantity), else_=0)).label("mvp_quantity"),
         )
         .join(Match, Match.id == MatchPlayerEvent.match_id)
-        .filter(Match.level.in_(LEAGUE_LEVELS), Match.status == "played")
+        .filter(Match.level.in_(active_levels), Match.status == "played")
         .group_by(Match.level)
         .all()
     )
@@ -89,10 +90,11 @@ def _build_coverage(db: Session) -> list[PlayerRankingCoverageResponse]:
     for row in coverage_by_level.values():
         row["matches_missing_events"] = max(0, int(row["played_matches"] or 0) - int(row["matches_with_events"] or 0))
 
-    return [PlayerRankingCoverageResponse(**coverage_by_level[level]) for level in LEAGUE_LEVELS]
+    return [PlayerRankingCoverageResponse(**coverage_by_level[level]) for level in active_levels]
 
 
-def get_player_rankings(db: Session) -> PlayerRankingsResponse:
+def get_player_rankings(db: Session, *, level: str | None = None) -> PlayerRankingsResponse:
+    active_levels = [level] if level else LEAGUE_LEVELS
     stats_by_key: dict[tuple[str, int | None, str, str], dict] = {}
     event_rows = (
         db.query(
@@ -107,7 +109,7 @@ def get_player_rankings(db: Session) -> PlayerRankingsResponse:
             func.count(func.distinct(MatchPlayerEvent.match_id)).label("appearances"),
         )
         .join(Match, Match.id == MatchPlayerEvent.match_id)
-        .filter(Match.level.in_(LEAGUE_LEVELS), Match.status == "played")
+        .filter(Match.level.in_(active_levels), Match.status == "played")
         .group_by(
             Match.level,
             MatchPlayerEvent.player_uid,
@@ -131,7 +133,7 @@ def get_player_rankings(db: Session) -> PlayerRankingsResponse:
             "appearances": int(row.appearances or 0),
         }
 
-    legacy_stats = db.query(PlayerCompetitionStat).filter(PlayerCompetitionStat.level.in_(LEAGUE_LEVELS)).all()
+    legacy_stats = db.query(PlayerCompetitionStat).filter(PlayerCompetitionStat.level.in_(active_levels)).all()
     for row in legacy_stats:
         key = (row.level, row.player_uid, row.player_name, row.team_name)
         if key in stats_by_key:
@@ -151,7 +153,7 @@ def get_player_rankings(db: Session) -> PlayerRankingsResponse:
 
     stats = list(stats_by_key.values())
     rows: list[PlayerRankingRowResponse] = []
-    for level in LEAGUE_LEVELS:
-        level_rows = [row for row in stats if row["level"] == level]
+    for active_level in active_levels:
+        level_rows = [row for row in stats if row["level"] == active_level]
         rows.extend(_rank_rows(level_rows, metric="goals"))
-    return PlayerRankingsResponse(levels=LEAGUE_LEVELS, rows=rows, coverage=_build_coverage(db))
+    return PlayerRankingsResponse(levels=active_levels, rows=rows, coverage=_build_coverage(db, levels=active_levels))

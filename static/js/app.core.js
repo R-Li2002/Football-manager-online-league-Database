@@ -20,6 +20,8 @@ var canManageCandidateLists = false;
 var adminEntryUnlocked = false;
 var isDarkMode = false;
 const ADMIN_ENTRY_QUERY = 'heigomanage';
+const PENDING_WORK_CONTEXT_STORAGE_KEY = 'heigoPendingWorkContext:v1';
+const PENDING_WORK_CONTEXT_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 var currentDetailPlayer = null;
 var currentGrowthPreviewStep = 0;
 var currentSelectedRosterUid = null;
@@ -74,6 +76,58 @@ var currentDbSort = {field: '', order: '', type: 'number'};
 var dataStatusData = {generated_at: null, items: []};
 var dataStatusLoadPromise = null;
 var dataStatusLoadError = '';
+const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+const MUTATION_REQUEST_TIMEOUT_MS = 30000;
+const LONG_REQUEST_TIMEOUT_MS = 120000;
+
+function resolveRequestTimeoutMs(input, options = {}) {
+    const explicitTimeout = Number(options.timeoutMs);
+    if (Number.isFinite(explicitTimeout) && explicitTimeout > 0) return explicitTimeout;
+    const url = typeof input === 'string' ? input : String(input?.url || '');
+    const method = String(options.method || input?.method || 'GET').toUpperCase();
+    const hasFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+    const isLongRequest = hasFormData || /\/api\/(?:export\/|.*(?:import|upload))/.test(url);
+    if (isLongRequest) return LONG_REQUEST_TIMEOUT_MS;
+    return ['GET', 'HEAD'].includes(method) ? DEFAULT_REQUEST_TIMEOUT_MS : MUTATION_REQUEST_TIMEOUT_MS;
+}
+
+async function fetchWithTimeout(input, options = {}) {
+    const timeoutMs = resolveRequestTimeoutMs(input, options);
+    const {timeoutMs: _ignoredTimeout, ...fetchOptions} = options;
+    if (typeof AbortController === 'undefined') return globalThis.fetch(input, fetchOptions);
+    const requestController = new AbortController();
+    const callerSignal = fetchOptions.signal;
+    let timedOut = false;
+    let forwardAbort = null;
+
+    if (callerSignal) {
+        if (callerSignal.aborted) requestController.abort(callerSignal.reason);
+        else {
+            forwardAbort = () => requestController.abort(callerSignal.reason);
+            callerSignal.addEventListener('abort', forwardAbort, {once: true});
+        }
+    }
+
+    const timer = globalThis.setTimeout(() => {
+        timedOut = true;
+        requestController.abort();
+    }, timeoutMs);
+
+    try {
+        return await globalThis.fetch(input, {...fetchOptions, signal: requestController.signal});
+    } catch (error) {
+        if (!timedOut) throw error;
+        const timeoutError = new Error(`请求超时，请检查网络后重试（${Math.round(timeoutMs / 1000)} 秒）`);
+        timeoutError.name = 'TimeoutError';
+        timeoutError.code = 'REQUEST_TIMEOUT';
+        throw timeoutError;
+    } finally {
+        globalThis.clearTimeout(timer);
+        if (callerSignal && forwardAbort) callerSignal.removeEventListener('abort', forwardAbort);
+    }
+}
+
+window.fetchWithTimeout = fetchWithTimeout;
 
 window.AppState = window.AppState || {};
 Object.defineProperties(window.AppState, {
@@ -203,11 +257,26 @@ function showUiToast(message, tone = 'success', options = {}) {
     toast.className = `ui-toast is-${normalizedTone}`;
     toast.setAttribute('role', normalizedTone === 'danger' ? 'alert' : 'status');
     toast.setAttribute('aria-live', normalizedTone === 'danger' ? 'assertive' : 'polite');
-    toast.innerHTML = `<span class="ui-toast-icon">${uiStateIconSvg(normalizedTone)}</span><span>${escapeHtml(message || '')}</span>`;
+    toast.innerHTML = `<span class="ui-toast-icon">${uiStateIconSvg(normalizedTone)}</span><span>${escapeHtml(message || '')}</span>${options.actionLabel ? `<button class="ui-toast-action" type="button">${escapeHtml(options.actionLabel)}</button>` : ''}`;
+    const actionButton = toast.querySelector('.ui-toast-action');
+    if (actionButton && typeof options.onAction === 'function') {
+        actionButton.addEventListener('click', async () => {
+            actionButton.disabled = true;
+            try {
+                await options.onAction();
+            } finally {
+                toast.classList.remove('is-visible');
+            }
+        }, {once: true});
+    }
     window.clearTimeout(uiToastTimer);
     requestAnimationFrame(() => toast.classList.add('is-visible'));
     uiToastTimer = window.setTimeout(() => toast.classList.remove('is-visible'), Number(options.duration || 3200));
     return toast;
+}
+
+function showSuccessToast(message, options = {}) {
+    return showUiToast(message, 'success', options);
 }
 
 function setUiButtonBusy(buttonOrId, busy, label = '处理中...') {
@@ -229,8 +298,9 @@ function setUiButtonBusy(buttonOrId, busy, label = '处理中...') {
 }
 
 async function workJsonRequest(url, options = {}) {
-    const response = await fetch(url, {credentials: 'same-origin', ...options});
+    const response = await fetchWithTimeout(url, {credentials: 'same-origin', ...options});
     if (response.status === 401) {
+        capturePendingWorkContext({reason: 'work-session-expired'});
         currentAdminRole = '';
         isAdmin = false;
         canManageSchedule = false;
@@ -247,6 +317,80 @@ async function workJsonRequest(url, options = {}) {
     }
     const data = await response.json().catch(() => ({}));
     return {response, data};
+}
+
+function capturePendingWorkContext(options = {}) {
+    try {
+        let state = null;
+        if (typeof normalizeHistoryState === 'function' && typeof captureAppHistoryState === 'function') {
+            state = normalizeHistoryState(captureAppHistoryState());
+        } else if (history.state && typeof history.state === 'object') {
+            state = history.state;
+        }
+        const activeElement = document.activeElement;
+        const focusId = activeElement?.id && activeElement?.type !== 'password' ? activeElement.id : '';
+        const matchEventEditorMatchId = typeof activeMatchEventEditorMatchId !== 'undefined'
+            ? Number(activeMatchEventEditorMatchId || 0)
+            : 0;
+        const context = {
+            version: 1,
+            savedAt: Date.now(),
+            reason: String(options.reason || 'session-expired'),
+            url: `${window.location.pathname}${window.location.search}${window.location.hash}`,
+            state,
+            scrollY: Math.max(0, Number(window.scrollY || 0)),
+            focusId,
+            editor: matchEventEditorMatchId > 0
+                ? {type: 'match-events', matchId: matchEventEditorMatchId}
+                : null,
+        };
+        sessionStorage.setItem(PENDING_WORK_CONTEXT_STORAGE_KEY, JSON.stringify(context));
+        return context;
+    } catch (error) {
+        console.warn('Unable to preserve pending work context:', error);
+        return null;
+    }
+}
+
+function readPendingWorkContext() {
+    try {
+        const raw = sessionStorage.getItem(PENDING_WORK_CONTEXT_STORAGE_KEY);
+        if (!raw) return null;
+        const context = JSON.parse(raw);
+        if (!context || Number(context.version) !== 1 || Date.now() - Number(context.savedAt || 0) > PENDING_WORK_CONTEXT_MAX_AGE_MS) {
+            sessionStorage.removeItem(PENDING_WORK_CONTEXT_STORAGE_KEY);
+            return null;
+        }
+        return context;
+    } catch (error) {
+        sessionStorage.removeItem(PENDING_WORK_CONTEXT_STORAGE_KEY);
+        return null;
+    }
+}
+
+async function resumePendingWorkContext() {
+    const context = readPendingWorkContext();
+    if (!context) return false;
+    try {
+        if (context.state && typeof restoreAppHistoryState === 'function') {
+            await restoreAppHistoryState(context.state);
+            if (typeof syncAppHistory === 'function') syncAppHistory('replace');
+        }
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        window.scrollTo({top: Math.max(0, Number(context.scrollY || 0)), left: 0, behavior: 'auto'});
+        if (context.editor?.type === 'match-events' && Number(context.editor.matchId) > 0 && typeof openMatchEventEditor === 'function') {
+            await openMatchEventEditor(Number(context.editor.matchId));
+        } else if (context.focusId) {
+            document.getElementById(context.focusId)?.focus({preventScroll: true});
+        }
+        sessionStorage.removeItem(PENDING_WORK_CONTEXT_STORAGE_KEY);
+        showUiToast('登录成功，已恢复之前的工作位置', 'success');
+        return true;
+    } catch (error) {
+        console.error('Unable to resume pending work context:', error);
+        showUiToast('登录成功，但工作位置未能自动恢复', 'warning');
+        return false;
+    }
 }
 
 function showConfirmDialog(options = {}) {
@@ -335,12 +479,38 @@ function formatDataStatusTime(value) {
 
 function dataStatusMeta(item) {
     const parts = [];
-    if (Number(item.updated_round || 0) > 0) parts.push(`更新至第 ${Number(item.updated_round)} 轮`);
+    const updatedRound = Number(item.updated_round || 0);
+    const latestRound = Number(item.latest_round || 0);
+    if (updatedRound > 0) {
+        if (item.key === 'suspensions') {
+            parts.push(`已核对第 ${updatedRound} 轮`);
+            parts.push(`适用于第 ${updatedRound + 1} 轮`);
+        } else if (item.key === 'player_rankings') {
+            parts.push(`明细至第 ${updatedRound} 轮`);
+        } else {
+            parts.push(`赛果至第 ${updatedRound} 轮`);
+        }
+    }
+    if (latestRound > 0 && latestRound !== updatedRound) {
+        parts.push(item.key === 'suspensions' ? `目标第 ${latestRound} 轮` : `赛程共 ${latestRound} 轮`);
+    }
     if (Number(item.issue_count || 0) > 0) parts.push(`${Number(item.issue_count)} 项待处理`);
     if (item.data_version) parts.push(`版本 ${item.data_version}`);
+    if (item.source) parts.push(`来源 ${item.source}`);
     const updateTime = formatDataStatusTime(item.updated_at);
     if (updateTime) parts.push(`${updateTime} 更新`);
     return parts;
+}
+
+function getDataStatusDisplayLabel(item) {
+    const labels = {
+        normal: '已同步',
+        pending: '待补录',
+        stale: '已延迟',
+        error: '需修正',
+        unknown: '待确认',
+    };
+    return labels[item?.status] || item?.status_label || '待确认';
 }
 
 function renderDataStatusStrip(containerId, key, scope = 'all') {
@@ -358,12 +528,13 @@ function renderDataStatusStrip(containerId, key, scope = 'all') {
         return;
     }
     const meta = dataStatusMeta(item);
-    const ariaLabel = `${item.scope !== 'all' ? `${item.scope}` : ''}${item.label}，${item.status_label}，${item.message}`;
+    const displayLabel = getDataStatusDisplayLabel(item);
+    const ariaLabel = `${item.scope !== 'all' ? `${item.scope}` : ''}${item.label}，${displayLabel}，${item.message}`;
     container.hidden = false;
     container.innerHTML = `
         <button class="data-status-strip is-${escapeHtml(item.status || 'unknown')}" type="button" onclick="openDataStatusItem(${dataStatusJsString(item.key)}, ${dataStatusJsString(item.scope || 'all')})" aria-label="${escapeHtml(ariaLabel)}">
             <span class="data-status-icon">${dataStatusIconSvg(item.status)}</span>
-            <span class="data-status-state">${escapeHtml(item.status_label || '状态未知')}</span>
+            <span class="data-status-state">${escapeHtml(displayLabel)}</span>
             <span class="data-status-copy"><strong>${escapeHtml(item.message || item.label)}</strong>${meta.length ? `<small>${meta.map(value => escapeHtml(value)).join('<i>·</i>')}</small>` : ''}</span>
             <span class="data-status-action">查看</span>
         </button>
@@ -383,7 +554,7 @@ async function loadDataStatus(options = {}) {
     }
     if (dataStatusLoadPromise && options.force !== true) return dataStatusLoadPromise;
     dataStatusLoadError = '';
-    dataStatusLoadPromise = fetch('/api/data-status')
+    dataStatusLoadPromise = fetchWithTimeout('/api/data-status')
         .then(async response => {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             dataStatusData = await response.json();
@@ -458,7 +629,7 @@ async function loadAttributeVersionCatalog(options = {}) {
         };
     }
 
-    const response = await fetch('/api/attributes/versions');
+    const response = await fetchWithTimeout('/api/attributes/versions');
     const payload = await response.json();
     availableAttributeVersions = Array.isArray(payload.available_versions) ? payload.available_versions : [];
     defaultAttributeVersionPlayerCount = Number(payload.default_version_player_count || 0);
@@ -477,12 +648,12 @@ function buildAttributeVersionedPath(path, version) {
 
 async function fetchDatabaseSearchResults(name, options = {}) {
     const version = normalizeAttributeVersion(options.version || getCurrentAttributeVersion());
-    const res = await fetch(buildAttributeVersionedPath(`/api/attributes/search/${encodeURIComponent(name)}`, version));
+    const res = await fetchWithTimeout(buildAttributeVersionedPath(`/api/attributes/search/${encodeURIComponent(name)}`, version));
     return await res.json();
 }
 
 async function fetchDatabaseAdvancedSearchResults(payload) {
-    const response = await fetch('/api/attributes/advanced-search', {
+    const response = await fetchWithTimeout('/api/attributes/advanced-search', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload),
@@ -508,6 +679,10 @@ function toggleTheme() {
 
 function updateThemeStyles() {
     document.body.classList.toggle('light-mode', !isDarkMode);
+    if (document.documentElement) {
+        document.documentElement.dataset.themeMode = isDarkMode ? 'dark' : 'light';
+        document.documentElement.style.colorScheme = isDarkMode ? 'dark' : 'light';
+    }
     syncThemeToggleState();
 }
 
@@ -781,7 +956,13 @@ function showModal(title, body, options = {}) {
     document.getElementById('modalTitle').textContent = title;
     document.getElementById('modalBody').innerHTML = body;
     const modal = document.getElementById('resultModal');
+    const inferredTone = /失败|错误|失效|未授权|无法/.test(String(title || ''))
+        ? 'danger'
+        : (/警告|注意/.test(String(title || '')) ? 'warning' : 'info');
+    const tone = ['info', 'warning', 'danger'].includes(options.tone) ? options.tone : inferredTone;
     resultModalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    modal.classList.remove('is-info', 'is-warning', 'is-danger');
+    modal.classList.add(`is-${tone}`);
     modal.classList.toggle('is-locked', options.locked === true);
     modal.classList.add('active');
     modal.setAttribute('aria-hidden', 'false');
@@ -805,6 +986,7 @@ function closeModal(options = {}) {
 }
 
 window.AppCore = {
+    fetchWithTimeout,
     fetchDatabaseSearchResults,
     fetchDatabaseAdvancedSearchResults,
     loadAttributeVersionCatalog,
@@ -823,10 +1005,13 @@ window.AppCore = {
     closeModal,
     renderUiState,
     showUiToast,
+    showSuccessToast,
     setUiButtonBusy,
     setUiFieldError,
     setUiInlineFeedback,
     workJsonRequest,
+    capturePendingWorkContext,
+    resumePendingWorkContext,
     showConfirmDialog,
     uiIconSvg,
 };
