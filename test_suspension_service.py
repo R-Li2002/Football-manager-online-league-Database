@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import Player, PlayerSuspensionRecord, Team
+from models import Match, Player, PlayerSuspensionRecord, Team
 from schemas_write import SiteNoteUpdateRequest, SuspensionRecordUpdateRequest
 from services import export_service, site_note_service, suspension_service
 
@@ -39,6 +39,30 @@ class SuspensionServiceTest(unittest.TestCase):
         request = SuspensionRecordUpdateRequest(player_uid=uid, **payload)
         return suspension_service.update_suspension_record(self.db, "editor", request, lambda *_args: None)
 
+    def _add_match(self, round_no, status="scheduled", home_score=None, away_score=None):
+        match = Match(
+            level="超级",
+            round_no=round_no,
+            home_team_id=self.team.id,
+            home_team_name=self.team.name,
+            away_team_name=f"Opponent {round_no}",
+            home_score=home_score,
+            away_score=away_score,
+            status=status,
+        )
+        self.db.add(match)
+        self.db.commit()
+        return match
+
+    def _set_team_round(self, round_no):
+        site_note_service.update_site_note(
+            self.db,
+            "editor",
+            site_note_service.build_suspension_team_note_key(self.team.id),
+            SiteNoteUpdateRequest(text=f"核对至第 {round_no} 轮", round_no=round_no),
+            lambda *_args: None,
+        )
+
     def test_suspensions_are_grouped_by_status(self):
         self._save(101, yellow_cards=1, notes="一黄备注")
         self._save(102, yellow_cards=2)
@@ -51,6 +75,51 @@ class SuspensionServiceTest(unittest.TestCase):
         self.assertEqual([item.player_uid for item in alpha.two_yellows], [102])
         self.assertEqual([item.player_uid for item in alpha.suspended], [103])
         self.assertIn("Alpha Three: 停赛备注", alpha.notes)
+
+    def test_suspension_progress_ahead_suppresses_unsynced_old_fixtures(self):
+        for round_no in (1, 2, 3):
+            self._add_match(round_no)
+        self._set_team_round(2)
+
+        response = suspension_service.get_suspensions(self.db)
+        progress = next(team for team in response.teams if team.team_name == "Alpha").progress
+
+        self.assertEqual(progress.state, "ahead")
+        self.assertEqual(progress.match_completed_round, 0)
+        self.assertEqual(progress.suspension_checked_round, 2)
+        self.assertEqual(progress.applies_from_round, 3)
+        self.assertEqual(progress.progress_floor_round, 2)
+        self.assertEqual(progress.next_match_round, 3)
+        self.assertIn("赛果尚未同步", progress.detail)
+
+    def test_suspension_progress_stale_when_recorded_results_are_ahead(self):
+        for round_no in range(1, 6):
+            self._add_match(round_no, status="played", home_score=round_no, away_score=0)
+        self._add_match(6)
+        self._set_team_round(2)
+
+        response = suspension_service.get_suspensions(self.db)
+        progress = next(team for team in response.teams if team.team_name == "Alpha").progress
+
+        self.assertEqual(progress.state, "stale")
+        self.assertEqual(progress.match_completed_round, 5)
+        self.assertEqual(progress.suspension_checked_round, 2)
+        self.assertEqual(progress.next_match_round, 6)
+        self.assertIn("落后 3 轮", progress.detail)
+
+    def test_explicit_postponement_remains_the_next_match(self):
+        postponed = self._add_match(1, status="postponed")
+        self._add_match(2)
+        self._add_match(3)
+        self._set_team_round(2)
+
+        response = suspension_service.get_suspensions(self.db)
+        progress = next(team for team in response.teams if team.team_name == "Alpha").progress
+
+        self.assertEqual(progress.next_match_id, postponed.id)
+        self.assertEqual(progress.next_match_round, 1)
+        self.assertTrue(progress.next_match_is_postponed)
+        self.assertIn("延期的第 1 轮", progress.detail)
 
     def test_empty_payload_clears_existing_record(self):
         self._save(101, yellow_cards=2)

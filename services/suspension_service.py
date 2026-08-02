@@ -6,9 +6,10 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from models import Player, PlayerSuspensionRecord, Team
+from models import Match, Player, PlayerSuspensionRecord, SiteNote, Team
 from schemas_read import (
     SuspensionPlayerResponse,
+    SuspensionProgressResponse,
     SuspensionsResponse,
     SuspensionTeamResponse,
 )
@@ -16,6 +17,9 @@ from schemas_write import SuspensionRecordUpdateRequest
 from services.admin_common import LogWriter, require_admin
 
 LEAGUE_LEVELS = ["超级", "甲级", "乙级"]
+PLAYED_MATCH_STATUSES = {"played", "home_forfeit", "away_forfeit", "double_forfeit"}
+SUSPENSION_NOTE_PREFIX = "competition.suspensions"
+SUSPENSION_TEAM_NOTE_PREFIX = f"{SUSPENSION_NOTE_PREFIX}.team"
 
 
 def _record_response(record: PlayerSuspensionRecord) -> SuspensionPlayerResponse:
@@ -41,11 +45,149 @@ def _team_sort_key(team: Team) -> tuple[int, str]:
     return (LEAGUE_LEVELS.index(team.level) if team.level in LEAGUE_LEVELS else 99, str(team.name or ""))
 
 
+def _match_belongs_to_team(match: Match, team: Team) -> bool:
+    return bool(
+        match.home_team_id == team.id
+        or match.away_team_id == team.id
+        or match.home_team_name == team.name
+        or match.away_team_name == team.name
+    )
+
+
+def _build_suspension_progress(
+    team: Team,
+    matches: list[Match],
+    team_note: SiteNote | None,
+    level_note: SiteNote | None,
+) -> SuspensionProgressResponse:
+    marker = team_note or level_note
+    checked_round = int(marker.round_no) if marker and marker.round_no is not None else None
+    team_matches = [match for match in matches if match.level == team.level and _match_belongs_to_team(match, team)]
+    completed_rounds = [
+        int(match.round_no)
+        for match in team_matches
+        if match.status in PLAYED_MATCH_STATUSES
+        and match.home_score is not None
+        and match.away_score is not None
+    ]
+    match_completed_round = max(completed_rounds, default=0)
+    progress_floor_round = max(match_completed_round, checked_round or 0)
+    pending_matches = [
+        match
+        for match in team_matches
+        if match.status in {"scheduled", "postponed"}
+        and (match.home_score is None or match.away_score is None)
+        and (match.status == "postponed" or int(match.round_no) > progress_floor_round)
+    ]
+    pending_matches.sort(
+        key=lambda match: (
+            0 if match.status == "postponed" else 1,
+            match.match_date or datetime.max,
+            int(match.round_no),
+            int(match.id),
+        )
+    )
+    next_match = pending_matches[0] if pending_matches else None
+    next_round = int(next_match.round_no) if next_match else None
+    next_is_postponed = bool(next_match and next_match.status == "postponed")
+    marker_source = "team" if team_note else "level" if level_note else None
+
+    if checked_round is None:
+        detail = (
+            f"赛果已更新至第 {match_completed_round} 轮，尚未标注伤停核对轮次"
+            if match_completed_round > 0
+            else "赛果与伤停均尚未形成有效轮次"
+        )
+        return SuspensionProgressResponse(
+            state="unknown",
+            title="伤停轮次待确认",
+            detail=detail,
+            match_completed_round=match_completed_round,
+            progress_floor_round=progress_floor_round,
+            next_match_id=next_match.id if next_match else None,
+            next_match_round=next_round,
+            next_match_is_postponed=next_is_postponed,
+        )
+
+    applies_from_round = checked_round + 1
+    next_detail = "当前没有待进行的联赛比赛"
+    if next_round is not None:
+        next_detail = (
+            f"下一场为延期的第 {next_round} 轮，当前伤停核对已覆盖该场"
+            if next_is_postponed and next_round <= checked_round
+            else f"下一有效比赛为第 {next_round} 轮"
+        )
+
+    if match_completed_round > checked_round:
+        lag = match_completed_round - checked_round
+        return SuspensionProgressResponse(
+            state="stale",
+            title=f"伤停仅核对至第 {checked_round} 轮",
+            detail=f"赛果已更新至第 {match_completed_round} 轮，落后 {lag} 轮；{next_detail}",
+            match_completed_round=match_completed_round,
+            suspension_checked_round=checked_round,
+            applies_from_round=applies_from_round,
+            progress_floor_round=progress_floor_round,
+            next_match_id=next_match.id if next_match else None,
+            next_match_round=next_round,
+            next_match_is_postponed=next_is_postponed,
+            marker_source=marker_source,
+        )
+
+    if checked_round > match_completed_round:
+        recorded_detail = (
+            f"赛果仅录入至第 {match_completed_round} 轮"
+            if match_completed_round > 0
+            else "赛果尚未同步"
+        )
+        return SuspensionProgressResponse(
+            state="ahead",
+            title=f"伤停已提前核对至第 {checked_round} 轮",
+            detail=f"{recorded_detail}；{next_detail}",
+            match_completed_round=match_completed_round,
+            suspension_checked_round=checked_round,
+            applies_from_round=applies_from_round,
+            progress_floor_round=progress_floor_round,
+            next_match_id=next_match.id if next_match else None,
+            next_match_round=next_round,
+            next_match_is_postponed=next_is_postponed,
+            marker_source=marker_source,
+        )
+
+    return SuspensionProgressResponse(
+        state="current",
+        title=checked_round > 0 and f"伤停已核对至第 {checked_round} 轮" or "已完成赛季初伤停确认",
+        detail=(
+            f"伤停适用于下一场第 {next_round} 轮"
+            if next_round is not None and not next_is_postponed
+            else next_detail
+        ),
+        match_completed_round=match_completed_round,
+        suspension_checked_round=checked_round,
+        applies_from_round=applies_from_round,
+        progress_floor_round=progress_floor_round,
+        next_match_id=next_match.id if next_match else None,
+        next_match_round=next_round,
+        next_match_is_postponed=next_is_postponed,
+        marker_source=marker_source,
+    )
+
+
 def get_suspensions(db: Session) -> SuspensionsResponse:
     teams = db.query(Team).filter(Team.level.in_(LEAGUE_LEVELS)).all()
     teams = sorted(teams, key=_team_sort_key)
     team_ids = {team.id for team in teams}
     team_name_to_id = {team.name: team.id for team in teams}
+    matches = db.query(Match).filter(Match.level.in_(LEAGUE_LEVELS)).order_by(Match.round_no, Match.id).all()
+    note_rows = (
+        db.query(SiteNote)
+        .filter(
+            (SiteNote.key.in_([f"{SUSPENSION_NOTE_PREFIX}.{level}" for level in LEAGUE_LEVELS]))
+            | (SiteNote.key.like(f"{SUSPENSION_TEAM_NOTE_PREFIX}.%"))
+        )
+        .all()
+    )
+    notes_by_key = {note.key: note for note in note_rows if note.round_no is not None}
 
     records = (
         db.query(PlayerSuspensionRecord)
@@ -115,6 +257,12 @@ def get_suspensions(db: Session) -> SuspensionsResponse:
                 two_yellows=grouped[team.id]["two_yellows"],
                 suspended=grouped[team.id]["suspended"],
                 notes=grouped[team.id]["notes"],
+                progress=_build_suspension_progress(
+                    team,
+                    matches,
+                    notes_by_key.get(f"{SUSPENSION_TEAM_NOTE_PREFIX}.{team.id}"),
+                    notes_by_key.get(f"{SUSPENSION_NOTE_PREFIX}.{team.level}"),
+                ),
             )
             for team in teams
         ] + orphaned_teams,

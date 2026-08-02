@@ -1343,6 +1343,16 @@ body.light-mode .team-detail-player-link {
     color: #07180f;
 }
 
+.team-discipline-freshness.is-ahead {
+    border-color: color-mix(in srgb, #348bd6 38%, transparent);
+    background: color-mix(in srgb, #348bd6 9%, transparent);
+}
+
+.team-discipline-freshness.is-ahead > span {
+    background: #348bd6;
+    color: #f4f9ff;
+}
+
 .team-discipline-freshness.is-stale {
     border-color: color-mix(in srgb, #f39c12 42%, transparent);
     background: color-mix(in srgb, #f39c12 10%, transparent);

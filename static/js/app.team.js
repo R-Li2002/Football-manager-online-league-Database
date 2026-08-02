@@ -339,51 +339,30 @@ function teamDetailPowerCore(items) {
     </article>`).join('')}</div>`;
 }
 
-function teamDetailSuspensionFreshness(team, siteNotesPayload, nextMatch) {
-    const notes = Array.isArray(siteNotesPayload) ? siteNotesPayload : [];
-    const teamKey = `competition.suspensions.team.${Number(team?.id)}`;
-    const levelKey = `competition.suspensions.${String(team?.level || '')}`;
-    const teamNote = notes.find(item => item?.key === teamKey && item.round_no !== null && item.round_no !== undefined);
-    const levelNote = notes.find(item => item?.key === levelKey && item.round_no !== null && item.round_no !== undefined);
-    const marker = teamNote || levelNote;
-    const updatedRound = marker ? Number(marker.round_no) : null;
-    const nextRound = nextMatch ? teamDetailSafeNumber(nextMatch.round_no) : null;
-    const hasUpdatedRound = Number.isInteger(updatedRound) && updatedRound >= 0;
-
-    if (!hasUpdatedRound) {
-        return {
-            state: 'unknown',
-            title: '伤停轮次待确认',
-            detail: nextRound ? `下一场为第 ${nextRound} 轮，尚未标注伤停核对轮次` : '尚未标注伤停核对轮次',
-        };
+function teamDetailSuspensionFreshness(teamSuspensions) {
+    const progress = teamSuspensions?.progress;
+    if (!progress || !['current', 'ahead', 'stale', 'unknown'].includes(progress.state)) {
+        return {state: 'unknown', title: '伤停轮次待确认', detail: '暂时无法判断数据时效'};
     }
-    if (!nextRound) {
-        return {
-            state: 'current',
-            title: updatedRound > 0 ? `伤停已核对至第 ${updatedRound} 轮` : '已完成赛季初伤停确认',
-            detail: '当前没有待进行的联赛比赛',
-        };
-    }
-    if (updatedRound < nextRound - 1) {
-        return {
-            state: 'stale',
-            title: `伤停仅核对至第 ${updatedRound} 轮`,
-            detail: `下一场为第 ${nextRound} 轮，落后 ${nextRound - updatedRound - 1} 轮未确认`,
-        };
-    }
-    const detail = updatedRound === nextRound - 1
-        ? `与下一场第 ${nextRound} 轮匹配`
-        : `已覆盖下一场第 ${nextRound} 轮`;
     return {
-        state: 'current',
-        title: updatedRound > 0 ? `伤停已核对至第 ${updatedRound} 轮` : '已完成赛季初伤停确认',
-        detail,
+        state: progress.state,
+        title: String(progress.title || '伤停轮次待确认'),
+        detail: String(progress.detail || '暂时无法判断数据时效'),
     };
+}
+
+function teamDetailEffectiveUpcomingMatches(matches, progress) {
+    const floorRound = teamDetailSafeNumber(progress?.progress_floor_round);
+    return matches.filter(match => (
+        match.status === 'postponed'
+        || teamDetailSafeNumber(match.round_no) > floorRound
+    ));
 }
 
 function teamDetailDiscipline(teamSuspensions, freshness) {
     const status = freshness || {state: 'unknown', title: '伤停轮次待确认', detail: '暂时无法判断数据时效'};
-    const freshnessMarkup = `<div class="team-discipline-freshness is-${escapeHtml(status.state)}"><span aria-hidden="true">${status.state === 'current' ? '✓' : status.state === 'stale' ? '!' : '?'}</span><div><strong>${escapeHtml(status.title)}</strong><small>${escapeHtml(status.detail)}</small></div></div>`;
+    const statusIcon = status.state === 'current' ? '✓' : status.state === 'ahead' ? '↗' : status.state === 'stale' ? '!' : '?';
+    const freshnessMarkup = `<div class="team-discipline-freshness is-${escapeHtml(status.state)}"><span aria-hidden="true">${statusIcon}</span><div><strong>${escapeHtml(status.title)}</strong><small>${escapeHtml(status.detail)}</small></div></div>`;
     if (!teamSuspensions) return `${freshnessMarkup}<div class="team-detail-empty-inline">暂无纪律数据。</div>`;
     const sections = [
         ['停赛', teamSuspensions.suspended || [], 'danger'],
@@ -393,7 +372,7 @@ function teamDetailDiscipline(teamSuspensions, freshness) {
     const hasAny = sections.some(([, items]) => items.length);
     if (!hasAny) {
         const clearTitle = status.state === 'current' ? '阵容可用' : '暂无已登记伤停';
-        const clearDetail = status.state === 'current' ? '暂无黄牌累积或停赛记录' : '伤停轮次未匹配，阵容状态仍需确认';
+        const clearDetail = ['current', 'ahead'].includes(status.state) ? '暂无黄牌累积或停赛记录' : '伤停轮次未匹配，阵容状态仍需确认';
         return `${freshnessMarkup}<div class="team-discipline-clear is-${escapeHtml(status.state)}"><span>${status.state === 'current' ? '✓' : '!'}</span><div><strong>${clearTitle}</strong><small>${clearDetail}</small></div></div>`;
     }
     return `${freshnessMarkup}<div class="team-discipline-list">${sections.map(([label, items, tone]) => `<div class="team-discipline-row is-${tone}"><span>${label}</span><strong>${items.length}</strong><p>${items.map(item => escapeHtml(item.player_name || item.name || String(item))).join('、') || '无'}</p></div>`).join('')}</div>`;
@@ -909,7 +888,7 @@ function renderTeamCenterLanding() {
 function renderTeamDetailLoaded(data) {
     const root = document.getElementById('teamDetailRoot');
     if (!root || data.team.name !== currentTeamDetailName) return;
-    const {team, players, standings, matchesPayload, suspensionsPayload, powerPayload, lineupPayload, teamPowerSummaries, cupOutlookPayload, siteNotesPayload} = data;
+    const {team, players, standings, matchesPayload, suspensionsPayload, powerPayload, lineupPayload, teamPowerSummaries, cupOutlookPayload} = data;
     const allPowerItems = Array.isArray(powerPayload?.items) ? powerPayload.items : [];
     const powerByUid = teamDetailSelectPowerShapes(players, allPowerItems);
     const powerItems = [...powerByUid.values()].sort((a, b) => teamDetailSafeNumber(b.heigo_power) - teamDetailSafeNumber(a.heigo_power));
@@ -917,11 +896,12 @@ function renderTeamDetailLoaded(data) {
     const standing = standingRows.find(row => row.team_name === team.name);
     const matches = teamDetailGetMatches(matchesPayload, team);
     const playedMatches = matches.filter(match => teamDetailHasScore(match.home_score) && teamDetailHasScore(match.away_score)).sort((a, b) => teamDetailSafeNumber(b.round_no) - teamDetailSafeNumber(a.round_no));
-    const upcomingMatches = matches.filter(match => !teamDetailHasScore(match.home_score) || !teamDetailHasScore(match.away_score)).sort((a, b) => teamDetailSafeNumber(a.round_no) - teamDetailSafeNumber(b.round_no));
+    const rawUpcomingMatches = matches.filter(match => !teamDetailHasScore(match.home_score) || !teamDetailHasScore(match.away_score)).sort((a, b) => teamDetailSafeNumber(a.round_no) - teamDetailSafeNumber(b.round_no));
+    const teamSuspensions = (Array.isArray(suspensionsPayload?.teams) ? suspensionsPayload.teams : []).find(item => item.team_name === team.name);
+    const upcomingMatches = teamDetailEffectiveUpcomingMatches(rawUpcomingMatches, teamSuspensions?.progress);
     const playedSeries = teamDetailGroupMatchSeries(playedMatches, team, 'desc');
     const upcomingFourSeries = teamDetailGroupMatchSeries(upcomingMatches.slice(0, 4), team, 'asc');
-    const teamSuspensions = (Array.isArray(suspensionsPayload?.teams) ? suspensionsPayload.teams : []).find(item => item.team_name === team.name);
-    const suspensionFreshness = teamDetailSuspensionFreshness(team, siteNotesPayload, upcomingMatches[0]);
+    const suspensionFreshness = teamDetailSuspensionFreshness(teamSuspensions);
     const estimatedRosterAverage = powerItems.length ? powerItems.reduce((sum, item) => sum + teamDetailSafeNumber(item.heigo_power), 0) / powerItems.length : null;
     const wageCap = teamDetailGetWageCap(team);
     const lineupPlayers = teamDetailPlayersWithPower(players, powerByUid, team.name);
@@ -987,7 +967,6 @@ async function loadTeamDetailData(teamName, options = {}) {
         fetchJsonOrThrow(`/api/teams/${team.id}/lineup`),
         loadTeamPowerSummaries(),
         fetchJsonOrThrow(`/api/teams/${team.id}/cup-outlook`),
-        fetchJsonOrThrow('/api/site-notes'),
     ]);
     const value = index => results[index].status === 'fulfilled' ? results[index].value : null;
     const data = {
@@ -1000,7 +979,6 @@ async function loadTeamDetailData(teamName, options = {}) {
         lineupPayload: value(5) || {team_id: team.id, team_name: team.name, formation: '4-3-3', picks: {}, is_saved: false, can_edit: false},
         teamPowerSummaries: value(6),
         cupOutlookPayload: value(7) || {team_id: team.id, team_name: team.name, competitions: []},
-        siteNotesPayload: Array.isArray(value(8)) ? value(8) : [],
     };
     teamDetailCache.set(teamName, data);
     return data;

@@ -731,6 +731,20 @@ class SuspensionPlayerResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class SuspensionProgressResponse(BaseModel):
+    state: Literal["current", "ahead", "stale", "unknown"]
+    title: str
+    detail: str
+    match_completed_round: int = 0
+    suspension_checked_round: Optional[int] = None
+    applies_from_round: Optional[int] = None
+    progress_floor_round: int = 0
+    next_match_id: Optional[int] = None
+    next_match_round: Optional[int] = None
+    next_match_is_postponed: bool = False
+    marker_source: Optional[Literal["team", "level"]] = None
+
+
 class SuspensionTeamResponse(BaseModel):
     team_id: int
     team_name: str
@@ -741,6 +755,7 @@ class SuspensionTeamResponse(BaseModel):
     two_yellows: list[SuspensionPlayerResponse] = Field(default_factory=list)
     suspended: list[SuspensionPlayerResponse] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
+    progress: Optional[SuspensionProgressResponse] = None
 
 
 class SuspensionsResponse(BaseModel):
