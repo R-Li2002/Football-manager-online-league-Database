@@ -23,6 +23,22 @@ let homePromotionModalShownThisVisit = false;
 let homePromotionModalPendingTimer = null;
 let homeDashboardState = {data: null, teamId: 0, loadedAt: 0, error: ''};
 let homeDashboardLoading = null;
+let homeDailyReportPage = 0;
+let homeDailyReportReport = null;
+let homeDailyReportLoading = false;
+let homeDailyReportError = '';
+let homeDailyReportRequestId = 0;
+const HOME_DAILY_REPORT_EVENTS_PER_PAGE = 6;
+const HOME_DAILY_REPORT_SECTION_DEFINITIONS = [
+    {key: 'super', label: '超级', patterns: [/^超级(?:联赛|第)/, /超级联赛/]},
+    {key: 'first', label: '甲级', patterns: [/^甲级(?:联赛|第)/, /甲级联赛/]},
+    {key: 'second', label: '乙级', patterns: [/^乙级(?:联赛|第)/, /乙级联赛/]},
+    {key: 'champions', label: '冠军杯', patterns: [/冠军杯/]},
+    {key: 'europa', label: '联盟杯', patterns: [/联盟杯/]},
+    {key: 'wumingjian', label: '无铭剑杯', patterns: [/无铭剑杯/]},
+    {key: 'suspensions', label: '伤停', patterns: []},
+    {key: 'other', label: '其他', patterns: []},
+];
 
 function updateHeroBadgeState() {
     const heroTeamCount = document.getElementById('heroTeamCount');
@@ -281,21 +297,343 @@ function renderHomeDailyReport(report) {
     `;
 }
 
+function parseHomeDailyReportContent(content) {
+    const overview = [];
+    const sections = [];
+    let activeSection = null;
+    String(content || '').split('\n').forEach(rawLine => {
+        const line = rawLine.trim();
+        if (!line) return;
+        const heading = line.match(/^【([^】]+)】$/);
+        if (heading) {
+            activeSection = {title: heading[1].trim(), lines: []};
+            sections.push(activeSection);
+            return;
+        }
+        if (activeSection) activeSection.lines.push(line);
+        else overview.push(line);
+    });
+    return {overview, sections: sections.filter(section => section.lines.length)};
+}
+
+function buildHomeDailyReportPages(report) {
+    const fullReport = parseHomeDailyReportContent(report?.content || '');
+    const focusReport = parseHomeDailyReportContent(report?.focus_content || '');
+    const focusSection = focusReport.sections.find(section => section.title === '焦点头版')
+        || fullReport.sections.find(section => section.title === '焦点头版');
+    let focusLines = focusSection?.lines || [];
+    if (!focusLines.length && focusReport.overview.length > 1) focusLines = focusReport.overview.slice(1);
+    if (!focusLines.length && focusReport.overview.length === 1 && !fullReport.overview.includes(focusReport.overview[0])) {
+        focusLines = focusReport.overview;
+    }
+    const overview = focusReport.overview[0] || fullReport.overview[0] || '今日暂无新增赛果。';
+    const pages = [{
+        kind: 'focus',
+        label: '焦点头版',
+        overview,
+        categoryKey: 'focus',
+        entries: focusLines.map(line => ({section: '焦点头版', categoryKey: 'focus', categoryLabel: '焦点头版', line})),
+    }];
+    const otherEntries = fullReport.sections
+        .filter(section => section.title !== '焦点头版')
+        .flatMap(section => section.lines.map(line => classifyHomeDailyReportEntry({section: section.title, line})));
+    const groupedEntries = new Map(HOME_DAILY_REPORT_SECTION_DEFINITIONS.map(section => [section.key, []]));
+    otherEntries.forEach(entry => groupedEntries.get(entry.categoryKey)?.push(entry));
+    HOME_DAILY_REPORT_SECTION_DEFINITIONS.forEach(section => {
+        const entries = groupedEntries.get(section.key) || [];
+        const sectionPageCount = Math.ceil(entries.length / HOME_DAILY_REPORT_EVENTS_PER_PAGE);
+        for (let index = 0; index < entries.length; index += HOME_DAILY_REPORT_EVENTS_PER_PAGE) {
+            const pageNumber = Math.floor(index / HOME_DAILY_REPORT_EVENTS_PER_PAGE) + 1;
+            pages.push({
+                kind: 'archive',
+                categoryKey: section.key,
+                label: sectionPageCount > 1 ? `${section.label} ${pageNumber}` : section.label,
+                heading: section.label,
+                overview: `${section.label}板块 · 当日共 ${entries.length} 条事件${sectionPageCount > 1 ? ` · 第 ${pageNumber}/${sectionPageCount} 页` : ''}`,
+                entries: entries.slice(index, index + HOME_DAILY_REPORT_EVENTS_PER_PAGE),
+            });
+        }
+    });
+    return pages;
+}
+
+function classifyHomeDailyReportEntry(entry) {
+    const sourceSection = String(entry?.section || '').trim();
+    const line = String(entry?.line || '').trim();
+    if (sourceSection.includes('伤停')) {
+        return {...entry, categoryKey: 'suspensions', categoryLabel: '伤停'};
+    }
+    const event = parseHomeDailyReportEvent(line);
+    const competition = String(event.competition || '').trim();
+    const classificationText = `${competition} ${line}`.trim();
+    const matchedSection = HOME_DAILY_REPORT_SECTION_DEFINITIONS
+        .filter(section => !['suspensions', 'other'].includes(section.key))
+        .find(section => section.patterns.some(pattern => pattern.test(classificationText)));
+    const category = matchedSection || HOME_DAILY_REPORT_SECTION_DEFINITIONS.find(section => section.key === 'other');
+    return {...entry, categoryKey: category.key, categoryLabel: category.label};
+}
+
+function getActiveHomeDailyReport() {
+    return homeDailyReportReport || homeDashboardState.data?.daily_report || null;
+}
+
+function getHomeDailyReportToday() {
+    return String(homeDashboardState.data?.daily_report?.report_date || homeDailyReportReport?.report_date || '').trim();
+}
+
+function shiftHomeDailyReportIsoDate(value, dayOffset) {
+    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return '';
+    const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    date.setUTCDate(date.getUTCDate() + Number(dayOffset || 0));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
+function renderHomeDailyReportArchiveBar(report) {
+    const selectedDate = String(report?.report_date || '').trim();
+    const today = getHomeDailyReportToday() || selectedDate;
+    const canMoveForward = Boolean(selectedDate && today && selectedDate < today);
+    return `
+        <section class="home-daily-report-archive" aria-label="往期日报选择">
+            <div class="home-daily-report-archive-copy">
+                <span>EDITION ARCHIVE</span><strong>往期日报</strong><small>选择日期查看当日焦点头版和全部事件</small>
+            </div>
+            <div class="home-daily-report-date-controls">
+                <button type="button" onclick="shiftHomeDailyReportDate(-1)" aria-label="查看前一天日报">←</button>
+                <label><span>日报日期</span><input type="date" value="${escapeHtml(selectedDate)}" max="${escapeHtml(today)}" onchange="loadHomeDailyReportDate(this.value)" ${homeDailyReportLoading ? 'disabled' : ''}></label>
+                <button type="button" onclick="shiftHomeDailyReportDate(1)" aria-label="查看后一天日报" ${canMoveForward && !homeDailyReportLoading ? '' : 'disabled'}>→</button>
+                <button class="home-daily-report-today" type="button" onclick="loadHomeDailyReportDate(${homeDashboardJsString(today)})" ${selectedDate === today || homeDailyReportLoading ? 'disabled' : ''}>返回今天</button>
+            </div>
+            ${homeDailyReportLoading ? '<span class="home-daily-report-archive-state is-loading">正在读取所选日报…</span>' : ''}
+            ${homeDailyReportError ? `<span class="home-daily-report-archive-state is-error" role="alert">${escapeHtml(homeDailyReportError)}</span>` : ''}
+        </section>
+    `;
+}
+
+function homeDailyReportSectionClass(section) {
+    if (section === '焦点头版' || section === 'focus') return 'is-focus';
+    if (section === 'super') return 'is-super';
+    if (section === 'first') return 'is-first';
+    if (section === 'second') return 'is-second';
+    if (section === 'champions') return 'is-champions';
+    if (section === 'europa') return 'is-europa';
+    if (section === 'wumingjian') return 'is-wumingjian';
+    if (section === 'suspensions') return 'is-suspensions';
+    if (section === '常规战报') return 'is-results';
+    if (section === '伤停动态') return 'is-suspensions';
+    if (section.includes('排名预测')) return 'is-predictions';
+    if (section.includes('战力')) return 'is-power';
+    return 'is-general';
+}
+
+function homeDailyReportEntityHtml(value, extraTeams = []) {
+    const text = String(value || '');
+    if (!text) return '';
+    const styles = Array.from({length: text.length}, () => ({kind: 'plain', priority: 0}));
+    const mark = (start, end, kind, priority) => {
+        for (let index = Math.max(0, start); index < Math.min(text.length, end); index += 1) {
+            if (priority >= styles[index].priority) styles[index] = {kind, priority};
+        }
+    };
+    for (const match of text.matchAll(/\d{1,2}\s*[:：]\s*\d{1,2}/g)) {
+        mark(match.index, match.index + match[0].length, 'score', 30);
+    }
+    const knownTeams = [...new Set([
+        ...extraTeams,
+        ...(typeof teams !== 'undefined' && Array.isArray(teams) ? teams.map(team => team.name) : []),
+    ].map(team => String(team || '').trim()).filter(Boolean))].sort((a, b) => b.length - a.length);
+    knownTeams.forEach(teamName => {
+        let start = 0;
+        const source = text.toLocaleLowerCase();
+        const needle = teamName.toLocaleLowerCase();
+        while (needle && (start = source.indexOf(needle, start)) >= 0) {
+            mark(start, start + teamName.length, 'team', 10);
+            start += teamName.length;
+        }
+    });
+    const playerPatterns = [
+        /(?:^|[。；！!?，：]\s*)([A-Za-zÀ-ÖØ-öø-ÿĀ-ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ž'’.\-]*(?:\s+[A-Za-zÀ-ÖØ-öø-ÿĀ-ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ž'’.\-]*){0,5}|[\u3400-\u9fff·]{2,12})(?=\s*(?:独中三元|上演帽子戏法|帽子戏法|梅开二度|送出\s*\d+\s*次助攻|贡献\s*\d+\s*球|当选本场最佳))/g,
+        /^\s*([A-Za-zÀ-ÖØ-öø-ÿĀ-ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ž'’.\-]*(?:\s+[A-Za-zÀ-ÖØ-öø-ÿĀ-ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ž'’.\-]*){0,5}|[\u3400-\u9fff·]{2,12})(?=（[^）]*(?:黄|红牌|伤停))/g,
+    ];
+    playerPatterns.forEach(pattern => {
+        for (const match of text.matchAll(pattern)) {
+            const playerName = match[1] || '';
+            const relativeStart = match[0].lastIndexOf(playerName);
+            const start = match.index + Math.max(0, relativeStart);
+            mark(start, start + playerName.length, 'player', 20);
+        }
+    });
+    const chunks = [];
+    let start = 0;
+    let activeKind = styles[0]?.kind || 'plain';
+    for (let index = 1; index <= text.length; index += 1) {
+        const kind = styles[index]?.kind || '';
+        if (index < text.length && kind === activeKind) continue;
+        const escaped = escapeHtml(text.slice(start, index));
+        chunks.push(activeKind === 'plain' ? escaped : `<strong class="home-daily-report-entity is-${activeKind}">${escaped}</strong>`);
+        start = index;
+        activeKind = kind;
+    }
+    return chunks.join('');
+}
+
+function parseHomeDailyReportEvent(line) {
+    const raw = String(line || '').trim();
+    const structured = raw.match(/^(?:【([^】]+)】)?([^｜：]+)｜([^：]+)：(.+)$/);
+    if (!structured) {
+        const tagged = raw.match(/^【([^】]+)】(.*)$/);
+        return {
+            tags: tagged ? tagged[1].split('·').map(tag => tag.trim()).filter(Boolean) : [],
+            competition: '', matchup: '', teams: [], result: '', commentary: (tagged ? tagged[2] : raw).trim(),
+        };
+    }
+    const matchup = structured[3].trim();
+    const teamsInMatchup = matchup.split(/\s+(?:vs|VS|对)\s+/).map(team => team.trim()).filter(Boolean);
+    const body = structured[4].trim();
+    const sentenceEnd = body.indexOf('。');
+    const firstSentence = sentenceEnd >= 0 ? body.slice(0, sentenceEnd) : body;
+    const hasScore = /\d{1,2}\s*[:：]\s*\d{1,2}/.test(firstSentence);
+    return {
+        tags: String(structured[1] || '').split('·').map(tag => tag.trim()).filter(Boolean),
+        competition: structured[2].trim(),
+        matchup,
+        teams: teamsInMatchup,
+        result: hasScore ? firstSentence.trim() : '',
+        commentary: hasScore && sentenceEnd >= 0 ? body.slice(sentenceEnd + 1).trim() : body,
+    };
+}
+
+function renderHomeDailyReportEvent(entry, index, pageKind) {
+    const event = parseHomeDailyReportEvent(entry.line);
+    const sectionClass = homeDailyReportSectionClass(entry.categoryKey || entry.section);
+    return `
+        <article class="home-daily-report-event ${sectionClass} ${pageKind === 'focus' ? 'is-headline' : ''}">
+            <div class="home-daily-report-event-meta">
+                <span>${escapeHtml(event.competition || entry.section)}</span>
+                ${event.tags.map(tag => `<em>${escapeHtml(tag)}</em>`).join('')}
+                <i>${String(index + 1).padStart(2, '0')}</i>
+            </div>
+            ${event.matchup ? `<h3>${homeDailyReportEntityHtml(event.matchup, event.teams)}</h3>` : ''}
+            ${event.result ? `<p class="home-daily-report-result">${homeDailyReportEntityHtml(event.result, event.teams)}</p>` : ''}
+            ${event.commentary ? `<p class="home-daily-report-commentary">${homeDailyReportEntityHtml(event.commentary, event.teams)}</p>` : ''}
+        </article>
+    `;
+}
+
+function renderHomeDailyReportReader(report, requestedPage = 0) {
+    const pages = buildHomeDailyReportPages(report);
+    const pageIndex = Math.max(0, Math.min(pages.length - 1, Number(requestedPage) || 0));
+    const page = pages[pageIndex];
+    const reportDate = String(report.report_date || '').replaceAll('-', '.');
+    return `
+        <div class="home-daily-report-reader-shell">
+            ${renderHomeDailyReportArchiveBar(report)}
+            <nav class="home-daily-report-page-tabs" aria-label="日报页码">
+                ${pages.map((item, index) => `
+                    <button type="button" class="${index === pageIndex ? 'active' : ''}" onclick="setHomeDailyReportPage(${index})" ${index === pageIndex ? 'aria-current="page"' : ''}>
+                        <b>${String(index + 1).padStart(2, '0')}</b><span>${escapeHtml(item.label)}</span>
+                    </button>
+                `).join('')}
+            </nav>
+            <section class="home-daily-report-sheet is-${page.kind} is-section-${escapeHtml(page.categoryKey || 'other')}" aria-live="polite">
+                <div class="home-daily-report-sheet-head">
+                    <div class="home-daily-report-sheet-identity">
+                        <span>${page.kind === 'focus' ? 'HEIGO / FRONT PAGE' : 'HEIGO / FULL WIRE'}</span>
+                        <h2>${page.kind === 'focus' ? '焦点头版' : escapeHtml(page.heading || '全部事件')}</h2>
+                        <p>${escapeHtml(page.overview || `第 ${pageIndex + 1} 页 · 收录当日其余联赛事件`)}</p>
+                    </div>
+                    <div class="home-daily-report-sheet-folio"><span>PAGE</span><strong>${String(pageIndex + 1).padStart(2, '0')}</strong><small>${escapeHtml(reportDate)}</small></div>
+                </div>
+                <div class="home-daily-report-stat-rail">
+                    <span><b>${Number(report.match_count || 0)}</b><small>比赛</small></span>
+                    <span><b>${Number(report.goal_count || 0)}</b><small>进球</small></span>
+                    <span><b>${Number(report.focus_count || 0)}</b><small>焦点</small></span>
+                    <span><b>${Number(report.suspension_count || 0)}</b><small>伤停更新</small></span>
+                </div>
+                <div class="home-daily-report-event-grid">
+                    ${page.entries.length
+                        ? page.entries.map((entry, index) => renderHomeDailyReportEvent(entry, index, page.kind)).join('')
+                        : `<div class="home-daily-report-empty"><strong>${page.kind === 'focus' ? '今日没有独立焦点事件' : '本页暂无其他事件'}</strong><p>${page.kind === 'focus' ? '日报仍会保留比赛总览，其他常规事件可通过后续页查看。' : '当天已记录的事件均已展示完毕。'}</p></div>`}
+                </div>
+                <footer class="home-daily-report-sheet-footer"><span>HEIGO 联机联赛数据库</span><span>${report.status === 'published' ? '人工终稿' : '自动成稿'} · ${pageIndex + 1} / ${pages.length}</span></footer>
+            </section>
+            <div class="home-daily-report-reader-actions">
+                <button class="btn btn-secondary" type="button" onclick="setHomeDailyReportPage(${pageIndex - 1})" ${pageIndex === 0 ? 'disabled' : ''}>上一页</button>
+                <span>第 ${pageIndex + 1} 页，共 ${pages.length} 页</span>
+                <button class="btn btn-secondary" type="button" onclick="setHomeDailyReportPage(${pageIndex + 1})" ${pageIndex >= pages.length - 1 ? 'disabled' : ''}>下一页</button>
+                <button class="btn btn-secondary" type="button" onclick="copyHomeDailyReport()">复制全文</button>
+                <button class="btn btn-primary" type="button" onclick="closeModal()">阅读完成</button>
+            </div>
+        </div>
+    `;
+}
+
+function setHomeDailyReportPage(pageIndex) {
+    const report = getActiveHomeDailyReport();
+    const reader = document.getElementById('homeDailyReportReader');
+    if (!report || !reader) return;
+    const pages = buildHomeDailyReportPages(report);
+    homeDailyReportPage = Math.max(0, Math.min(pages.length - 1, Number(pageIndex) || 0));
+    reader.innerHTML = renderHomeDailyReportReader(report, homeDailyReportPage);
+    const modalBody = reader.closest('.modal-body');
+    if (modalBody) modalBody.scrollTop = 0;
+}
+
+async function loadHomeDailyReportDate(reportDate) {
+    const selectedDate = String(reportDate || '').trim();
+    const currentReport = getActiveHomeDailyReport();
+    const today = getHomeDailyReportToday();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(selectedDate) || (today && selectedDate > today)) {
+        homeDailyReportError = '请选择今天或更早的有效日期。';
+        const reader = document.getElementById('homeDailyReportReader');
+        if (reader && currentReport) reader.innerHTML = renderHomeDailyReportReader(currentReport, homeDailyReportPage);
+        return;
+    }
+    if (currentReport?.report_date === selectedDate && !homeDailyReportError) return;
+    const requestId = ++homeDailyReportRequestId;
+    homeDailyReportLoading = true;
+    homeDailyReportError = '';
+    const reader = document.getElementById('homeDailyReportReader');
+    if (reader && currentReport) reader.innerHTML = renderHomeDailyReportReader(currentReport, homeDailyReportPage);
+    try {
+        const response = await fetchWithTimeout(`/api/daily-report?report_date=${encodeURIComponent(selectedDate)}`);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || '所选日期的日报读取失败');
+        if (requestId !== homeDailyReportRequestId) return;
+        homeDailyReportReport = data;
+        homeDailyReportPage = 0;
+        document.getElementById('modalTitle').textContent = data.title || 'HEIGO 联赛日报';
+    } catch (error) {
+        if (requestId !== homeDailyReportRequestId) return;
+        homeDailyReportError = error.message || '所选日期的日报暂时无法读取，请稍后重试。';
+    } finally {
+        if (requestId !== homeDailyReportRequestId) return;
+        homeDailyReportLoading = false;
+        const activeReport = getActiveHomeDailyReport();
+        const activeReader = document.getElementById('homeDailyReportReader');
+        if (activeReader && activeReport) activeReader.innerHTML = renderHomeDailyReportReader(activeReport, homeDailyReportPage);
+    }
+}
+
+function shiftHomeDailyReportDate(dayOffset) {
+    const report = getActiveHomeDailyReport();
+    const targetDate = shiftHomeDailyReportIsoDate(report?.report_date, dayOffset);
+    if (targetDate) loadHomeDailyReportDate(targetDate);
+}
+
 function openHomeDailyReport() {
     const report = homeDashboardState.data?.daily_report;
     if (!report) return;
-    const content = escapeHtml(report.content || '').replace(/\n/g, '<br>');
-    showModal(escapeHtml(report.title || 'HEIGO 联赛日报'), `
-        <article class="home-daily-report-modal">
-            <div class="home-daily-report-modal-meta"><span>${report.status === 'published' ? '人工终稿' : '自动成稿'}</span><span>${Number(report.match_count || 0)} 场比赛</span><span>${Number(report.goal_count || 0)} 球</span></div>
-            <div class="home-daily-report-modal-copy">${content}</div>
-            <div class="home-daily-report-modal-actions"><button class="btn btn-secondary" type="button" onclick="copyHomeDailyReport()">复制日报</button><button class="btn btn-primary" type="button" onclick="closeModal()">阅读完成</button></div>
-        </article>
-    `);
+    homeDailyReportPage = 0;
+    homeDailyReportReport = report;
+    homeDailyReportLoading = false;
+    homeDailyReportError = '';
+    homeDailyReportRequestId += 1;
+    showModal(report.title || 'HEIGO 联赛日报', `<article class="home-daily-report-reader" id="homeDailyReportReader">${renderHomeDailyReportReader(report, 0)}</article>`);
 }
 
 async function copyHomeDailyReport() {
-    const report = homeDashboardState.data?.daily_report;
+    const report = getActiveHomeDailyReport();
     if (!report) return;
     const text = `${report.title || 'HEIGO 联赛日报'}\n\n${report.content || ''}`.trim();
     try {

@@ -15,6 +15,7 @@ const databaseSearch = fs.readFileSync('static/js/database.search.js', 'utf8');
 const databaseApp = fs.readFileSync('static/js/app.database.js', 'utf8');
 const core = fs.readFileSync('static/js/app.core.js', 'utf8');
 const app = fs.readFileSync('static/app.js', 'utf8');
+const home = fs.readFileSync('static/js/app.home.js', 'utf8');
 
 assert.match(competition, /function renderDesktopStandingsTable\(/, 'desktop standings should use the compact scoped table');
 assert.match(competition, /renderMobileStandingsCards\(level, grouped\[level\]\)/, 'mobile standings cards should always be rendered');
@@ -145,6 +146,19 @@ assert.match(responsiveCss, /#coaches \.coach-auth-summary > \.coach-auth-pill\s
 assert.match(responsiveCss, /#coaches \.coach-auth-actions\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit, minmax\(120px, 1fr\)\)/s, 'mobile coach account actions should evenly fill their row');
 assert.match(responsiveCss, /#coaches \.coach-page-utilities\s*\{[^}]*display:\s*flex[^}]*gap:\s*6px/s, 'mobile coach utility actions should share all available width without an empty column');
 assert.match(responsiveCss, /#coaches \.coach-page-utilities > \.btn\s*\{[^}]*flex:\s*1 1 0[^}]*border-radius:\s*999px/s, 'visible mobile coach utility buttons should automatically fill the entire panel row');
+assert.match(home, /function buildHomeDailyReportPages\(report\)/, 'home daily report should build a dedicated focus page and paginated event pages');
+assert.match(home, /filter\(section => section\.title !== '焦点头版'\)/, 'later daily report pages should exclude focus stories already shown on page one');
+assert.match(home, /const HOME_DAILY_REPORT_EVENTS_PER_PAGE = 6/, 'daily report event pages should fill the desktop two-column layout with six stories');
+assert.match(home, /HOME_DAILY_REPORT_SECTION_DEFINITIONS = \[[\s\S]*label: '超级'[\s\S]*label: '甲级'[\s\S]*label: '乙级'[\s\S]*label: '冠军杯'[\s\S]*label: '联盟杯'[\s\S]*label: '伤停'/, 'non-focus daily report pages should be organized by league, cup, and suspension sections');
+assert.match(home, /function classifyHomeDailyReportEntry\(entry\)/, 'daily report events should be classified into their competition section before pagination');
+assert.match(home, /function setHomeDailyReportPage\(pageIndex\)/, 'home daily report should expose direct page switching');
+assert.match(home, /input type="date"[^>]*max="\$\{escapeHtml\(today\)\}"[^>]*loadHomeDailyReportDate/, 'daily report archive should use a native calendar capped at today');
+assert.match(home, /async function loadHomeDailyReportDate\(reportDate\)/, 'daily report archive should fetch the selected historical date without reloading the home page');
+assert.match(home, /function shiftHomeDailyReportDate\(dayOffset\)/, 'daily report archive should support adjacent-day navigation');
+assert.match(css, /\.home-daily-report-archive\s*\{[^}]*grid-template-columns:\s*minmax\(190px, 1fr\) auto/s, 'daily report archive should integrate date navigation into the reader toolbar');
+assert.match(css, /body\.light-mode \.home-daily-report-reader\s*\{[^}]*--report-paper:\s*#fbfcfe/s, 'daily report reader should provide a light paper palette that follows the site theme');
+assert.match(css, /\.home-daily-report-reader\s*\{[^}]*--report-paper:\s*#111d2d/s, 'daily report reader should provide a dark newswire palette that follows the site theme');
+assert.match(css, /\.home-daily-report-sheet\.is-focus \.home-daily-report-event-grid\s*\{[^}]*grid-template-columns:\s*1fr/s, 'daily report focus page should use a full-width headline flow');
 assert.match(competition, /function toggleMobileSuspensionTeam\(/, 'mobile suspension teams should use progressive detail disclosure');
 assert.match(competition, /var currentSuspensionViewFilter = 'active'/, 'suspensions should default to the compact active-record view');
 assert.match(competition, /function setSuspensionViewFilter\(filter\)/, 'suspensions should support active, attention, and all-team filters');
