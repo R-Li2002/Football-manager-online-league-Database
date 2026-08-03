@@ -91,9 +91,10 @@ docker compose -f docker-compose.yml -f docker-compose.bot.yml up -d --build
 - `NEWS_DAILY_HOUR`
 - `NEWS_HEADLINE_HOURS`
 - `HEIGO_DAILY_REPORT_GROUPS`
-- `HEIGO_DAILY_REPORT_HOUR`
+- `HEIGO_DAILY_REPORT_BROADCAST_HOUR`
+- `HEIGO_DAILY_REPORT_REFRESH_HOUR`
 
-`HEIGO_DAILY_REPORT_GROUPS` 配置日报定时播报群，留空时继承 `NEWS_BROADCAST_GROUPS`，后者再留空则继承 `QQ_BOT_ALLOWED_GROUPS`。日报默认在北京时间 22:00 播报；同一日期和内容指纹只播报一次。群内可发送“联赛日报”查询当天，也可使用 `联赛日报 2026-08-02`、`联赛日报 8月2日`、`昨天联赛日报` 或 `前天联赛日报` 查询指定日期；未写年份且日期晚于今天时按上一年解释，明确写出的未来日期会被拒绝。手动查询不影响定时播报去重。
+`HEIGO_DAILY_REPORT_GROUPS` 配置日报定时播报群，留空时继承 `NEWS_BROADCAST_GROUPS`，后者再留空则继承 `QQ_BOT_ALLOWED_GROUPS`。日报默认在北京时间每天 22:00 生成并预热当天焦点图，不向群聊发送；次日 10:00 向配置群播报昨天的焦点头版。同一报告日期在每个群只播报一次。旧变量 `HEIGO_DAILY_REPORT_HOUR` 仅作为未配置新播报时间时的兼容回退。群内可发送“联赛日报”查询当天，也可使用 `联赛日报 2026-08-02`、`联赛日报 8月2日`、`昨天联赛日报` 或 `前天联赛日报` 查询指定日期；未写年份且日期晚于今天时按上一年解释，明确写出的未来日期会被拒绝。手动查询不影响定时播报去重。
 
 日报回复采用“标题 + 焦点头版 PNG”：图片最多展示 6 组争冠、升级、保级、帽子戏法、大胜或以下克上焦点，并统一使用当前 54 支球队的常见中文名。每条新闻按赛事标签、对阵、赛果行和解读正文分层显示；同组主客两场比分固定在一行，比分使用金色强调，球队名加粗，主要球员姓名使用绿色高亮。主客两场合并只影响展示，每场比分与积分计算仍彼此独立。主站进入赛季后段后会根据排名预测自动使用“争冠关键战 / 升级关键战 / 保级关键战”关键词，机器人直接沿用同一焦点头版。图片发送异常时自动降级为焦点文字，主站完整日报不受影响。
 

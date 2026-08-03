@@ -7212,12 +7212,16 @@ body:not(.light-mode) .team-center-lineup-capture {
     }
 }
 
-/* Mobile coach account controls use full-width pill rows instead of shrinking
- * mixed pills and buttons into vertical text or leaving an empty outer cell. */
+/* Mobile coach account controls use compact full-width pill rows instead of
+ * stacking every identity token and action as a separate large row. */
 @media (max-width: 780px) {
     #coaches .coach-page-head {
-        gap: 12px;
-        padding: 12px;
+        width: 100%;
+        min-width: 0;
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+        padding: 10px;
     }
 
     #coaches .coach-page-actions {
@@ -7226,33 +7230,37 @@ body:not(.light-mode) .team-center-lineup-capture {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
         align-items: stretch;
-        gap: 8px;
+        gap: 6px;
     }
 
     #coaches .coach-auth-box {
-        grid-column: 1 / -1;
         width: 100%;
         min-width: 0;
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
         align-items: stretch;
-        gap: 8px;
+        gap: 6px;
     }
 
-    #coaches .coach-auth-box > .coach-auth-pill,
-    #coaches .coach-auth-box > .coach-auth-action,
-    #coaches .coach-auth-box > .btn {
+    #coaches .coach-auth-summary {
+        width: 100%;
+        min-width: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(82px, 1fr));
+        gap: 6px;
+    }
+
+    #coaches .coach-auth-summary > .coach-auth-pill {
         box-sizing: border-box;
         width: 100%;
         min-width: 0;
-        min-height: 44px;
+        min-height: 30px;
         margin: 0;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        padding: 8px 10px;
+        padding: 4px 8px;
         border-radius: 999px;
-        font-size: 0.78rem;
+        font-size: 0.7rem;
         font-weight: 850;
         line-height: 1.2;
         text-align: center;
@@ -7264,20 +7272,56 @@ body:not(.light-mode) .team-center-lineup-capture {
         touch-action: manipulation;
     }
 
-    #coaches .coach-auth-action.is-logout {
+    #coaches .coach-auth-summary > .coach-auth-pill.is-security {
         grid-column: 1 / -1;
+    }
+
+    #coaches .coach-auth-actions {
+        width: 100%;
+        min-width: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        align-items: stretch;
+        gap: 6px;
+    }
+
+    #coaches .coach-auth-actions > .coach-auth-action {
+        width: 100%;
+        min-width: 0;
+        min-height: 44px;
+        margin: 0;
+        padding: 7px 10px;
+        border-radius: 999px;
+        font-size: 0.76rem;
+        line-height: 1.2;
+        white-space: nowrap;
+        word-break: keep-all;
+        writing-mode: horizontal-tb;
+    }
+
+    #coaches .coach-auth-action.is-logout {
         border-color: color-mix(in srgb, #c74658 34%, var(--border-color));
         background: color-mix(in srgb, #c74658 8%, var(--bg-secondary));
         color: #c74658;
     }
 
-    #coaches .coach-page-actions > .btn {
-        grid-column: 1 / -1;
+    #coaches .coach-page-utilities {
         width: 100%;
+        min-width: 0;
+        display: flex;
+        align-items: stretch;
+        gap: 6px;
+    }
+
+    #coaches .coach-page-utilities > .btn {
+        flex: 1 1 0;
+        width: auto;
         min-width: 0;
         min-height: 44px;
         margin: 0;
+        padding: 7px 10px;
         border-radius: 999px;
+        font-size: 0.76rem;
         white-space: nowrap;
         word-break: keep-all;
         writing-mode: horizontal-tb;

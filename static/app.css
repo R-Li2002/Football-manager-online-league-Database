@@ -3867,6 +3867,14 @@ body.light-mode .coach-profile-link {
     gap: 8px;
 }
 
+.coach-auth-summary,
+.coach-auth-actions,
+.coach-page-utilities {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .coach-auth-pill,
 .coach-account-status,
 .coach-upload-hint {

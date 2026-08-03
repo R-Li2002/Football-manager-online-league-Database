@@ -481,8 +481,10 @@
                         </div>
                         <div class="coach-page-actions">
                             <div id="coachAuthBox" class="coach-auth-box"></div>
-                            <button class="btn btn-secondary" type="button" onclick="loadCoaches({force: true})">刷新</button>
-                            <button class="btn btn-primary coach-admin-only" type="button" onclick="syncCoachesFromTeams()">同步教练</button>
+                            <div class="coach-page-utilities">
+                                <button class="btn btn-secondary" type="button" onclick="loadCoaches({force: true})">刷新</button>
+                                <button class="btn btn-primary coach-admin-only" type="button" onclick="syncCoachesFromTeams()">同步教练</button>
+                            </div>
                         </div>
                     </div>
                     <div id="coachDirectoryBoard"><div class="loading">加载中...</div></div>

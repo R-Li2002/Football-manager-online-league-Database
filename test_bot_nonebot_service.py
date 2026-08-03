@@ -537,12 +537,18 @@ class BotNoneBotServiceTests(unittest.TestCase):
     def test_settings_from_env_honors_heigo_daily_report_schedule(self):
         with patch.dict(
             "os.environ",
-            {"NEWS_BROADCAST_GROUPS": "123", "HEIGO_DAILY_REPORT_GROUPS": "456,789", "HEIGO_DAILY_REPORT_HOUR": "22"},
+            {
+                "NEWS_BROADCAST_GROUPS": "123",
+                "HEIGO_DAILY_REPORT_GROUPS": "456,789",
+                "HEIGO_DAILY_REPORT_BROADCAST_HOUR": "10",
+                "HEIGO_DAILY_REPORT_REFRESH_HOUR": "22",
+            },
             clear=False,
         ):
             settings = BotSettings.from_env()
         self.assertEqual(settings.heigo_daily_report_groups, ("456", "789"))
-        self.assertEqual(settings.heigo_daily_report_hour, 22)
+        self.assertEqual(settings.heigo_daily_report_broadcast_hour, 10)
+        self.assertEqual(settings.heigo_daily_report_refresh_hour, 22)
 
     def test_handle_football_news(self):
         reply = asyncio.run(self.service.handle_text("新闻"))

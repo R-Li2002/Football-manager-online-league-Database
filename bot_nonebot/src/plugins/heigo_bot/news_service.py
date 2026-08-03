@@ -74,6 +74,16 @@ class SeenNewsStore:
 
         return fresh
 
+    def has_seen(self, feed_key: str, link: str) -> bool:
+        state = self._load()
+        return link in state.get(feed_key, [])
+
+    def mark_seen(self, feed_key: str, link: str) -> None:
+        state = self._load()
+        seen_links = list(state.get(feed_key, []))
+        state[feed_key] = list(dict.fromkeys([link, *seen_links]))[: self.max_links]
+        self._save(state)
+
     def _load(self) -> dict[str, list[str]]:
         try:
             raw = json.loads(self.file_path.read_text(encoding="utf-8"))

@@ -43,6 +43,22 @@ class HeigoApiClient:
         suffix = f"?{urlencode(query)}" if query else ""
         return f"{self.render_base_url}/api/daily-report/image{suffix}"
 
+    async def warm_daily_report_image(
+        self,
+        report_date: str,
+        fingerprint: str | None = None,
+        *,
+        focus_only: bool = True,
+    ) -> str:
+        params: dict[str, str] = {"report_date": report_date}
+        if fingerprint:
+            params["fingerprint"] = fingerprint[:16]
+        if focus_only:
+            params["scope"] = "focus"
+        async with self._client.stream("GET", "/api/daily-report/image", params=params) as response:
+            response.raise_for_status()
+            return str(response.headers.get("X-Render-Cache") or "ok")
+
     async def get_standings(self, level: str) -> dict[str, Any]:
         response = await self._client.get("/api/standings", params={"level": level})
         response.raise_for_status()

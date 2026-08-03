@@ -2,7 +2,8 @@
 
 import asyncio
 from dataclasses import replace
-from datetime import datetime, time as day_time, timedelta
+from datetime import datetime
+import logging
 from zoneinfo import ZoneInfo
 
 from nonebot import get_bots, get_driver, on_message
@@ -16,9 +17,15 @@ from .command_schema import create_command_matchers
 from .config import BotSettings
 from .heigo_api import HeigoApiClient
 from .models import CommandSpec, ReplySpec
-from .news_service import NewsItem, SeenNewsStore
+from .news_service import SeenNewsStore
 from .parser import parse_command
 from .rate_limit import InMemoryRateLimiter
+from .scheduling import (
+    DAILY_REPORT_BROADCAST_JOB,
+    DAILY_REPORT_REFRESH_JOB,
+    execute_daily_report_job,
+    scheduled_targets,
+)
 from .service import HeigoBotService
 from .signer import RenderUrlSigner
 
@@ -34,6 +41,7 @@ signer = RenderUrlSigner(
 rate_limiter = InMemoryRateLimiter()
 service = HeigoBotService(api_client, signer, settings)
 seen_news_store = SeenNewsStore(settings.news_seen_store_path)
+logger = logging.getLogger(__name__)
 
 driver = get_driver()
 
@@ -44,41 +52,80 @@ async def _close_clients() -> None:
     await service.news_service.aclose()
 
 
-def _next_run_at(hour: int, now: datetime) -> datetime:
-    target = datetime.combine(now.date(), day_time(hour=hour), tzinfo=now.tzinfo)
-    if target <= now:
-        target += timedelta(days=1)
-    return target
-
-
 def _scheduled_targets(now: datetime) -> list[tuple[datetime, str]]:
-    targets = [(_next_run_at(settings.news_daily_hour, now), "football_daily")]
-    targets.extend((_next_run_at(hour, now), "football_news") for hour in settings.news_headline_hours)
-    if settings.heigo_daily_report_groups:
-        targets.append((_next_run_at(settings.heigo_daily_report_hour, now), "heigo_daily_report"))
-    return targets
+    return scheduled_targets(
+        now,
+        news_daily_hour=settings.news_daily_hour,
+        news_headline_hours=settings.news_headline_hours,
+        include_daily_report=bool(settings.heigo_daily_report_groups),
+        daily_report_broadcast_hour=settings.heigo_daily_report_broadcast_hour,
+        daily_report_refresh_hour=settings.heigo_daily_report_refresh_hour,
+    )
+
+
+async def _broadcast_daily_report(report: dict, report_date: str) -> None:
+    bots = get_bots()
+    if not bots:
+        return
+    bot = next(iter(bots.values()))
+    fingerprint = str(report.get("fingerprint") or "").strip()
+    title = str(report.get("title") or "HEIGO 联赛日报").strip()
+    focus_content = str(report.get("focus_content") or report.get("content") or "昨日暂无可播报内容。").strip()
+    image_url = api_client.get_daily_report_image_url(report_date, fingerprint, focus_only=True)
+    fallback_text = f"{title}\n\n{focus_content}"
+    marker_link = f"heigo-daily:{report_date}"
+
+    for group_id in settings.heigo_daily_report_groups:
+        feed_key = f"heigo_daily_report:{group_id}"
+        if seen_news_store.has_seen(feed_key, marker_link):
+            continue
+        message = Message()
+        message += MessageSegment.text(f"{title}\n")
+        message += MessageSegment.image(image_url)
+        sent = False
+        try:
+            await bot.send_group_msg(group_id=int(group_id), message=message)
+            sent = True
+        except Exception:
+            try:
+                await bot.send_group_msg(group_id=int(group_id), message=MessageSegment.text(fallback_text))
+                sent = True
+            except Exception:
+                logger.exception("Failed to broadcast HEIGO daily report date=%s group=%s", report_date, group_id)
+        if sent:
+            seen_news_store.mark_seen(feed_key, marker_link)
+
+
+async def _warm_daily_report_image(report_date: str, fingerprint: str) -> None:
+    cache_status = await api_client.warm_daily_report_image(report_date, fingerprint, focus_only=True)
+    logger.info("Refreshed HEIGO daily report date=%s image_cache=%s", report_date, cache_status)
+
+
+async def _run_daily_report_job(command_type: str, now: datetime) -> None:
+    report = await execute_daily_report_job(
+        command_type,
+        now,
+        get_report=api_client.get_daily_report,
+        warm_image=_warm_daily_report_image,
+        broadcast=_broadcast_daily_report,
+    )
+    if command_type == DAILY_REPORT_BROADCAST_JOB:
+        logger.info(
+            "Broadcast HEIGO daily report date=%s groups=%s",
+            report.get("report_date"),
+            len(settings.heigo_daily_report_groups),
+        )
 
 
 async def _send_scheduled_news(command_type: str) -> None:
-    target_groups = settings.heigo_daily_report_groups if command_type == "heigo_daily_report" else settings.news_broadcast_groups
+    target_groups = settings.news_broadcast_groups
     if not target_groups:
         return
 
     image_url = ""
     fallback_text = ""
     try:
-        if command_type == "heigo_daily_report":
-            report = await api_client.get_daily_report()
-            fingerprint = str(report.get("fingerprint") or "").strip()
-            report_date = str(report.get("report_date") or "today").strip()
-            marker = NewsItem(title=str(report.get("title") or "HEIGO 联赛日报"), link=f"heigo-daily:{report_date}:{fingerprint}")
-            fresh_items = seen_news_store.filter_new("heigo_daily_report", [marker], 1)
-            title = str(report.get('title') or 'HEIGO 联赛日报').strip()
-            focus_content = str(report.get('focus_content') or report.get('content') or '今日暂无可播报内容。').strip()
-            text = title
-            fallback_text = f"{title}\n\n{focus_content}"
-            image_url = api_client.get_daily_report_image_url(report_date, fingerprint, focus_only=True)
-        elif command_type == "football_daily":
+        if command_type == "football_daily":
             items = await service.news_service.get_daily()
             fresh_items = seen_news_store.filter_new("dongqiudi_daily", items, settings.news_item_limit)
             text = service._format_news_items("懂球帝早报", fresh_items, settings.news_item_limit)
@@ -117,7 +164,14 @@ async def _news_scheduler_loop() -> None:
         now = datetime.now(tz)
         target, command_type = min(_scheduled_targets(now), key=lambda item: item[0])
         await asyncio.sleep(max(1, (target - now).total_seconds()))
-        await _send_scheduled_news(command_type)
+        run_at = datetime.now(tz)
+        try:
+            if command_type in {DAILY_REPORT_BROADCAST_JOB, DAILY_REPORT_REFRESH_JOB}:
+                await _run_daily_report_job(command_type, run_at)
+            else:
+                await _send_scheduled_news(command_type)
+        except Exception:
+            logger.exception("Scheduled bot job failed: %s", command_type)
 
 
 @driver.on_startup
@@ -145,7 +199,8 @@ if hasattr(driver, "server_app"):
             "news_headline_hours": list(settings.news_headline_hours),
             "news_seen_store_path": settings.news_seen_store_path,
             "heigo_daily_report_group_count": len(settings.heigo_daily_report_groups),
-            "heigo_daily_report_hour": settings.heigo_daily_report_hour,
+            "heigo_daily_report_broadcast_hour": settings.heigo_daily_report_broadcast_hour,
+            "heigo_daily_report_refresh_hour": settings.heigo_daily_report_refresh_hour,
         }
 
 
