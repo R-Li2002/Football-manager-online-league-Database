@@ -154,10 +154,14 @@ function getGlobalCoachInitials(name) {
 
 function renderGlobalCoachAccount() {
     const host = document.getElementById('globalCoachAccount');
-    if (!host) return;
+    if (!host) {
+        document.body?.classList.remove('global-coach-menu-open');
+        return;
+    }
     const account = currentCoachAccount || {authenticated: false};
     if (!account.authenticated) {
         globalCoachMenuOpen = false;
+        document.body?.classList.remove('global-coach-menu-open');
         host.classList.remove('is-open');
         host.innerHTML = '<button class="global-coach-login" type="button" onclick="openGlobalCoachLogin()"><span class="global-coach-login-mark" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.5-4 2.7-6 6.5-6s6 2 6.5 6"/></svg></span><span>教练登录</span></button>';
         if (typeof syncHomeDashboardAccount === 'function') syncHomeDashboardAccount();
@@ -169,6 +173,7 @@ function renderGlobalCoachAccount() {
     const hasWork = Boolean(!account.must_change_password && account.qq_number && (account.can_manage_schedule || account.can_manage_cup_standings || account.can_manage_rankings || account.can_manage_suspensions || account.can_manage_candidate_lists));
     const identityMeta = account.team_name || (account.qq_number ? `QQ ${account.qq_number}` : '教练账号');
     host.classList.toggle('is-open', globalCoachMenuOpen);
+    document.body?.classList.toggle('global-coach-menu-open', globalCoachMenuOpen);
     host.innerHTML = `
         <button class="global-coach-trigger" type="button" aria-haspopup="menu" aria-expanded="${globalCoachMenuOpen ? 'true' : 'false'}" onclick="toggleGlobalCoachMenu(event)">
             <span class="global-coach-avatar">${avatar}</span>
@@ -1373,6 +1378,7 @@ async function showTab(tabName, triggerElement = null, options = {}) {
     const normalizedTab = normalizeAppTabName(tabName);
     const previousTab = getActiveTabName();
     if (previousTab && previousTab !== normalizedTab) {
+        closeGlobalCoachMenu();
         appTabScrollPositions.set(previousTab, Math.max(0, window.scrollY || 0));
     }
     const activationId = ++tabActivationSequence;

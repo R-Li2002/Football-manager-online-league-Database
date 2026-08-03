@@ -223,12 +223,12 @@ function renderCoachAuthBox() {
     if (!host) return;
     if (currentCoachAccount.authenticated) {
         host.innerHTML = `
-            <span class="coach-auth-pill">${escapeHtml(currentCoachAccount.nickname || currentCoachAccount.username || '教练')}</span>
+            <span class="coach-auth-pill is-identity">${escapeHtml(currentCoachAccount.nickname || currentCoachAccount.username || '教练')}</span>
             ${currentCoachAccount.qq_number ? `<span class="coach-auth-pill is-qq">QQ ${escapeHtml(currentCoachAccount.qq_number)}</span>` : ''}
             ${currentCoachAccount.must_change_password ? '<span class="coach-auth-pill is-security">待修改默认密码</span>' : ''}
             ${coachAccountHasWorkPermissions() ? '<span class="coach-auth-pill is-work">工作账号</span>' : ''}
-            ${coachAccountHasWorkPermissions() ? '<button class="btn btn-primary" type="button" onclick="openCoachWorkspace()">进入工作台</button>' : ''}
-            <button class="btn btn-secondary" type="button" onclick="coachLogout()">退出</button>
+            ${coachAccountHasWorkPermissions() ? '<button class="btn btn-primary coach-auth-action is-workspace" type="button" onclick="openCoachWorkspace()">进入工作台</button>' : ''}
+            <button class="btn btn-secondary coach-auth-action is-logout" type="button" onclick="coachLogout()">退出</button>
         `;
         return;
     }

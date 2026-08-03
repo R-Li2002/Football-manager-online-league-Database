@@ -70,14 +70,20 @@ function assertDesktopRankingPlayerNameLinksToAttributeDetail() {
     assert.match(playerRankingsBoard.innerHTML, />António Silva<\/button>/);
 }
 
-function assertMobileRankingPlayerNameLinksToAttributeDetail() {
+function assertMobileRankingUsesWholeCardDisclosure() {
     mobileViewport = true;
     context.renderPlayerRankingsBoard();
 
-    assert.match(playerRankingsBoard.innerHTML, /player-ranking-player-link mobile-player-ranking-name/);
-    assert.match(playerRankingsBoard.innerHTML, /openCompetitionPlayerAttributeDetail\(83320135, 'playerRankings'\)/);
-    assert.match(playerRankingsBoard.innerHTML, /mobile-player-ranking-toggle/);
+    assert.match(playerRankingsBoard.innerHTML, /mobile-player-ranking-row-toggle/);
+    assert.match(playerRankingsBoard.innerHTML, /<strong class="mobile-player-ranking-name">António Silva<\/strong>/);
+    assert.match(playerRankingsBoard.innerHTML, /<small class="mobile-player-ranking-team">A\. Bilbao<\/small>/);
+    assert.doesNotMatch(playerRankingsBoard.innerHTML, /class="mobile-player-ranking-toggle"/);
     assert.doesNotMatch(playerRankingsBoard.innerHTML, /mobile-player-ranking-stats/);
+
+    context.toggleMobilePlayerRankingRow('83320135');
+    assert.match(playerRankingsBoard.innerHTML, /mobile-player-ranking-stats/);
+    assert.match(playerRankingsBoard.innerHTML, /openCompetitionPlayerAttributeDetail\(83320135, 'playerRankings'\)/);
+    assert.match(playerRankingsBoard.innerHTML, /viewTeamPlayers\(&quot;A\. Bilbao&quot;\)/);
 }
 
 function assertMissingUidRemainsPlainText() {
@@ -88,5 +94,5 @@ function assertMissingUidRemainsPlainText() {
 }
 
 assertDesktopRankingPlayerNameLinksToAttributeDetail();
-assertMobileRankingPlayerNameLinksToAttributeDetail();
+assertMobileRankingUsesWholeCardDisclosure();
 assertMissingUidRemainsPlainText();

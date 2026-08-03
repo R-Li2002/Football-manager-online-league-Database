@@ -2394,24 +2394,25 @@ function renderMobilePlayerRankingCards(rows, metricLabel) {
                 const rowKey = String(row.player_uid || `${row.player_name || ''}:${row.team_name || ''}`);
                 const expanded = expandedMobilePlayerRankingRows.has(rowKey);
                 const detailsId = `mobilePlayerRankingDetails-${Number(row.rank || 0)}`;
+                const playerUid = Number(row.player_uid || 0);
                 return `
                 <article class="mobile-player-ranking-card ${expanded ? 'is-expanded' : ''}">
-                    <div class="mobile-player-ranking-rank">${Number(row.rank || 0)}</div>
-                    <div class="mobile-player-ranking-main">
-                        ${renderPlayerRankingPlayerName(row, 'mobile-player-ranking-name')}
-                        <button class="player-link mobile-player-ranking-team" type="button" onclick="viewTeamPlayers(${htmlJsString(row.team_name || '')})">${escapeHtml(row.team_name || '-')}</button>
-                    </div>
-                    <div class="mobile-player-ranking-metric">
-                        <strong>${Number(currentPlayerRankingType === 'assists' ? row.assists || 0 : (currentPlayerRankingType === 'mvps' ? row.mvps || 0 : row.goals || 0))}</strong>
-                        <span>${escapeHtml(metricLabel)}</span>
-                    </div>
-                    <button class="mobile-player-ranking-toggle" type="button" onclick="toggleMobilePlayerRankingRow(${htmlJsString(rowKey)})" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${detailsId}" aria-label="${expanded ? '收起' : '展开'} ${escapeHtml(row.player_name || '-')}详细数据">${uiIconSvg('chevron-down', 'ui-icon is-small')}</button>
-                    ${expanded ? `<div class="mobile-player-ranking-stats" id="${detailsId}">
-                        <span><em>进球</em>${Number(row.goals || 0)}</span>
-                        <span><em>助攻</em>${Number(row.assists || 0)}</span>
-                        <span><em>最佳</em>${Number(row.mvps || 0)}</span>
-                        <span><em>出场</em>${Number(row.appearances || 0)}</span>
-                    </div>` : ''}
+                    <button class="mobile-player-ranking-row-toggle" type="button" onclick="toggleMobilePlayerRankingRow(${htmlJsString(rowKey)})" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${detailsId}" aria-label="${expanded ? '收起' : '展开'} ${escapeHtml(row.player_name || '-')}详细数据">
+                        <span class="mobile-player-ranking-rank">${Number(row.rank || 0)}</span>
+                        <strong class="mobile-player-ranking-name">${escapeHtml(row.player_name || '-')}</strong>
+                        <span class="mobile-player-ranking-metric">
+                            <strong>${Number(currentPlayerRankingType === 'assists' ? row.assists || 0 : (currentPlayerRankingType === 'mvps' ? row.mvps || 0 : row.goals || 0))}</strong>
+                            <span>${escapeHtml(metricLabel)}</span>
+                        </span>
+                        <span class="mobile-player-ranking-chevron" aria-hidden="true">${uiIconSvg('chevron-down', 'ui-icon is-small')}</span>
+                        <small class="mobile-player-ranking-team">${escapeHtml(row.team_name || '-')}</small>
+                    </button>
+                    ${expanded ? `<div class="mobile-player-ranking-details" id="${detailsId}"><div class="mobile-player-ranking-stats">
+                            <span><em>进球</em>${Number(row.goals || 0)}</span>
+                            <span><em>助攻</em>${Number(row.assists || 0)}</span>
+                            <span><em>最佳</em>${Number(row.mvps || 0)}</span>
+                            <span><em>出场</em>${Number(row.appearances || 0)}</span>
+                        </div><div class="mobile-player-ranking-actions">${Number.isInteger(playerUid) && playerUid > 0 ? `<button type="button" onclick="openCompetitionPlayerAttributeDetail(${playerUid}, 'playerRankings')">查看球员</button>` : ''}<button type="button" onclick="viewTeamPlayers(${htmlJsString(row.team_name || '')})">查看球队</button></div></div>` : ''}
                 </article>
             `;}).join('')}
         </div>

@@ -52,6 +52,8 @@
 header.shell-header {
     position: relative;
     z-index: 500;
+    isolation: isolate;
+    overflow: visible;
     text-align: left;
     padding: 0;
     border-bottom: none;
@@ -71,6 +73,7 @@ header.shell-header {
     border-radius: 28px;
     padding: 18px 22px;
     margin-bottom: 20px;
+    overflow: visible;
 }
 
 .brand-stack {
@@ -125,6 +128,11 @@ header.shell-header {
     justify-content: flex-end;
     gap: 12px;
     flex-wrap: wrap;
+    overflow: visible;
+}
+
+body.global-coach-menu-open header.shell-header {
+    z-index: calc(var(--z-popover) + 10);
 }
 
 .global-coach-account {
@@ -292,10 +300,15 @@ header.shell-header {
 
 .global-coach-menu {
     position: absolute;
+    z-index: var(--z-popover);
     top: calc(100% + 10px);
     right: 0;
     width: min(330px, calc(100vw - 24px));
+    max-height: min(70dvh, 540px);
     padding: 10px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
     border: 1px solid color-mix(in srgb, var(--accent-primary) 24%, var(--border-color));
     border-radius: 18px;
     background: color-mix(in srgb, var(--surface-strong) 97%, white 3%);
