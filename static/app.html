@@ -610,6 +610,7 @@
                             <button class="workspace-nav-item" type="button" data-workspace-capability="candidate_lists.write" onclick="openWorkspaceTask('database', 'candidates')">候选名单</button>
                             <button class="workspace-nav-item" type="button" data-workspace-imports data-workspace-view="imports" onclick="showWorkspaceView('imports')">数据导入</button>
                             <button class="workspace-nav-item" type="button" data-workspace-admin-only data-workspace-view="promotions" onclick="showWorkspaceView('promotions')">主页宣传</button>
+                            <button class="workspace-nav-item" type="button" data-workspace-admin-only data-workspace-view="dailyReports" onclick="showWorkspaceView('dailyReports')">每日日报</button>
                             <button class="workspace-nav-item" type="button" data-workspace-admin-only data-workspace-view="logos" onclick="showWorkspaceView('logos')">队徽匹配</button>
                             <button class="workspace-nav-item" type="button" data-workspace-admin-only onclick="showWorkspaceView('accounts')">人员与权限</button>
                             <button class="workspace-nav-item" type="button" data-workspace-admin-only onclick="showWorkspaceView('operations')">数据与系统</button>
@@ -671,6 +672,46 @@
                                 <div><strong>可随时回收</strong><span>下线保留配置，删除永久移除</span></div>
                             </div>
                             <div id="workspacePromotionsList"><div class="loading">加载主页宣传...</div></div>
+                        </section>
+
+                        <section class="workspace-view" id="workspaceDailyReportsView">
+                            <div class="workspace-page-head">
+                                <div><span class="panel-kicker">League Newsroom</span><h2>每日日报</h2><p>把当日赛果、球员高光、伤停动态与战力看点整理成主站和群聊共用的联赛简报。</p></div>
+                                <div class="workspace-daily-report-head-actions">
+                                    <label><span>日报日期</span><input id="workspaceDailyReportDate" type="date" onchange="loadWorkspaceDailyReport({force:true})"></label>
+                                    <button class="btn btn-secondary" type="button" onclick="generateWorkspaceDailyReport()">重新生成</button>
+                                </div>
+                            </div>
+                            <div class="workspace-daily-report-guide">
+                                <div><strong>自动成稿</strong><span>赛果形态决定主句，球员高光或战力反差补充第二句</span></div>
+                                <div><strong>人工终稿</strong><span>保存草稿不会公开；发布后主站和机器人优先使用人工版本</span></div>
+                                <div><strong>22:00 播报</strong><span>未发布人工稿时，机器人使用同日自动生成版本并按指纹去重</span></div>
+                            </div>
+                            <div class="workspace-daily-report-layout">
+                                <article class="workspace-daily-report-desk">
+                                    <div class="workspace-daily-report-desk-head">
+                                        <div><span>HEIGO NEWSWIRE</span><strong>日报终稿台</strong></div>
+                                        <em id="workspaceDailyReportStatus">读取中</em>
+                                    </div>
+                                    <div class="workspace-daily-report-metrics" id="workspaceDailyReportMetrics"></div>
+                                    <label class="workspace-daily-report-title"><span>标题</span><input id="workspaceDailyReportTitle" type="text" maxlength="120" placeholder="HEIGO 联赛日报"></label>
+                                    <label class="workspace-daily-report-copy"><span>正文</span><textarea id="workspaceDailyReportContent" rows="22" maxlength="12000" placeholder="生成后的日报会显示在这里，可直接修改为最终播报稿。"></textarea></label>
+                                    <div class="workspace-daily-report-actions">
+                                        <button class="btn btn-secondary" type="button" onclick="copyWorkspaceDailyReport()">复制全文</button>
+                                        <button class="btn btn-secondary" type="button" onclick="saveWorkspaceDailyReport(false)">保存草稿</button>
+                                        <button class="btn btn-primary" type="button" onclick="saveWorkspaceDailyReport(true)">发布日报</button>
+                                    </div>
+                                </article>
+                                <aside class="workspace-daily-template-library">
+                                    <div class="workspace-daily-template-head">
+                                        <div><span>NARRATIVE LIBRARY</span><strong>日报话术库</strong><small>修改后在下一次“重新生成”时生效</small></div>
+                                        <button class="btn btn-primary" type="button" onclick="showWorkspaceDailyTemplateEditor()">新增话术</button>
+                                    </div>
+                                    <label class="workspace-daily-template-filter"><span>筛选类别</span><select id="workspaceDailyTemplateFilter" onchange="renderWorkspaceDailyTemplates()"><option value="">全部话术</option></select></label>
+                                    <div class="workspace-daily-placeholder-note"><strong>可用占位符</strong><code>{winner}</code><code>{loser}</code><code>{score}</code><code>{total_goals}</code><code>{player}</code><code>{team}</code><code>{goals}</code><code>{assists}</code></div>
+                                    <div id="workspaceDailyTemplatesList"><div class="loading">加载日报话术...</div></div>
+                                </aside>
+                            </div>
                         </section>
 
                         <section class="workspace-view" id="workspaceLogosView">
@@ -1040,14 +1081,14 @@
         </div>
     </div>
 
-    <aside id="compareDock" class="compare-dock" aria-label="球员对比夹"></aside>
-    <aside id="candidateDock" class="candidate-dock" aria-label="候选名单夹"></aside>
+    <aside id="compareDock" class="compare-dock" aria-label="球员对比夹" hidden></aside>
+    <aside id="candidateDock" class="candidate-dock" aria-label="候选名单夹" hidden></aside>
     <button id="workspaceReturnButton" class="workspace-return-button" type="button" aria-label="返回联赛工作台" onclick="showTab('admin')" hidden>
         <span class="workspace-return-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" focusable="false"><path d="m9 7-5 5 5 5M5 12h9a5 5 0 0 1 5 5v2"/></svg></span>
         <span class="workspace-return-label">工作台</span>
     </button>
 
-    <div class="comparison-overlay" id="comparisonOverlay" aria-hidden="true">
+    <div class="comparison-overlay" id="comparisonOverlay" aria-hidden="true" hidden>
         <div class="comparison-shell" role="dialog" aria-modal="true" aria-labelledby="comparisonTitle">
             <div class="comparison-header">
                 <div>

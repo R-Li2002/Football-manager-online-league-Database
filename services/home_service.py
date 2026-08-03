@@ -12,7 +12,7 @@ from schemas_read import (
     HomeDashboardResponse,
     HomeDashboardTeamResponse,
 )
-from services import data_status_service, match_service
+from services import daily_report_service, data_status_service, match_service
 
 VISIBLE_LEVEL = "隐藏"
 LEAGUE_LEVELS = ("超级", "甲级", "乙级")
@@ -158,4 +158,5 @@ def get_home_dashboard(db: Session, *, team_id: int | None = None) -> HomeDashbo
         recent_results=[_dashboard_match(match) for match in recent_matches],
         leaders=leaders,
         team=team_summary,
+        daily_report=daily_report_service.get_public_report(db),
     )

@@ -96,6 +96,23 @@ class MatchServiceTest(unittest.TestCase):
         self.assertEqual((rows[0].away_wins, rows[0].away_draws, rows[0].away_losses), (0, 0, 0))
         self.assertEqual(rows[1].points, 1)
         self.assertEqual((rows[1].away_wins, rows[1].away_draws, rows[1].away_losses), (0, 1, 0))
+        self.assertEqual(len(standings.prediction_summaries), 1)
+        self.assertEqual(standings.prediction_summaries[0].remaining_match_count, 1)
+        self.assertTrue(all(1 <= row.predicted_rank_min <= row.predicted_rank <= row.predicted_rank_max <= 4 for row in rows))
+
+    def test_completed_schedule_collapses_prediction_to_final_rank(self):
+        self.db.add_all([
+            Match(level="超级", round_no=1, home_team_name="Alpha", away_team_name="Beta", home_score=2, away_score=0, status="played"),
+            Match(level="超级", round_no=1, home_team_name="Gamma", away_team_name="Delta", home_score=1, away_score=0, status="played"),
+        ])
+        self.db.commit()
+
+        standings = match_service.get_standings(self.db, level="超级")
+
+        self.assertEqual(standings.prediction_summaries[0].phase, "final")
+        for row in standings.rows:
+            self.assertEqual((row.predicted_rank_min, row.predicted_rank, row.predicted_rank_max), (row.rank, row.rank, row.rank))
+            self.assertEqual(row.prediction_confidence, 1.0)
 
     def test_standings_can_be_limited_to_one_level(self):
         first_home = Team(name="First Home", level="甲级", manager="First Home Boss")

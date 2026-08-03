@@ -97,6 +97,40 @@ class HomePromotion(Base):
     updated_at = Column(DateTime, index=True, default=datetime.now, onupdate=datetime.now)
 
 
+class DailyReportNarrativeTemplate(Base):
+    __tablename__ = "daily_report_narrative_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    category = Column(String, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    template_text = Column(Text, nullable=False)
+    is_active = Column(Integer, index=True, nullable=False, default=1)
+    sort_order = Column(Integer, index=True, nullable=False, default=100)
+    created_by = Column(String)
+    updated_by = Column(String)
+    created_at = Column(DateTime, index=True, default=datetime.now)
+    updated_at = Column(DateTime, index=True, default=datetime.now, onupdate=datetime.now)
+
+
+class DailyReport(Base):
+    __tablename__ = "daily_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    report_date = Column(String(10), unique=True, index=True, nullable=False)
+    title = Column(String, nullable=False)
+    content = Column(Text, nullable=False, default="")
+    payload_json = Column(Text, nullable=False, default="{}")
+    status = Column(String, index=True, nullable=False, default="draft")
+    fingerprint = Column(String, index=True, nullable=False)
+    generated_at = Column(DateTime, index=True, default=datetime.now)
+    published_at = Column(DateTime, index=True)
+    published_by = Column(String)
+    created_by = Column(String)
+    updated_by = Column(String)
+    created_at = Column(DateTime, index=True, default=datetime.now)
+    updated_at = Column(DateTime, index=True, default=datetime.now, onupdate=datetime.now)
+
+
 class SiteVisitStat(Base):
     __tablename__ = "site_visit_stats"
 

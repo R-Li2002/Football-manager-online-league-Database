@@ -88,6 +88,44 @@ class HomePromotionResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class DailyReportNarrativeTemplateResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    category: str
+    category_label: str = ""
+    name: str
+    template_text: str
+    is_active: bool = True
+    sort_order: int = 100
+    created_by: Optional[str] = None
+    updated_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class DailyReportResponse(BaseModel):
+    report_date: str
+    title: str
+    content: str = ""
+    focus_content: str = ""
+    image_url: Optional[str] = None
+    status: Literal["generated", "draft", "published"] = "generated"
+    fingerprint: str = ""
+    match_count: int = 0
+    fixture_group_count: int = 0
+    focus_count: int = 0
+    league_match_count: int = 0
+    cup_match_count: int = 0
+    goal_count: int = 0
+    suspension_count: int = 0
+    generated_at: datetime
+    published_at: Optional[datetime] = None
+    published_by: Optional[str] = None
+    updated_by: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+
 class AuthStatusResponse(BaseModel):
     authenticated: bool
     username: Optional[str] = None
@@ -182,6 +220,7 @@ class HomeDashboardResponse(BaseModel):
     recent_results: list[HomeDashboardMatchResponse] = Field(default_factory=list)
     leaders: list[HomeDashboardLeaderResponse] = Field(default_factory=list)
     team: Optional[HomeDashboardTeamResponse] = None
+    daily_report: Optional[DailyReportResponse] = None
 
 
 class WorkspaceDashboardResponse(BaseModel):
@@ -648,11 +687,33 @@ class StandingRowResponse(BaseModel):
     away_goal_difference: int = 0
     away_points: int = 0
     away_win_rate: float = 0.0
+    predicted_rank: int = 0
+    predicted_rank_min: int = 0
+    predicted_rank_max: int = 0
+    prediction_confidence: float = 0.0
+    champion_probability: float = 0.0
+    title_race_probability: float = 0.0
+    promotion_probability: float = 0.0
+    relegation_probability: float = 0.0
+    prediction_label: str = "排名观察"
+
+
+class StandingsPredictionSummaryResponse(BaseModel):
+    level: str
+    phase: Literal["early", "middle", "late", "run_in", "final"] = "early"
+    phase_label: str = "赛季初段"
+    progress: float = 0.0
+    played_match_count: int = 0
+    remaining_match_count: int = 0
+    total_match_count: int = 0
+    simulations: int = 0
+    interval_label: str = "90%预测区间"
 
 
 class StandingsResponse(BaseModel):
     levels: list[str] = Field(default_factory=list)
     rows: list[StandingRowResponse] = Field(default_factory=list)
+    prediction_summaries: list[StandingsPredictionSummaryResponse] = Field(default_factory=list)
 
 
 class PlayerRankingRowResponse(BaseModel):

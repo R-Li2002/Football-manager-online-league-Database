@@ -61,6 +61,24 @@ class HomePromotionUpsertRequest(BaseModel):
     ends_at: Optional[datetime] = None
 
 
+class DailyReportGenerateRequest(BaseModel):
+    report_date: Optional[str] = None
+
+
+class DailyReportUpdateRequest(BaseModel):
+    title: str
+    content: str
+    publish: bool = False
+
+
+class DailyReportNarrativeTemplateUpsertRequest(BaseModel):
+    category: str
+    name: str
+    template_text: str
+    is_active: bool = True
+    sort_order: int = 100
+
+
 class ImportDatasetSummaryResponse(BaseModel):
     source: str
     created: int = 0

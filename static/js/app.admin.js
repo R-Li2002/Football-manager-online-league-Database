@@ -8,6 +8,8 @@ let workspaceSessionData = null;
 let workspaceDashboardData = null;
 let workspaceAccountsData = [];
 let workspacePromotionsData = [];
+let workspaceDailyReportData = null;
+let workspaceDailyTemplatesData = [];
 let workspaceLogoMatcherData = null;
 let workspaceLogoSelectedTeamId = null;
 let workspaceLogoCandidates = [];
@@ -33,6 +35,13 @@ const WORKSPACE_CAPABILITY_LABELS = {
     'system.maintain': '系统维护',
     'audit.read': '操作记录',
     'feedback.manage': '数据纠错',
+};
+
+const WORKSPACE_DAILY_TEMPLATE_CATEGORIES = {
+    narrow_win: '一球小胜', regular_win: '普通胜利', big_win: '大比分胜利', clean_sheet_rout: '零封大胜', high_scoring_win: '高比分胜利',
+    goalless_draw: '0:0 闷平', draw: '普通平局', high_scoring_draw: '高比分平局', forfeit: '判负结果', double_forfeit: '双方判负',
+    winning_hattrick: '胜方帽子戏法', losing_hattrick: '败方帽子戏法', hattrick: '平局帽子戏法', brace: '梅开二度',
+    playmaker: '多次助攻', goal_and_assist: '传射建功', mvp: '本场最佳', power_upset: '战力下风取胜', power_close: '战力接近',
 };
 
 function workspaceHasCapability(capability) {
@@ -144,7 +153,7 @@ async function openWorkspace(options = {}) {
 }
 
 function showWorkspaceView(viewName, scrollTarget = '') {
-    const normalized = ['home', 'accounts', 'imports', 'promotions', 'logos', 'operations'].includes(viewName) ? viewName : 'home';
+    const normalized = ['home', 'accounts', 'imports', 'promotions', 'dailyReports', 'logos', 'operations'].includes(viewName) ? viewName : 'home';
     document.querySelectorAll('.workspace-view').forEach(view => view.classList.remove('active'));
     document.getElementById(`workspace${normalized[0].toUpperCase()}${normalized.slice(1)}View`)?.classList.add('active');
     document.querySelectorAll('[data-workspace-view]').forEach(button => {
@@ -152,12 +161,222 @@ function showWorkspaceView(viewName, scrollTarget = '') {
     });
     if (normalized === 'accounts') loadWorkspaceAccounts();
     if (normalized === 'promotions') loadWorkspacePromotions();
+    if (normalized === 'dailyReports') loadWorkspaceDailyReport();
     if (normalized === 'logos') loadWorkspaceLogoMatcher();
     if (normalized === 'imports') loadWorkspaceAdminOperations();
     if (normalized === 'operations') loadWorkspaceAdminOperations();
     if (scrollTarget) {
         window.setTimeout(() => document.getElementById(scrollTarget)?.scrollIntoView({behavior: 'smooth', block: 'start'}), 80);
     }
+}
+
+function workspaceLocalDateValue(date = new Date()) {
+    const offset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function getWorkspaceDailyReportDate() {
+    const input = document.getElementById('workspaceDailyReportDate');
+    if (input && !input.value) input.value = workspaceLocalDateValue();
+    return input?.value || workspaceLocalDateValue();
+}
+
+function renderWorkspaceDailyReport() {
+    const report = workspaceDailyReportData;
+    if (!report) return;
+    const title = document.getElementById('workspaceDailyReportTitle');
+    const content = document.getElementById('workspaceDailyReportContent');
+    if (title) title.value = report.title || '';
+    if (content) content.value = report.content || '';
+    const status = document.getElementById('workspaceDailyReportStatus');
+    if (status) {
+        const labels = {generated: '自动预览', draft: '草稿', published: '已发布'};
+        status.textContent = labels[report.status] || '自动预览';
+        status.className = `is-${escapeHtml(report.status || 'generated')}`;
+    }
+    const metrics = document.getElementById('workspaceDailyReportMetrics');
+    if (metrics) {
+        metrics.innerHTML = [
+            ['比赛', report.match_count || 0], ['联赛', report.league_match_count || 0], ['杯赛', report.cup_match_count || 0],
+            ['进球', report.goal_count || 0], ['伤停更新', report.suspension_count || 0],
+        ].map(([label, value]) => `<span><small>${escapeHtml(label)}</small><strong>${Number(value)}</strong></span>`).join('');
+    }
+}
+
+function renderWorkspaceDailyTemplateFilter() {
+    const select = document.getElementById('workspaceDailyTemplateFilter');
+    if (!select) return;
+    const current = select.value;
+    const categories = [...new Set(workspaceDailyTemplatesData.map(item => item.category))]
+        .sort((a, b) => (WORKSPACE_DAILY_TEMPLATE_CATEGORIES[a] || a).localeCompare(WORKSPACE_DAILY_TEMPLATE_CATEGORIES[b] || b, 'zh-CN'));
+    select.innerHTML = '<option value="">全部话术</option>' + categories.map(category => `<option value="${escapeHtml(category)}">${escapeHtml(WORKSPACE_DAILY_TEMPLATE_CATEGORIES[category] || category)}</option>`).join('');
+    if (categories.includes(current)) select.value = current;
+}
+
+function renderWorkspaceDailyTemplates() {
+    const container = document.getElementById('workspaceDailyTemplatesList');
+    if (!container) return;
+    const filter = document.getElementById('workspaceDailyTemplateFilter')?.value || '';
+    const rows = workspaceDailyTemplatesData.filter(item => !filter || item.category === filter);
+    container.innerHTML = rows.length ? `<div class="workspace-daily-template-list">${rows.map(item => `
+        <article class="workspace-daily-template-row ${item.is_active ? '' : 'is-disabled'}">
+            <div class="workspace-daily-template-row-head"><span>${escapeHtml(item.category_label || WORKSPACE_DAILY_TEMPLATE_CATEGORIES[item.category] || item.category)}</span><em>${item.is_active ? '启用' : '停用'}</em></div>
+            <strong>${escapeHtml(item.name)}</strong>
+            <p>${escapeHtml(item.template_text)}</p>
+            <small>排序 ${Number(item.sort_order || 100)}</small>
+            <div><button type="button" onclick="showWorkspaceDailyTemplateEditor(${Number(item.id)})">编辑</button><button type="button" onclick="toggleWorkspaceDailyTemplate(${Number(item.id)})">${item.is_active ? '停用' : '启用'}</button><button class="is-danger" type="button" onclick="confirmDeleteWorkspaceDailyTemplate(${Number(item.id)})">删除</button></div>
+        </article>
+    `).join('')}</div>` : '<div class="workspace-daily-template-empty">当前筛选下没有话术，可以新增一条。</div>';
+}
+
+async function loadWorkspaceDailyReport(options = {}) {
+    const reportDate = getWorkspaceDailyReportDate();
+    const reportMatches = workspaceDailyReportData?.report_date === reportDate;
+    if (reportMatches && workspaceDailyTemplatesData.length && options.force !== true) {
+        renderWorkspaceDailyReport();
+        renderWorkspaceDailyTemplateFilter();
+        renderWorkspaceDailyTemplates();
+        return workspaceDailyReportData;
+    }
+    const [reportResponse, templateResponse] = await Promise.all([
+        fetchWithTimeout(`/api/workspace/daily-reports/${encodeURIComponent(reportDate)}`, {credentials: 'same-origin'}),
+        workspaceDailyTemplatesData.length && options.force !== true
+            ? Promise.resolve(null)
+            : fetchWithTimeout('/api/workspace/daily-report-templates', {credentials: 'same-origin'}),
+    ]);
+    if (!reportResponse.ok) {
+        const data = await reportResponse.json().catch(() => ({}));
+        showModal('日报读取失败', escapeHtml(data.detail || '无法读取当前日期的日报'));
+        return null;
+    }
+    workspaceDailyReportData = await reportResponse.json();
+    if (templateResponse) {
+        if (!templateResponse.ok) {
+            const data = await templateResponse.json().catch(() => ({}));
+            showModal('话术读取失败', escapeHtml(data.detail || '无法读取日报话术库'));
+            return null;
+        }
+        workspaceDailyTemplatesData = await templateResponse.json();
+    }
+    renderWorkspaceDailyReport();
+    renderWorkspaceDailyTemplateFilter();
+    renderWorkspaceDailyTemplates();
+    return workspaceDailyReportData;
+}
+
+async function generateWorkspaceDailyReport() {
+    const reportDate = getWorkspaceDailyReportDate();
+    const response = await fetchWithTimeout('/api/workspace/daily-reports/generate', {
+        method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({report_date: reportDate}),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return showModal('生成失败', escapeHtml(data.detail || '日报生成失败'));
+    workspaceDailyReportData = data;
+    renderWorkspaceDailyReport();
+    showSuccessToast('日报已按最新数据与话术重新生成');
+}
+
+async function saveWorkspaceDailyReport(publish = false) {
+    const reportDate = getWorkspaceDailyReportDate();
+    const title = document.getElementById('workspaceDailyReportTitle')?.value.trim() || '';
+    const content = document.getElementById('workspaceDailyReportContent')?.value.trim() || '';
+    if (!title || !content) return showModal('无法保存', '日报标题和正文不能为空。');
+    const response = await fetchWithTimeout(`/api/workspace/daily-reports/${encodeURIComponent(reportDate)}`, {
+        method: 'PATCH', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title, content, publish}),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return showModal(publish ? '发布失败' : '保存失败', escapeHtml(data.detail || '日报保存失败'));
+    workspaceDailyReportData = data;
+    renderWorkspaceDailyReport();
+    if (typeof loadHomeDashboard === 'function') await loadHomeDashboard({force: true});
+    showSuccessToast(publish ? '日报已发布，主站与机器人将优先使用此版本' : '日报草稿已保存');
+}
+
+async function copyWorkspaceDailyReport() {
+    const title = document.getElementById('workspaceDailyReportTitle')?.value.trim() || '';
+    const content = document.getElementById('workspaceDailyReportContent')?.value.trim() || '';
+    const text = [title, content].filter(Boolean).join('\n\n');
+    if (!text) return;
+    try {
+        await navigator.clipboard.writeText(text);
+        showSuccessToast('日报全文已复制');
+    } catch (_error) {
+        showModal('复制日报', `<textarea class="workspace-daily-copy-fallback" rows="18" readonly>${escapeHtml(text)}</textarea><p>当前浏览器无法直接写入剪贴板，请长按或全选复制。</p>`);
+    }
+}
+
+function showWorkspaceDailyTemplateEditor(templateId = 0) {
+    const item = workspaceDailyTemplatesData.find(entry => Number(entry.id) === Number(templateId)) || {
+        category: 'narrow_win', name: '', template_text: '{winner} {score} 险胜 {loser}，一球之差拿下关键胜利。', is_active: true, sort_order: 100,
+    };
+    showModal(templateId ? '编辑日报话术' : '新增日报话术', `
+        <form class="workspace-daily-template-editor" onsubmit="event.preventDefault(); saveWorkspaceDailyTemplate(${Number(templateId)});">
+            <div class="workspace-daily-template-editor-intro"><span>NEWSROOM LANGUAGE</span><strong>一句话只负责一个戏剧重点，避免无法从数据确认的“逆转、绝杀、补时”。</strong></div>
+            <div class="workspace-daily-template-editor-grid">
+                <label class="form-group"><span>话术类别</span><select id="workspaceDailyTemplateCategory">${Object.entries(WORKSPACE_DAILY_TEMPLATE_CATEGORIES).map(([value,label]) => `<option value="${escapeHtml(value)}" ${item.category === value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select></label>
+                <label class="form-group"><span>话术名称</span><input id="workspaceDailyTemplateName" type="text" maxlength="60" value="${escapeHtml(item.name || '')}" placeholder="例如：帽子戏法难救主"></label>
+                <label class="form-group"><span>排序值</span><input id="workspaceDailyTemplateOrder" type="number" min="0" max="9999" value="${Number(item.sort_order || 100)}"></label>
+                <label class="workspace-daily-template-active"><input id="workspaceDailyTemplateActive" type="checkbox" ${item.is_active ? 'checked' : ''}><span>启用这条话术</span></label>
+            </div>
+            <label class="form-group"><span>话术正文</span><textarea id="workspaceDailyTemplateText" rows="5" maxlength="320">${escapeHtml(item.template_text || '')}</textarea></label>
+            <div class="workspace-daily-template-token-list"><span>比赛</span><code>{winner}</code><code>{loser}</code><code>{home_team}</code><code>{away_team}</code><code>{score}</code><code>{total_goals}</code><span>球员</span><code>{player}</code><code>{team}</code><code>{goals}</code><code>{assists}</code></div>
+            <div class="workspace-daily-template-editor-actions"><button class="btn btn-secondary" type="button" onclick="closeModal()">取消</button><button class="btn btn-primary" type="submit">保存话术</button></div>
+        </form>
+    `);
+}
+
+function readWorkspaceDailyTemplateEditor() {
+    return {
+        category: document.getElementById('workspaceDailyTemplateCategory')?.value || 'narrow_win',
+        name: document.getElementById('workspaceDailyTemplateName')?.value.trim() || '',
+        template_text: document.getElementById('workspaceDailyTemplateText')?.value.trim() || '',
+        is_active: Boolean(document.getElementById('workspaceDailyTemplateActive')?.checked),
+        sort_order: Number(document.getElementById('workspaceDailyTemplateOrder')?.value || 100),
+    };
+}
+
+async function saveWorkspaceDailyTemplate(templateId = 0) {
+    const response = await fetchWithTimeout(templateId ? `/api/workspace/daily-report-templates/${templateId}` : '/api/workspace/daily-report-templates', {
+        method: templateId ? 'PATCH' : 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(readWorkspaceDailyTemplateEditor()),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return showModal('话术保存失败', escapeHtml(data.detail || '请检查类别、占位符和正文格式'));
+    closeModal();
+    workspaceDailyTemplatesData = [];
+    await loadWorkspaceDailyReport({force: true});
+    showSuccessToast(templateId ? '日报话术已更新' : '日报话术已添加');
+}
+
+async function toggleWorkspaceDailyTemplate(templateId) {
+    const item = workspaceDailyTemplatesData.find(entry => Number(entry.id) === Number(templateId));
+    if (!item) return;
+    const response = await fetchWithTimeout(`/api/workspace/daily-report-templates/${templateId}`, {
+        method: 'PATCH', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+            category: item.category, name: item.name, template_text: item.template_text, is_active: !item.is_active, sort_order: Number(item.sort_order || 100),
+        }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return showModal('状态更新失败', escapeHtml(data.detail || '话术状态更新失败'));
+    workspaceDailyTemplatesData = workspaceDailyTemplatesData.map(entry => Number(entry.id) === Number(templateId) ? data : entry);
+    renderWorkspaceDailyTemplates();
+    showSuccessToast(data.is_active ? '日报话术已启用' : '日报话术已停用');
+}
+
+function confirmDeleteWorkspaceDailyTemplate(templateId) {
+    const item = workspaceDailyTemplatesData.find(entry => Number(entry.id) === Number(templateId));
+    if (!item) return;
+    showModal('删除日报话术', `<div class="workspace-promotion-delete-confirm"><strong>${escapeHtml(item.name)}</strong><p>删除后无法恢复；如果只是暂时不希望使用，请选择停用。</p><div><button class="btn btn-secondary" type="button" onclick="closeModal()">取消</button><button class="btn btn-danger" type="button" onclick="deleteWorkspaceDailyTemplate(${Number(templateId)})">确认删除</button></div></div>`);
+}
+
+async function deleteWorkspaceDailyTemplate(templateId) {
+    const response = await fetchWithTimeout(`/api/workspace/daily-report-templates/${templateId}`, {method: 'DELETE', credentials: 'same-origin'});
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return showModal('删除失败', escapeHtml(data.detail || '日报话术删除失败'));
+    closeModal();
+    workspaceDailyTemplatesData = workspaceDailyTemplatesData.filter(entry => Number(entry.id) !== Number(templateId));
+    renderWorkspaceDailyTemplateFilter();
+    renderWorkspaceDailyTemplates();
+    showSuccessToast('日报话术已删除');
 }
 
 function workspaceLogoLevelRank(level) {
@@ -1190,6 +1409,8 @@ async function workspaceLogout() {
     workspaceDashboardData = null;
     workspaceAccountsData = [];
     workspacePromotionsData = [];
+    workspaceDailyReportData = null;
+    workspaceDailyTemplatesData = [];
     workspaceSessionState = {authenticated: false, identity: null};
     if (source === 'coach_account') currentCoachAccount = {authenticated: false};
     await openWorkspace({force: true});

@@ -5892,6 +5892,62 @@ body.player-detail-scroll-snap #playerDetailContent {
         padding: 0 8px 8px;
     }
 
+    .mobile-standing-prediction-row {
+        min-height: 58px;
+        padding: 8px 5px;
+        display: grid;
+        grid-template-columns: 62px minmax(0, 1fr);
+        align-items: center;
+        gap: 8px;
+        border-top: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
+    }
+
+    .mobile-standing-prediction-row > span:first-child {
+        color: var(--text-secondary);
+        font-size: .68rem;
+        font-weight: 800;
+    }
+
+    .standing-prediction.is-mobile {
+        width: 100%;
+        min-width: 0;
+        grid-template-columns: 38px minmax(72px, .8fr) minmax(112px, 1.2fr);
+        gap: 8px;
+    }
+
+    .standing-prediction.is-mobile .standing-prediction-copy strong {
+        font-size: 1rem;
+    }
+
+    .standing-prediction.is-mobile .standing-prediction-copy small {
+        font-size: .6rem;
+    }
+
+    .standing-prediction-context {
+        min-width: 0;
+        display: grid;
+        gap: 2px;
+        line-height: 1.25;
+    }
+
+    .standing-prediction-context em {
+        overflow: hidden;
+        color: var(--prediction-color);
+        font-size: .68rem;
+        font-style: normal;
+        font-weight: 850;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .standing-prediction-context small {
+        overflow: hidden;
+        color: var(--text-tertiary);
+        font-size: .6rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
     .mobile-standings-strip {
         grid-template-columns: repeat(6, minmax(0, 1fr));
         padding-top: 8px;
@@ -5914,6 +5970,14 @@ body.player-detail-scroll-snap #playerDetailContent {
         justify-content: flex-end;
         gap: 8px;
         padding-top: 6px;
+    }
+
+    .standings-prediction-summary {
+        margin-bottom: 10px;
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 2px;
+        font-size: .7rem;
     }
 
     .mobile-standings-detail-actions > button,

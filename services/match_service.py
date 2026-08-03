@@ -18,18 +18,19 @@ from repositories.match_repository import (
     get_match_by_id,
     list_match_events,
     list_matches,
-    list_played_matches,
 )
 from repositories.player_repository import get_players_by_team_name, get_team_players
 from repositories.team_repository import get_team_by_id, get_team_by_name, list_visible_teams
-from schemas_read import MatchPlayerEventResponse, MatchResponse, ScheduleResponse, StandingRowResponse, StandingsResponse
+from schemas_read import MatchPlayerEventResponse, MatchResponse, ScheduleResponse, StandingRowResponse, StandingsPredictionSummaryResponse, StandingsResponse
 from schemas_write import MatchBatchUpdateRequest, MatchPlayerEventUpdateItem, MatchUpdateRequest, ScheduleImportResponse
 from services.admin_common import LogWriter, require_admin
+from services import standings_prediction_service
 
 LEVEL_ORDER = {"超级": 1, "甲级": 2, "乙级": 3}
 VISIBLE_LEVEL = "隐藏"
 FORFEIT_STATUSES = {"home_forfeit", "away_forfeit", "double_forfeit"}
 MATCH_STATUSES = {"scheduled", "played", "postponed", "cancelled", *FORFEIT_STATUSES}
+PLAYED_MATCH_STATUSES = {"played", *FORFEIT_STATUSES}
 MATCH_EVENT_TYPES = {"goal", "own_goal", "assist", "mvp"}
 SCHEDULE_ROOT = Path("imports") / "schedules"
 SCHEDULE_TEAM_ALIASES = {
@@ -349,15 +350,25 @@ def get_standings(db: Session, *, level: str | None = None) -> StandingsResponse
         if normalized:
             rows_by_normalized_name.setdefault(normalized, row)
 
-    for match in list_played_matches(db, level=level):
-        home = rows_by_team_id.get(match.home_team_id) if match.home_team_id is not None else None
-        away = rows_by_team_id.get(match.away_team_id) if match.away_team_id is not None else None
-        home = home or rows_by_lookup_name.get(match.home_team_name)
-        away = away or rows_by_lookup_name.get(match.away_team_name)
-        if not home:
-            home = rows_by_normalized_name.get(_normalize_team_lookup_name(match.home_team_name))
-        if not away:
-            away = rows_by_normalized_name.get(_normalize_team_lookup_name(match.away_team_name))
+    def resolve_match_row(match: Match, side: str) -> dict[str, Any] | None:
+        team_id = getattr(match, f"{side}_team_id")
+        team_name = str(getattr(match, f"{side}_team_name") or "")
+        row = rows_by_team_id.get(team_id) if team_id is not None else None
+        row = row or rows_by_lookup_name.get(team_name)
+        if not row:
+            row = rows_by_normalized_name.get(_normalize_team_lookup_name(team_name))
+        return row
+
+    all_matches = list_matches(db, level=level)
+    played_matches = [
+        match for match in all_matches
+        if match.status in PLAYED_MATCH_STATUSES
+        and match.home_score is not None
+        and match.away_score is not None
+    ]
+    for match in played_matches:
+        home = resolve_match_row(match, "home")
+        away = resolve_match_row(match, "away")
         if not home or not away:
             continue
         home_score = int(match.home_score or 0)
@@ -431,6 +442,7 @@ def get_standings(db: Session, *, level: str | None = None) -> StandingsResponse
         grouped.setdefault(row["level"], []).append(row)
 
     response_rows: list[StandingRowResponse] = []
+    prediction_summaries: list[StandingsPredictionSummaryResponse] = []
     for level in sorted(grouped, key=lambda item: (LEVEL_ORDER.get(item, 99), item)):
         ranked_rows = sorted(
             grouped[level],
@@ -443,11 +455,49 @@ def get_standings(db: Session, *, level: str | None = None) -> StandingsResponse
             ),
         )
         for index, row in enumerate(ranked_rows, start=1):
-            response_rows.append(StandingRowResponse(rank=index, **row))
+            row["rank"] = index
+
+        remaining_fixtures: list[tuple[str, str]] = []
+        resolved_match_count = 0
+        for match in all_matches:
+            if str(match.level or "") != level:
+                continue
+            home = resolve_match_row(match, "home")
+            away = resolve_match_row(match, "away")
+            if not home or not away or home is away:
+                continue
+            is_played = (
+                match.status in PLAYED_MATCH_STATUSES
+                and match.home_score is not None
+                and match.away_score is not None
+            )
+            is_remaining = (
+                match.status in {"scheduled", "postponed"}
+                and match.home_score is None
+                and match.away_score is None
+            )
+            if not is_played and not is_remaining:
+                continue
+            resolved_match_count += 1
+            if is_remaining:
+                remaining_fixtures.append((str(home["team_name"]), str(away["team_name"])))
+
+        prediction = standings_prediction_service.predict_level(
+            level,
+            ranked_rows,
+            remaining_fixtures,
+            total_match_count=resolved_match_count,
+        )
+        prediction_summaries.append(StandingsPredictionSummaryResponse(**prediction["summary"]))
+        predictions_by_team = prediction["teams"]
+        for row in ranked_rows:
+            row.update(predictions_by_team.get(str(row["team_name"]), {}))
+            response_rows.append(StandingRowResponse(**row))
 
     return StandingsResponse(
         levels=sorted(grouped, key=lambda item: (LEVEL_ORDER.get(item, 99), item)),
         rows=response_rows,
+        prediction_summaries=prediction_summaries,
     )
 
 

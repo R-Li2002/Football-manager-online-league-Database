@@ -58,6 +58,8 @@ class BotSettings:
     news_daily_hour: int = 9
     news_headline_hours: tuple[int, ...] = (12, 15, 18)
     news_seen_store_path: str = "/app/data/bot-news-state.json"
+    heigo_daily_report_groups: tuple[str, ...] = ()
+    heigo_daily_report_hour: int = 22
 
     @classmethod
     def from_env(cls) -> "BotSettings":
@@ -65,6 +67,7 @@ class BotSettings:
         render_base_url = os.environ.get("HEIGO_RENDER_BASE_URL", heigo_base_url).rstrip("/")
         allowed_groups = _parse_csv(os.environ.get("QQ_BOT_ALLOWED_GROUPS"))
         broadcast_groups = _parse_csv(os.environ.get("NEWS_BROADCAST_GROUPS")) or allowed_groups
+        daily_report_groups = _parse_csv(os.environ.get("HEIGO_DAILY_REPORT_GROUPS")) or broadcast_groups
         return cls(
             heigo_base_url=heigo_base_url,
             heigo_render_base_url=render_base_url,
@@ -83,6 +86,8 @@ class BotSettings:
             news_daily_hour=max(0, min(23, _parse_int(os.environ.get("NEWS_DAILY_HOUR") or os.environ.get("NEWS_MORNING_HOUR"), 9))),
             news_headline_hours=_parse_hours(os.environ.get("NEWS_HEADLINE_HOURS"), (12, 15, 18)),
             news_seen_store_path=os.environ.get("NEWS_SEEN_STORE_PATH", "/app/data/bot-news-state.json").strip() or "/app/data/bot-news-state.json",
+            heigo_daily_report_groups=daily_report_groups,
+            heigo_daily_report_hour=max(0, min(23, _parse_int(os.environ.get("HEIGO_DAILY_REPORT_HOUR"), 22))),
         )
 
     def is_group_allowed(self, group_id: str | None) -> bool:

@@ -266,6 +266,46 @@ function renderHomeDashboardLeaders(leaders) {
     `;
 }
 
+function renderHomeDailyReport(report) {
+    if (!report) return '';
+    const lines = String(report.content || '').split('\n').map(line => line.trim()).filter(Boolean);
+    const excerpt = lines.filter(line => !/^【.+】$/.test(line)).slice(0, 3).join(' ');
+    const statusLabel = report.status === 'published' ? '人工终稿' : '自动成稿';
+    return `
+        <article class="home-dashboard-card home-dashboard-daily-report">
+            <div class="home-dashboard-card-head"><div><span class="home-dashboard-card-kicker">LEAGUE NEWSWIRE</span><h3>${escapeHtml(report.title || 'HEIGO 联赛日报')}</h3></div><span class="home-dashboard-live-dot">${escapeHtml(statusLabel)}</span></div>
+            <p>${escapeHtml(excerpt || '今日暂无新增赛果，完整日报仍会整理下一轮战力看点。')}</p>
+            <div class="home-dashboard-daily-report-meta"><span>${Number(report.match_count || 0)} 场比赛</span><span>${Number(report.goal_count || 0)} 粒进球</span><span>${Number(report.suspension_count || 0)} 条伤停更新</span></div>
+            <button class="home-dashboard-daily-report-open" type="button" onclick="openHomeDailyReport()">阅读完整日报 <span aria-hidden="true">→</span></button>
+        </article>
+    `;
+}
+
+function openHomeDailyReport() {
+    const report = homeDashboardState.data?.daily_report;
+    if (!report) return;
+    const content = escapeHtml(report.content || '').replace(/\n/g, '<br>');
+    showModal(escapeHtml(report.title || 'HEIGO 联赛日报'), `
+        <article class="home-daily-report-modal">
+            <div class="home-daily-report-modal-meta"><span>${report.status === 'published' ? '人工终稿' : '自动成稿'}</span><span>${Number(report.match_count || 0)} 场比赛</span><span>${Number(report.goal_count || 0)} 球</span></div>
+            <div class="home-daily-report-modal-copy">${content}</div>
+            <div class="home-daily-report-modal-actions"><button class="btn btn-secondary" type="button" onclick="copyHomeDailyReport()">复制日报</button><button class="btn btn-primary" type="button" onclick="closeModal()">阅读完成</button></div>
+        </article>
+    `);
+}
+
+async function copyHomeDailyReport() {
+    const report = homeDashboardState.data?.daily_report;
+    if (!report) return;
+    const text = `${report.title || 'HEIGO 联赛日报'}\n\n${report.content || ''}`.trim();
+    try {
+        await navigator.clipboard.writeText(text);
+        showSuccessToast('日报全文已复制');
+    } catch (_error) {
+        showModal('复制日报', `<textarea class="workspace-daily-copy-fallback" rows="18" readonly>${escapeHtml(text)}</textarea><p>当前浏览器无法直接写入剪贴板，请长按或全选复制。</p>`);
+    }
+}
+
 function renderHomeDashboard() {
     const container = document.getElementById('homeDashboard');
     if (!container) return;
@@ -291,6 +331,7 @@ function renderHomeDashboard() {
             ${renderHomeDashboardPulse(data.league_statuses)}
             ${renderHomeDashboardResults(data.recent_results)}
             ${renderHomeDashboardLeaders(data.leaders)}
+            ${renderHomeDailyReport(data.daily_report)}
         </div>
     `;
 }

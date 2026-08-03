@@ -1,8 +1,9 @@
 import os
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Cookie, Depends, Query, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from schemas_read import (
@@ -17,6 +18,7 @@ from schemas_read import (
     CoachesResponse,
     CoachReactionActionResponse,
     DataFeedbackSubmitResponse,
+    DailyReportResponse,
     DataStatusResponse,
     HomeDashboardResponse,
     HomePromotionResponse,
@@ -46,13 +48,14 @@ from schemas_read import (
     WageDetailResponse,
 )
 from schemas_write import AdvancedAttributeSearchRequest, AttributeBatchLookupRequest, DataFeedbackRequest
-from services import candidate_list_service, coach_service, cup_service, data_feedback_service, data_status_service, export_service, home_promotion_service, home_service, player_ranking_service, project_update_service, ranking_export_service, ranking_service, read_service, reaction_service, site_note_service, site_visit_service, suspension_service, team_center_service, team_lineup_service
+from services import candidate_list_service, coach_service, cup_service, daily_report_image_service, daily_report_service, data_feedback_service, data_status_service, export_service, home_promotion_service, home_service, league_report_image_service, player_ranking_service, project_update_service, ranking_export_service, ranking_service, read_service, reaction_service, site_note_service, site_visit_service, suspension_service, team_center_service, team_lineup_service
 
 REACTION_VISITOR_COOKIE_NAME = "heigo_reaction_visitor"
 ADMIN_SESSION_COOKIE_NAME = "session_token"
 COACH_SESSION_COOKIE_NAME = "coach_session_token"
 REACTION_VISITOR_COOKIE_MAX_AGE_SECONDS = 31536000
 REACTION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"}
+SHARE_CACHE_ROOT = Path(os.environ.get("HEIGO_SHARE_CACHE_ROOT", "data/share-cache").strip() or "data/share-cache")
 
 
 def build_public_router(get_db):
@@ -88,6 +91,96 @@ def build_public_router(get_db):
         db: Session = Depends(get_db),
     ):
         return home_service.get_home_dashboard(db, team_id=team_id)
+
+    @router.get("/api/daily-report", response_model=DailyReportResponse)
+    def get_daily_report(
+        report_date: str | None = Query(None),
+        db: Session = Depends(get_db),
+    ):
+        return daily_report_service.get_public_report(db, report_date)
+
+    @router.get("/api/daily-report/image", response_class=FileResponse)
+    def get_daily_report_image(
+        report_date: str | None = Query(None),
+        fingerprint: str | None = Query(None, max_length=64),
+        scope: str = Query("full", pattern="^(full|focus)$"),
+        db: Session = Depends(get_db),
+    ):
+        report = daily_report_service.get_public_report(db, report_date)
+        rendered = daily_report_image_service.render_daily_report_png(report, SHARE_CACHE_ROOT, scope=scope)
+        report_label = "焦点头版" if scope == "focus" else "日报"
+        return FileResponse(
+            rendered.file_path,
+            media_type="image/png",
+            filename=f"HEIGO{report_label}-{report.report_date}.png",
+            headers={
+                "Cache-Control": "public, max-age=300",
+                "ETag": rendered.etag,
+                "X-Render-Cache": rendered.cache_status,
+                "X-Report-Fingerprint": report.fingerprint,
+            },
+        )
+
+    @router.get("/api/league-report/image", response_class=FileResponse)
+    def get_league_report_image(
+        kind: str = Query(..., pattern="^(standings|suspensions)$"),
+        level: str = Query(..., pattern="^(超级|甲级|乙级)$"),
+        fingerprint: str | None = Query(None, max_length=64),
+        db: Session = Depends(get_db),
+    ):
+        payload = (
+            suspension_service.get_suspensions(db, level=level)
+            if kind == "suspensions"
+            else read_service.get_standings(db, level=level)
+        )
+        rendered = league_report_image_service.render_league_report_png(kind, level, payload, SHARE_CACHE_ROOT)
+        report_label = "伤停统计" if kind == "suspensions" else "积分榜"
+        return FileResponse(
+            rendered.file_path,
+            media_type="image/png",
+            filename=f"HEIGO-{level}-{report_label}.png",
+            headers={
+                "Cache-Control": "public, max-age=120",
+                "ETag": rendered.etag,
+                "X-Render-Cache": rendered.cache_status,
+            },
+        )
+
+    @router.get("/api/statistics-report/image", response_class=FileResponse)
+    def get_statistics_report_image(
+        kind: str = Query(..., pattern="^(rankings|player_rankings)$"),
+        level: str = Query("超级", pattern="^(超级|甲级|乙级)$"),
+        metric: str = Query("goals", pattern="^(goals|assists|mvps)$"),
+        fingerprint: str | None = Query(None, max_length=64),
+        db: Session = Depends(get_db),
+    ):
+        payload = (
+            player_ranking_service.get_player_rankings(db, level=level)
+            if kind == "player_rankings"
+            else ranking_service.get_rankings(db)
+        )
+        rendered = league_report_image_service.render_statistics_report_png(
+            kind,
+            payload,
+            SHARE_CACHE_ROOT,
+            level=level,
+            metric=metric,
+        )
+        if kind == "player_rankings":
+            metric_label = {"goals": "射手榜", "assists": "助攻榜", "mvps": "最佳球员榜"}[metric]
+            file_name = f"HEIGO-{level}-{metric_label}.png"
+        else:
+            file_name = "HEIGO-排位积分榜.png"
+        return FileResponse(
+            rendered.file_path,
+            media_type="image/png",
+            filename=file_name,
+            headers={
+                "Cache-Control": "public, max-age=120",
+                "ETag": rendered.etag,
+                "X-Render-Cache": rendered.cache_status,
+            },
+        )
 
     @router.get("/api/data-status", response_model=DataStatusResponse)
     def get_data_status(db: Session = Depends(get_db)):

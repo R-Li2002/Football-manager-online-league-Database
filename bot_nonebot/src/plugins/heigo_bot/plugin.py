@@ -16,7 +16,7 @@ from .command_schema import create_command_matchers
 from .config import BotSettings
 from .heigo_api import HeigoApiClient
 from .models import CommandSpec, ReplySpec
-from .news_service import SeenNewsStore
+from .news_service import NewsItem, SeenNewsStore
 from .parser import parse_command
 from .rate_limit import InMemoryRateLimiter
 from .service import HeigoBotService
@@ -24,7 +24,7 @@ from .signer import RenderUrlSigner
 
 
 settings = BotSettings.from_env()
-api_client = HeigoApiClient(settings.heigo_base_url)
+api_client = HeigoApiClient(settings.heigo_base_url, render_base_url=settings.heigo_render_base_url)
 signer = RenderUrlSigner(
     render_base_url=settings.heigo_render_base_url,
     signing_key=settings.internal_render_signing_key,
@@ -54,15 +54,31 @@ def _next_run_at(hour: int, now: datetime) -> datetime:
 def _scheduled_targets(now: datetime) -> list[tuple[datetime, str]]:
     targets = [(_next_run_at(settings.news_daily_hour, now), "football_daily")]
     targets.extend((_next_run_at(hour, now), "football_news") for hour in settings.news_headline_hours)
+    if settings.heigo_daily_report_groups:
+        targets.append((_next_run_at(settings.heigo_daily_report_hour, now), "heigo_daily_report"))
     return targets
 
 
 async def _send_scheduled_news(command_type: str) -> None:
-    if not settings.news_broadcast_groups:
+    target_groups = settings.heigo_daily_report_groups if command_type == "heigo_daily_report" else settings.news_broadcast_groups
+    if not target_groups:
         return
 
+    image_url = ""
+    fallback_text = ""
     try:
-        if command_type == "football_daily":
+        if command_type == "heigo_daily_report":
+            report = await api_client.get_daily_report()
+            fingerprint = str(report.get("fingerprint") or "").strip()
+            report_date = str(report.get("report_date") or "today").strip()
+            marker = NewsItem(title=str(report.get("title") or "HEIGO 联赛日报"), link=f"heigo-daily:{report_date}:{fingerprint}")
+            fresh_items = seen_news_store.filter_new("heigo_daily_report", [marker], 1)
+            title = str(report.get('title') or 'HEIGO 联赛日报').strip()
+            focus_content = str(report.get('focus_content') or report.get('content') or '今日暂无可播报内容。').strip()
+            text = title
+            fallback_text = f"{title}\n\n{focus_content}"
+            image_url = api_client.get_daily_report_image_url(report_date, fingerprint, focus_only=True)
+        elif command_type == "football_daily":
             items = await service.news_service.get_daily()
             fresh_items = seen_news_store.filter_new("dongqiudi_daily", items, settings.news_item_limit)
             text = service._format_news_items("懂球帝早报", fresh_items, settings.news_item_limit)
@@ -80,12 +96,19 @@ async def _send_scheduled_news(command_type: str) -> None:
     if not bots:
         return
     bot = next(iter(bots.values()))
-    message = MessageSegment.text(text)
-    for group_id in settings.news_broadcast_groups:
+    for group_id in target_groups:
+        message = Message()
+        message += MessageSegment.text(f"{text}\n" if image_url else text)
+        if image_url:
+            message += MessageSegment.image(image_url)
         try:
             await bot.send_group_msg(group_id=int(group_id), message=message)
         except Exception:
-            continue
+            if image_url:
+                try:
+                    await bot.send_group_msg(group_id=int(group_id), message=MessageSegment.text(fallback_text or text))
+                except Exception:
+                    continue
 
 
 async def _news_scheduler_loop() -> None:
@@ -99,7 +122,7 @@ async def _news_scheduler_loop() -> None:
 
 @driver.on_startup
 async def _start_news_scheduler() -> None:
-    if settings.news_broadcast_groups:
+    if settings.news_broadcast_groups or settings.heigo_daily_report_groups:
         asyncio.create_task(_news_scheduler_loop())
 
 
@@ -121,6 +144,8 @@ if hasattr(driver, "server_app"):
             "news_daily_hour": settings.news_daily_hour,
             "news_headline_hours": list(settings.news_headline_hours),
             "news_seen_store_path": settings.news_seen_store_path,
+            "heigo_daily_report_group_count": len(settings.heigo_daily_report_groups),
+            "heigo_daily_report_hour": settings.heigo_daily_report_hour,
         }
 
 
@@ -159,7 +184,13 @@ async def _send_reply(event_matcher: type[Matcher], event: MessageEvent, reply: 
     else:
         message += MessageSegment.text(reply.text)
 
-    await event_matcher.send(message)
+    try:
+        await event_matcher.send(message)
+    except Exception:
+        if reply.reply_type == "image" and reply.text:
+            await event_matcher.send(MessageSegment.text(reply.fallback_text or reply.text))
+            return
+        raise
 
 
 def _candidate_prompt(keyword: str, candidates: tuple[dict, ...]) -> str:

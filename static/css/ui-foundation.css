@@ -427,6 +427,12 @@ button[aria-busy="true"] {
 }
 
 .ui-inline-feedback[hidden] { display: none; }
+
+.compare-dock[hidden],
+.candidate-dock[hidden],
+.comparison-overlay[hidden] {
+    display: none !important;
+}
 .ui-inline-feedback > span:first-child { display: grid; place-items: center; }
 .ui-inline-feedback .ui-icon { width: 17px; height: 17px; }
 .ui-inline-feedback.is-success { border-color: color-mix(in srgb, var(--state-success) 28%, var(--border-color)); background: var(--state-success-bg); color: var(--state-success); }
@@ -529,6 +535,20 @@ button[aria-busy="true"] {
     .workspace-promotion-image-control > p,
     .workspace-promotion-image-clear,
     .workspace-promotion-image-status,
+    .workspace-daily-report-guide span,
+    .workspace-daily-report-head-actions label,
+    .workspace-daily-report-metrics small,
+    .workspace-daily-report-title,
+    .workspace-daily-report-copy,
+    .workspace-daily-template-filter,
+    .workspace-daily-template-head small,
+    .workspace-daily-template-row-head span,
+    .workspace-daily-template-row-head em,
+    .workspace-daily-template-row p,
+    .workspace-daily-template-row > small,
+    .workspace-daily-template-row button,
+    .workspace-daily-placeholder-note,
+    .workspace-daily-template-token-list,
     .mobile-standings-quick-stats small,
     .mobile-standings-strip em
 ) {

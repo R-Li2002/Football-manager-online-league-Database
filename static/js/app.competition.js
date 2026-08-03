@@ -1276,6 +1276,71 @@ function getStandingZoneClass(row, levelRows) {
     return '';
 }
 
+function getStandingsPredictionSummary(level) {
+    return (standingsData.prediction_summaries || []).find(item => item.level === level) || null;
+}
+
+function formatPredictionProbability(value) {
+    const percent = Math.round(Math.max(0, Math.min(1, Number(value || 0))) * 100);
+    return `${percent}%`;
+}
+
+function getStandingPredictionTone(row, level) {
+    if (Number(row.title_race_probability || 0) >= 0.3) return 'is-title-race';
+    if (level !== '超级' && Number(row.promotion_probability || 0) >= 0.45) return 'is-promotion-race';
+    if (Number(row.relegation_probability || 0) >= 0.45) return 'is-relegation-race';
+    return 'is-neutral';
+}
+
+function getStandingPredictionRail(row, total) {
+    const count = Math.max(1, Number(total || 1));
+    const denominator = Math.max(1, count - 1);
+    const minimum = Math.max(1, Math.min(count, Number(row.predicted_rank_min || row.rank || 1)));
+    const maximum = Math.max(minimum, Math.min(count, Number(row.predicted_rank_max || row.rank || count)));
+    const predicted = Math.max(minimum, Math.min(maximum, Number(row.predicted_rank || row.rank || minimum)));
+    return {
+        start: ((minimum - 1) / denominator) * 100,
+        end: ((maximum - 1) / denominator) * 100,
+        point: ((predicted - 1) / denominator) * 100,
+    };
+}
+
+function renderStandingPrediction(row, rows, level, options = {}) {
+    const total = Array.isArray(rows) ? rows.length : 0;
+    const predicted = Number(row.predicted_rank || row.rank || 0);
+    const minimum = Number(row.predicted_rank_min || predicted);
+    const maximum = Number(row.predicted_rank_max || predicted);
+    const rail = getStandingPredictionRail(row, total);
+    const tone = getStandingPredictionTone(row, level);
+    const probabilityLabel = level === '超级'
+        ? `争冠 ${formatPredictionProbability(row.title_race_probability)} · 保级 ${formatPredictionProbability(row.relegation_probability)}`
+        : `升级 ${formatPredictionProbability(row.promotion_probability)} · 保级 ${formatPredictionProbability(row.relegation_probability)}`;
+    const title = `${row.prediction_label || '排名观察'}；最可能第 ${predicted} 名；90% 预测区间第 ${minimum}–${maximum} 名；${probabilityLabel}`;
+    return `
+        <span class="standing-prediction ${tone} ${options.mobile ? 'is-mobile' : ''}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">
+            <span class="standing-prediction-copy"><strong>${predicted}</strong><small>${minimum === maximum ? `第 ${minimum} 名` : `${minimum}–${maximum}`}</small></span>
+            <span class="standing-prediction-rail" style="--prediction-start:${rail.start.toFixed(2)}%;--prediction-end:${rail.end.toFixed(2)}%;--prediction-point:${rail.point.toFixed(2)}%" aria-hidden="true"><i></i><b></b></span>
+            ${options.mobile ? `<span class="standing-prediction-context"><em>${escapeHtml(row.prediction_label || '排名观察')}</em><small>${escapeHtml(probabilityLabel)}</small></span>` : ''}
+        </span>
+    `;
+}
+
+function renderStandingsPredictionSummary(level) {
+    const summary = getStandingsPredictionSummary(level);
+    if (!summary) return '';
+    if (!Number(summary.total_match_count || 0)) {
+        return '<div class="standings-prediction-summary is-pending"><strong>排名预测待启动</strong><span>完整赛程导入后，将按真实对阵持续模拟并逐轮收束。</span></div>';
+    }
+    const progress = Math.round(Number(summary.progress || 0) * 100);
+    const simulationText = Number(summary.simulations || 0) > 0 ? `${Number(summary.simulations).toLocaleString('zh-CN')} 次赛季模拟` : '最终排名已确定';
+    return `
+        <div class="standings-prediction-summary is-${escapeHtml(summary.phase || 'early')}">
+            <strong>${escapeHtml(summary.phase_label || '排名预测')}</strong>
+            <span>赛程完成 ${progress}% · ${escapeHtml(simulationText)} · ${escapeHtml(summary.interval_label || '90%预测区间')}</span>
+        </div>
+    `;
+}
+
 function setMobileStandingsScope(scope) {
     currentMobileStandingsScope = ['total', 'home', 'away'].includes(scope) ? scope : 'total';
     renderStandingsBoard();
@@ -1388,7 +1453,7 @@ function renderMobileStandingsCards(level, rows) {
                                 <span><em>进</em>${goalsFor}</span>
                                 <span><em>失</em>${goalsAgainst}</span>
                                 <span><em>胜率</em>${scope.rate(row)}</span>
-                            </div><div class="mobile-standings-detail-actions"><button type="button" onclick="viewTeamPlayers(${htmlJsString(row.team_name || '')})">查看球队</button>${renderCoachProfileLink(row.manager, 'coach-profile-link standings-coach-link')}</div></div>` : ''}
+                            </div><div class="mobile-standing-prediction-row"><span>预测排名</span>${renderStandingPrediction(row, rows, level, {mobile: true})}</div><div class="mobile-standings-detail-actions"><button type="button" onclick="viewTeamPlayers(${htmlJsString(row.team_name || '')})">查看球队</button>${renderCoachProfileLink(row.manager, 'coach-profile-link standings-coach-link')}</div></div>` : ''}
                     </article>
                 `;
             }).join('')}
@@ -1406,6 +1471,7 @@ function renderDesktopStandingsTable(level, rows) {
                     <col class="standings-col-team">
                     <col class="standings-col-coach">
                     ${Array.from({length: 9}, () => '<col class="standings-col-total">').join('')}
+                    <col class="standings-col-prediction">
                 </colgroup>
                 <thead>
                     <tr>
@@ -1421,6 +1487,7 @@ function renderDesktopStandingsTable(level, rows) {
                         <th>净胜球</th>
                         <th>积分</th>
                         <th>胜率</th>
+                        <th>预测排名</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1448,6 +1515,7 @@ function renderDesktopStandingsTable(level, rows) {
                                 <td class="numeric-cell">${goalDifference}</td>
                                 <td class="numeric-cell points-cell">${points}</td>
                                 <td class="numeric-cell win-rate-cell">${scope.rate(row)}</td>
+                                <td class="numeric-cell standing-prediction-cell">${renderStandingPrediction(row, rows, level)}</td>
                             </tr>
                         `;
                     }).join('')}
@@ -1482,6 +1550,7 @@ function renderStandingsBoard() {
                     <button class="btn btn-secondary competition-image-btn capture-exclude" type="button" onclick="saveCompetitionImage('standings', ${htmlJsString(level)})">保存图片</button>
                 </div>
             </div>
+            ${renderStandingsPredictionSummary(level)}
             ${renderMobileStandingsScopeTabs(level)}
             ${renderMobileStandingsCards(level, grouped[level])}
             ${renderDesktopStandingsTable(level, grouped[level])}

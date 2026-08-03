@@ -192,6 +192,7 @@ function renderCompareDock() {
     const shouldShowDock = activeTab === 'players' || (activeTab === 'database' && !mobileDetailActive);
     document.body.classList.toggle('has-compare-dock', shouldShowDock);
     document.body.classList.toggle('has-expanded-compare-dock', shouldShowDock && compareDockExpanded);
+    dock.hidden = !shouldShowDock;
     dock.classList.toggle('is-hidden', !shouldShowDock);
     if (!shouldShowDock) {
         dock.innerHTML = '';
@@ -495,6 +496,7 @@ async function openComparisonWorkspace() {
     }
     comparisonModalOpen = true;
     const overlay = document.getElementById('comparisonOverlay');
+    overlay.hidden = false;
     overlay.classList.add('active');
     overlay.setAttribute('aria-hidden', 'false');
     const content = document.getElementById('comparisonContent');
@@ -508,6 +510,7 @@ function closeComparisonWorkspace() {
     const overlay = document.getElementById('comparisonOverlay');
     overlay.classList.remove('active');
     overlay.setAttribute('aria-hidden', 'true');
+    overlay.hidden = true;
 }
 
 function renderComparisonWorkspace() {

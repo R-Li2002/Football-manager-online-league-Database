@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 
 from schemas_read import (
     CompetitionWorkSummaryResponse,
+    DailyReportNarrativeTemplateResponse,
+    DailyReportResponse,
     HomePromotionResponse,
     WorkspaceAccountsResponse,
     WorkspaceDashboardResponse,
@@ -14,9 +16,12 @@ from schemas_write import (
     CompetitionRoundReviewRequest,
     CompetitionRoundSubmissionRequest,
     CompetitionResponsibilityUpdateRequest,
+    DailyReportGenerateRequest,
+    DailyReportNarrativeTemplateUpsertRequest,
+    DailyReportUpdateRequest,
     HomePromotionUpsertRequest,
 )
-from services import competition_work_service, home_promotion_asset_service, home_promotion_service, workspace_service
+from services import competition_work_service, daily_report_service, home_promotion_asset_service, home_promotion_service, workspace_service
 
 ADMIN_SESSION_COOKIE_NAME = "session_token"
 COACH_SESSION_COOKIE_NAME = "coach_session_token"
@@ -141,6 +146,77 @@ def build_workspace_router(get_db):
     ):
         identity = resolve_identity(db, admin_session_token, coach_session_token)
         return home_promotion_asset_service.save_promotion_image(identity, image)
+
+    @router.get("/api/workspace/daily-reports/{report_date}", response_model=DailyReportResponse)
+    def get_workspace_daily_report(
+        report_date: str,
+        admin_session_token: str | None = Cookie(None, alias=ADMIN_SESSION_COOKIE_NAME),
+        coach_session_token: str | None = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        identity = resolve_identity(db, admin_session_token, coach_session_token)
+        return daily_report_service.get_workspace_report(db, identity, report_date)
+
+    @router.post("/api/workspace/daily-reports/generate", response_model=DailyReportResponse)
+    def generate_workspace_daily_report(
+        request: DailyReportGenerateRequest,
+        admin_session_token: str | None = Cookie(None, alias=ADMIN_SESSION_COOKIE_NAME),
+        coach_session_token: str | None = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        identity = resolve_identity(db, admin_session_token, coach_session_token)
+        return daily_report_service.generate_workspace_report(db, identity, request.report_date)
+
+    @router.patch("/api/workspace/daily-reports/{report_date}", response_model=DailyReportResponse)
+    def update_workspace_daily_report(
+        report_date: str,
+        request: DailyReportUpdateRequest,
+        admin_session_token: str | None = Cookie(None, alias=ADMIN_SESSION_COOKIE_NAME),
+        coach_session_token: str | None = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        identity = resolve_identity(db, admin_session_token, coach_session_token)
+        return daily_report_service.update_workspace_report(db, identity, report_date, request)
+
+    @router.get("/api/workspace/daily-report-templates", response_model=list[DailyReportNarrativeTemplateResponse])
+    def get_workspace_daily_report_templates(
+        admin_session_token: str | None = Cookie(None, alias=ADMIN_SESSION_COOKIE_NAME),
+        coach_session_token: str | None = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        identity = resolve_identity(db, admin_session_token, coach_session_token)
+        return daily_report_service.list_templates(db, identity)
+
+    @router.post("/api/workspace/daily-report-templates", response_model=DailyReportNarrativeTemplateResponse)
+    def create_workspace_daily_report_template(
+        request: DailyReportNarrativeTemplateUpsertRequest,
+        admin_session_token: str | None = Cookie(None, alias=ADMIN_SESSION_COOKIE_NAME),
+        coach_session_token: str | None = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        identity = resolve_identity(db, admin_session_token, coach_session_token)
+        return daily_report_service.create_template(db, identity, request)
+
+    @router.patch("/api/workspace/daily-report-templates/{template_id}", response_model=DailyReportNarrativeTemplateResponse)
+    def update_workspace_daily_report_template(
+        template_id: int,
+        request: DailyReportNarrativeTemplateUpsertRequest,
+        admin_session_token: str | None = Cookie(None, alias=ADMIN_SESSION_COOKIE_NAME),
+        coach_session_token: str | None = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        identity = resolve_identity(db, admin_session_token, coach_session_token)
+        return daily_report_service.update_template(db, identity, template_id, request)
+
+    @router.delete("/api/workspace/daily-report-templates/{template_id}")
+    def delete_workspace_daily_report_template(
+        template_id: int,
+        admin_session_token: str | None = Cookie(None, alias=ADMIN_SESSION_COOKIE_NAME),
+        coach_session_token: str | None = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+        db: Session = Depends(get_db),
+    ):
+        identity = resolve_identity(db, admin_session_token, coach_session_token)
+        return daily_report_service.delete_template(db, identity, template_id)
 
     @router.get("/api/workspace/competition-work", response_model=CompetitionWorkSummaryResponse)
     def get_competition_work(

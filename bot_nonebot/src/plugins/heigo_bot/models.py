@@ -13,6 +13,11 @@ CommandType = Literal[
     "roster_image",
     "football_news",
     "football_daily",
+    "heigo_daily_report",
+    "league_standings",
+    "league_suspensions",
+    "rating_rankings",
+    "player_rankings",
     "unknown",
 ]
 ReplyType = Literal["text", "image", "noop"]
@@ -29,6 +34,11 @@ class CommandSpec:
     step: int = 0
     page: int = 1
     version: str | None = None
+    report_date: str | None = None
+    date_error: str = ""
+    level: str | None = None
+    level_error: str = ""
+    metric: Literal["goals", "assists", "mvps"] = "goals"
 
 
 @dataclass(frozen=True)
@@ -36,6 +46,7 @@ class ReplySpec:
     reply_type: ReplyType
     text: str = ""
     image_url: str = ""
+    fallback_text: str = ""
 
 
 @dataclass(frozen=True)

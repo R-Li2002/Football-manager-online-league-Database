@@ -8,7 +8,7 @@ from sqlalchemy.pool import NullPool
 
 from database import init_database, run_manual_runtime_fallback, run_schema_migrations
 
-LATEST_REVISION = "20260802_000043"
+LATEST_REVISION = "20260802_000044"
 
 
 class AlembicMigrationTests(unittest.TestCase):
@@ -42,6 +42,8 @@ class AlembicMigrationTests(unittest.TestCase):
             "cup_group_teams",
             "ranking_seeds",
             "ranking_matches",
+            "daily_report_narrative_templates",
+            "daily_reports",
             "league_info",
             "team_logo_sources",
             "alembic_version",
@@ -54,6 +56,9 @@ class AlembicMigrationTests(unittest.TestCase):
         self.assertIn("round_no", {column["name"] for column in inspector.get_columns("site_notes")})
         self.assertIn("can_manage_cup_standings", {column["name"] for column in inspector.get_columns("coach_accounts")})
         self.assertIn("can_manage_rankings", {column["name"] for column in inspector.get_columns("coach_accounts")})
+        with self.engine.connect() as conn:
+            template_count = conn.execute(text("SELECT COUNT(*) FROM daily_report_narrative_templates")).scalar_one()
+        self.assertEqual(template_count, 29)
 
     def test_run_schema_migrations_upgrades_legacy_schema(self):
         with self.engine.begin() as conn:

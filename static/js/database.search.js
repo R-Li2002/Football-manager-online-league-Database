@@ -1489,6 +1489,7 @@ function renderCandidateDock() {
     const shouldShowDock = hasActiveCandidateList() && activeTab === 'database';
     document.body.classList.toggle('has-candidate-dock', shouldShowDock);
     document.body.classList.toggle('has-expanded-candidate-dock', shouldShowDock && candidateDockExpanded);
+    dock.hidden = !shouldShowDock;
     dock.classList.toggle('is-hidden', !shouldShowDock);
     if (!shouldShowDock) {
         dock.innerHTML = '';

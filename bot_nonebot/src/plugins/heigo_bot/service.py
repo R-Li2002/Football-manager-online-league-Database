@@ -1,6 +1,8 @@
 ﻿from __future__ import annotations
 
 from dataclasses import replace
+from hashlib import sha256
+import json
 from math import ceil
 import re
 
@@ -19,6 +21,11 @@ HELP_TEXT = (
     "名单图 <球队名> [第N页]\n"
     "新闻 / 足球新闻\n"
     "早报 / 懂球帝早报\n"
+    "联赛日报 [日期] / 今日联赛\n"
+    "积分榜 [超级/甲级/乙级]\n"
+    "伤停 [超级/甲级/乙级]\n"
+    "排位榜 / 排位排行榜\n"
+    "射手榜 / 助攻榜 / 最佳球员榜 [超级/甲级/乙级]\n"
     "\n"
     "示例:\n"
     "球员图 梅西\n"
@@ -28,6 +35,14 @@ HELP_TEXT = (
     "名单 巴萨 第2页\n"
     "新闻\n"
     "早报"
+    "\n联赛日报"
+    "\n联赛日报 8月2日"
+    "\n联赛日报 2026-08-02"
+    "\n昨天联赛日报"
+    "\n超级积分榜"
+    "\n甲级伤停"
+    "\n排位排行榜"
+    "\n甲级助攻榜"
 )
 
 TEAM_ALIASES = {
@@ -118,6 +133,16 @@ class HeigoBotService:
             return await self._handle_football_news()
         if command.command_type == "football_daily":
             return await self._handle_football_daily()
+        if command.command_type == "heigo_daily_report":
+            return await self._handle_heigo_daily_report(command)
+        if command.command_type == "league_standings":
+            return await self._handle_league_standings(command)
+        if command.command_type == "league_suspensions":
+            return await self._handle_league_suspensions(command)
+        if command.command_type == "rating_rankings":
+            return await self._handle_rating_rankings()
+        if command.command_type == "player_rankings":
+            return await self._handle_player_rankings(command)
         if command.command_type == "unknown":
             return ReplySpec(reply_type="text", text=HELP_TEXT)
         return ReplySpec(reply_type="noop")
@@ -147,6 +172,212 @@ class HeigoBotService:
             return ReplySpec(reply_type="text", text=f"懂球帝早报暂时读取失败：{type(exc).__name__}")
         text = self._format_news_items("懂球帝早报", items, self.settings.news_item_limit)
         return ReplySpec(reply_type="text", text=text)
+
+    async def _handle_heigo_daily_report(self, command: CommandSpec) -> ReplySpec:
+        if command.date_error:
+            return ReplySpec(reply_type="text", text=command.date_error)
+        try:
+            report = await self.api_client.get_daily_report(command.report_date)
+        except Exception as exc:
+            return ReplySpec(reply_type="text", text=f"HEIGO 联赛日报暂时读取失败：{type(exc).__name__}")
+        title = str(report.get("title") or "HEIGO 联赛日报").strip()
+        focus_content = str(report.get("focus_content") or report.get("content") or "今日暂无可播报内容。").strip()
+        image_url = self.api_client.get_daily_report_image_url(
+            str(report.get("report_date") or "").strip() or None,
+            str(report.get("fingerprint") or "").strip() or None,
+            focus_only=True,
+        )
+        return ReplySpec(
+            reply_type="image",
+            text=title,
+            image_url=image_url,
+            fallback_text=f"{title}\n\n{focus_content}",
+        )
+
+    @classmethod
+    def _display_team_name(cls, team_name: str) -> str:
+        chinese_aliases = [
+            alias for alias in TEAM_ALIASES.get(str(team_name or ""), ())
+            if re.search(r"[\u4e00-\u9fff]", alias)
+        ]
+        return min(chinese_aliases, key=len) if chinese_aliases else str(team_name or "-")
+
+    @staticmethod
+    def _format_goal_difference(value: object) -> str:
+        number = int(value or 0)
+        return f"+{number}" if number > 0 else str(number)
+
+    @staticmethod
+    def _format_ranking_points(value: object) -> str:
+        number = round(float(value or 0), 4)
+        return f"{number:,.4f}".rstrip("0").rstrip(".")
+
+    @staticmethod
+    def _league_payload_fingerprint(payload: dict) -> str:
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+        # Include the visual template generation so QQ does not keep serving an
+        # old cached image when only the server-side design changes.
+        return f"site-v2-{sha256(encoded.encode('utf-8')).hexdigest()}"
+
+    @staticmethod
+    def _statistics_payload_fingerprint(payload: dict) -> str:
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+        return f"stats-v1-{sha256(encoded.encode('utf-8')).hexdigest()}"
+
+    async def _handle_league_standings(self, command: CommandSpec) -> ReplySpec:
+        if command.level_error:
+            return ReplySpec(reply_type="text", text=command.level_error)
+        level = command.level or "超级"
+        try:
+            payload = await self.api_client.get_standings(level)
+        except Exception as exc:
+            return ReplySpec(reply_type="text", text=f"{level}联赛积分榜暂时读取失败：{type(exc).__name__}")
+        rows = [row for row in payload.get("rows", []) if str(row.get("level") or "") == level]
+        if not rows:
+            return ReplySpec(reply_type="text", text=f"{level}联赛暂时没有积分榜数据。")
+        lines = [f"{level}联赛积分榜"]
+        for row in rows:
+            prediction = int(row.get("predicted_rank") or row.get("rank") or 0)
+            minimum = int(row.get("predicted_rank_min") or prediction)
+            maximum = int(row.get("predicted_rank_max") or prediction)
+            lines.append(
+                f"{int(row.get('rank') or 0)}. {self._display_team_name(str(row.get('team_name') or ''))} "
+                f"{int(row.get('points') or 0)}分｜{int(row.get('played') or 0)}场 "
+                f"{int(row.get('wins') or 0)}-{int(row.get('draws') or 0)}-{int(row.get('losses') or 0)}｜"
+                f"净{self._format_goal_difference(row.get('goal_difference'))}｜预测{prediction}（{minimum}-{maximum}）"
+            )
+        return ReplySpec(
+            reply_type="image",
+            text=f"{level}联赛积分榜",
+            image_url=self.api_client.get_league_report_image_url("standings", level, self._league_payload_fingerprint(payload)),
+            fallback_text="\n".join(lines),
+        )
+
+    @staticmethod
+    def _format_suspension_player(player: dict) -> str:
+        labels: list[str] = []
+        yellow_cards = int(player.get("yellow_cards") or 0)
+        if yellow_cards:
+            labels.append(f"{yellow_cards}黄")
+        if player.get("red_card_suspended"):
+            labels.append("红牌停赛")
+        if player.get("red_injury_suspended"):
+            labels.append("红伤停赛")
+        return f"{player.get('player_name') or '-'}（{'、'.join(labels) or '状态关注'}）"
+
+    async def _handle_league_suspensions(self, command: CommandSpec) -> ReplySpec:
+        if command.level_error:
+            return ReplySpec(reply_type="text", text=command.level_error)
+        level = command.level or "超级"
+        try:
+            payload = await self.api_client.get_suspensions(level)
+        except Exception as exc:
+            return ReplySpec(reply_type="text", text=f"{level}联赛伤停暂时读取失败：{type(exc).__name__}")
+        teams = [team for team in payload.get("teams", []) if str(team.get("level") or "") == level]
+        active = [team for team in teams if team.get("one_yellow") or team.get("two_yellows") or team.get("suspended")]
+        progress_attention = [team for team in teams if str((team.get("progress") or {}).get("state") or "") in {"stale", "gap"}]
+        lines = [f"{level}联赛伤停统计｜{len(active)} 队有记录"]
+        included: set[int] = set()
+        for team in [*active, *progress_attention]:
+            team_id = int(team.get("team_id") or 0)
+            if team_id in included:
+                continue
+            included.add(team_id)
+            sections: list[str] = []
+            for label, key in (("停赛", "suspended"), ("两黄", "two_yellows"), ("一黄", "one_yellow")):
+                players = team.get(key) or []
+                if players:
+                    sections.append(f"{label}：{'、'.join(self._format_suspension_player(player) for player in players)}")
+            progress = team.get("progress") or {}
+            if str(progress.get("state") or "") in {"stale", "gap"}:
+                sections.append(f"进度：{progress.get('title') or '需确认'}")
+            lines.append(f"{self._display_team_name(str(team.get('team_name') or ''))}｜{'；'.join(sections) or '暂无登记球员'}")
+        if len(lines) == 1:
+            lines.append("当前没有黄牌关注、停赛或伤停进度异常记录。")
+        return ReplySpec(
+            reply_type="image",
+            text=f"{level}联赛伤停统计",
+            image_url=self.api_client.get_league_report_image_url("suspensions", level, self._league_payload_fingerprint(payload)),
+            fallback_text="\n".join(lines),
+        )
+
+    async def _handle_rating_rankings(self) -> ReplySpec:
+        try:
+            payload = await self.api_client.get_rankings()
+        except Exception as exc:
+            return ReplySpec(reply_type="text", text=f"HEIGO 排位积分榜暂时读取失败：{type(exc).__name__}")
+        rows = list(payload.get("rows") or [])
+        if not rows:
+            return ReplySpec(reply_type="text", text="HEIGO 排位积分榜暂时没有数据。")
+        lines = [f"HEIGO 排位积分榜｜{len(rows)} 支球队｜{int(payload.get('total_matches') or 0)} 场赛果", "前 20 名："]
+        for row in rows[:20]:
+            lines.append(
+                f"{int(row.get('rank') or 0)}. {self._display_team_name(str(row.get('team_name') or ''))}｜"
+                f"总分 {self._format_ranking_points(row.get('total_points'))}｜"
+                f"基础 {self._format_ranking_points(row.get('base_points'))}｜"
+                f"{int(row.get('matches') or 0)}场 {int(row.get('wins') or 0)}胜 "
+                f"{int(row.get('draws') or 0)}平 {int(row.get('losses') or 0)}负"
+            )
+        return ReplySpec(
+            reply_type="image",
+            text="HEIGO 排位积分榜",
+            image_url=self.api_client.get_statistics_report_image_url(
+                "rankings",
+                fingerprint=self._statistics_payload_fingerprint(payload),
+            ),
+            fallback_text="\n".join(lines),
+        )
+
+    async def _handle_player_rankings(self, command: CommandSpec) -> ReplySpec:
+        if command.level_error:
+            return ReplySpec(reply_type="text", text=command.level_error)
+        level = command.level or "超级"
+        metric = command.metric if command.metric in {"goals", "assists", "mvps"} else "goals"
+        metric_meta = {
+            "goals": ("射手榜", "进球"),
+            "assists": ("助攻榜", "助攻"),
+            "mvps": ("最佳球员榜", "最佳"),
+        }
+        title, metric_label = metric_meta[metric]
+        try:
+            payload = await self.api_client.get_player_rankings(level)
+        except Exception as exc:
+            return ReplySpec(reply_type="text", text=f"{level}{title}暂时读取失败：{type(exc).__name__}")
+        rows = [
+            row for row in (payload.get("rows") or [])
+            if str(row.get("level") or "") == level and int(row.get(metric) or 0) > 0
+        ]
+        rows.sort(key=lambda row: (
+            -int(row.get(metric) or 0),
+            -int(row.get("goals") or 0),
+            -int(row.get("assists") or 0),
+            -int(row.get("mvps") or 0),
+            str(row.get("player_name") or ""),
+        ))
+        if not rows:
+            return ReplySpec(reply_type="text", text=f"{level}{title}暂时没有{metric_label}记录。")
+        coverage = next((item for item in (payload.get("coverage") or []) if str(item.get("level") or "") == level), {})
+        lines = [
+            f"{level}{title}｜{len(rows)} 人上榜｜已赛 {int(coverage.get('played_matches') or 0)} 场",
+            "前 20 名：",
+        ]
+        for index, row in enumerate(rows[:20], start=1):
+            lines.append(
+                f"{index}. {row.get('player_name') or '-'}｜{self._display_team_name(str(row.get('team_name') or ''))}｜"
+                f"进球 {int(row.get('goals') or 0)}｜助攻 {int(row.get('assists') or 0)}｜"
+                f"最佳 {int(row.get('mvps') or 0)}｜出场 {int(row.get('appearances') or 0)}"
+            )
+        return ReplySpec(
+            reply_type="image",
+            text=f"{level}{title}",
+            image_url=self.api_client.get_statistics_report_image_url(
+                "player_rankings",
+                level=level,
+                metric=metric,
+                fingerprint=self._statistics_payload_fingerprint(payload),
+            ),
+            fallback_text="\n".join(lines),
+        )
 
     async def _resolve_player(self, command: CommandSpec) -> tuple[dict | None, ReplySpec | None]:
         if command.uid:
