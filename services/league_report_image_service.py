@@ -247,8 +247,10 @@ def _build_standings_svg(standings: StandingsResponse, level: str) -> str:
 
 def _player_status(player: Any) -> str:
     labels: list[str] = []
+    if bool(player.yellow_card_suspended):
+        labels.append("3黄停赛")
     if int(player.yellow_cards or 0) > 0:
-        labels.append(f"{int(player.yellow_cards)}黄")
+        labels.append(f"额外{int(player.yellow_cards)}黄")
     if bool(player.red_card_suspended):
         labels.append("红牌停赛")
     if bool(player.red_injury_suspended):

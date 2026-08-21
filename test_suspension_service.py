@@ -89,6 +89,48 @@ class SuspensionServiceTest(unittest.TestCase):
         alpha = next(team for team in response.teams if team.team_name == "Alpha")
         self.assertEqual([item.player_uid for item in alpha.two_yellows], [101])
 
+    def test_three_yellow_suspension_and_extra_yellow_can_coexist(self):
+        self._save(101, yellow_cards=3)
+
+        result = self._save(101, yellow_cards=1, merge_existing=True, merge_base_yellow_cards=0)
+
+        record = self.db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_uid == 101).one()
+        self.assertTrue(record.yellow_card_suspended)
+        self.assertEqual(record.yellow_cards, 1)
+        self.assertTrue(result["record"]["yellow_card_suspended"])
+        self.assertEqual(result["record"]["yellow_cards"], 1)
+        self.assertEqual(result["message"], "同名记录已合并，当前为3黄停赛，额外 1 张黄牌")
+        response = suspension_service.get_suspensions(self.db)
+        alpha = next(team for team in response.teams if team.team_name == "Alpha")
+        self.assertEqual([item.player_uid for item in alpha.suspended], [101])
+        self.assertEqual([item.player_uid for item in alpha.one_yellow], [101])
+        self.assertEqual(alpha.suspended[0].yellow_cards, 1)
+
+    def test_extra_yellow_after_suspension_is_idempotent_for_network_retry(self):
+        self._save(101, yellow_cards=3)
+        request = {
+            "yellow_cards": 1,
+            "merge_existing": True,
+            "merge_base_yellow_cards": 0,
+        }
+
+        self._save(101, **request)
+        self._save(101, **request)
+
+        record = self.db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_uid == 101).one()
+        self.assertTrue(record.yellow_card_suspended)
+        self.assertEqual(record.yellow_cards, 1)
+
+    def test_three_yellow_suspension_can_coexist_with_two_extra_yellows(self):
+        self._save(101, yellow_cards=3)
+
+        self._save(101, yellow_cards=2, merge_existing=True, merge_base_yellow_cards=0)
+
+        response = suspension_service.get_suspensions(self.db)
+        alpha = next(team for team in response.teams if team.team_name == "Alpha")
+        self.assertEqual([item.player_uid for item in alpha.suspended], [101])
+        self.assertEqual([item.player_uid for item in alpha.two_yellows], [101])
+
     def test_manual_edit_still_replaces_the_accumulated_yellow_count(self):
         self._save(101, yellow_cards=1)
         self._save(101, yellow_cards=1, merge_existing=True, merge_base_yellow_cards=1)
@@ -291,6 +333,8 @@ class SuspensionServiceTest(unittest.TestCase):
         player_detail = dict(zip(detail_headers, detail_rows[1]))
         self.assertEqual(player_detail["球员"], "Alpha One")
         self.assertEqual(player_detail["状态分类"], "2张黄牌")
+        self.assertEqual(player_detail["额外黄牌数"], 2)
+        self.assertEqual(player_detail["3黄停赛"], "否")
         self.assertEqual(player_detail["球员备注"], "球员说明")
         self.assertEqual(player_detail["球队更新备注"], "更新至第 8 轮赛后")
 

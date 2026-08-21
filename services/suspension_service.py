@@ -21,6 +21,7 @@ LEAGUE_LEVELS = ["超级", "甲级", "乙级"]
 PLAYED_MATCH_STATUSES = {"played", "home_forfeit", "away_forfeit", "double_forfeit"}
 SUSPENSION_NOTE_PREFIX = "competition.suspensions"
 SUSPENSION_TEAM_NOTE_PREFIX = f"{SUSPENSION_NOTE_PREFIX}.team"
+MAX_YELLOW_CARDS_PER_ENTRY = 3
 
 
 def _record_response(record: PlayerSuspensionRecord) -> SuspensionPlayerResponse:
@@ -31,6 +32,7 @@ def _record_response(record: PlayerSuspensionRecord) -> SuspensionPlayerResponse
         team_name=record.team_name,
         level=record.level,
         yellow_cards=int(record.yellow_cards or 0),
+        yellow_card_suspended=bool(record.yellow_card_suspended),
         red_card_suspended=bool(record.red_card_suspended),
         red_injury_suspended=bool(record.red_injury_suspended),
         notes=record.notes,
@@ -39,7 +41,7 @@ def _record_response(record: PlayerSuspensionRecord) -> SuspensionPlayerResponse
 
 
 def _is_suspended(record: PlayerSuspensionRecord) -> bool:
-    return int(record.yellow_cards or 0) >= 3 or bool(record.red_card_suspended) or bool(record.red_injury_suspended)
+    return bool(record.yellow_card_suspended) or bool(record.red_card_suspended) or bool(record.red_injury_suspended)
 
 
 def _team_sort_key(team: Team) -> tuple[int, str]:
@@ -274,7 +276,7 @@ def get_suspensions(
         response = _record_response(record)
         if _is_suspended(record):
             target["suspended"].append(response)
-        elif int(record.yellow_cards or 0) == 2:
+        if int(record.yellow_cards or 0) == 2:
             target["two_yellows"].append(response)
         elif int(record.yellow_cards or 0) == 1:
             target["one_yellow"].append(response)
@@ -337,6 +339,7 @@ def _load_player_with_team(db: Session, player_uid: int) -> tuple[Player, Team]:
 def _should_delete(request: SuspensionRecordUpdateRequest) -> bool:
     return (
         int(request.yellow_cards or 0) <= 0
+        and not request.yellow_card_suspended
         and not request.red_card_suspended
         and not request.red_injury_suspended
         and not str(request.notes or "").strip()
@@ -400,12 +403,12 @@ def update_suspension_record(
     write_to_log: LogWriter,
 ) -> dict[str, Any]:
     operator = require_admin(admin)
-    if request.yellow_cards < 0 or request.yellow_cards > 3:
-        raise HTTPException(status_code=400, detail="黄牌数只能填写 0 到 3")
+    if request.yellow_cards < 0 or request.yellow_cards > MAX_YELLOW_CARDS_PER_ENTRY:
+        raise HTTPException(status_code=400, detail=f"本次黄牌数只能填写 0 到 {MAX_YELLOW_CARDS_PER_ENTRY}")
     if request.merge_base_yellow_cards is not None and (
-        request.merge_base_yellow_cards < 0 or request.merge_base_yellow_cards > 3
+        request.merge_base_yellow_cards < 0 or request.merge_base_yellow_cards > 2
     ):
-        raise HTTPException(status_code=400, detail="合并前黄牌数只能填写 0 到 3")
+        raise HTTPException(status_code=400, detail="合并前额外黄牌数只能填写 0 到 2")
 
     record = db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_uid == request.player_uid).first()
 
@@ -432,17 +435,24 @@ def update_suspension_record(
         db.add(record)
 
     if request.merge_existing:
-        existing_yellow_cards = min(3, sum(int(item.yellow_cards or 0) for item in matching_records))
+        existing_yellow_cards = sum(int(item.yellow_cards or 0) for item in matching_records)
         if request.merge_base_yellow_cards is None:
             requested_total = existing_yellow_cards + int(request.yellow_cards or 0)
         else:
             requested_total = int(request.merge_base_yellow_cards) + int(request.yellow_cards or 0)
-        yellow_cards = min(3, max(existing_yellow_cards, requested_total))
+        yellow_card_suspended = (
+            bool(request.yellow_card_suspended)
+            or any(bool(item.yellow_card_suspended) for item in matching_records)
+            or requested_total >= 3
+        )
+        yellow_cards = requested_total % 3 if requested_total >= 3 else requested_total
         red_card_suspended = bool(request.red_card_suspended) or any(bool(item.red_card_suspended) for item in matching_records)
         red_injury_suspended = bool(request.red_injury_suspended) or any(bool(item.red_injury_suspended) for item in matching_records)
         notes = _merge_record_notes(matching_records, request.notes)
     else:
-        yellow_cards = int(request.yellow_cards or 0)
+        requested_total = int(request.yellow_cards or 0)
+        yellow_card_suspended = bool(request.yellow_card_suspended) or requested_total >= 3
+        yellow_cards = requested_total % 3 if requested_total >= 3 else requested_total
         red_card_suspended = bool(request.red_card_suspended)
         red_injury_suspended = bool(request.red_injury_suspended)
         notes = str(request.notes or "").strip() or None
@@ -456,6 +466,7 @@ def update_suspension_record(
     record.team_name = team.name
     record.level = team.level
     record.yellow_cards = yellow_cards
+    record.yellow_card_suspended = 1 if yellow_card_suspended else 0
     record.red_card_suspended = 1 if red_card_suspended else 0
     record.red_injury_suspended = 1 if red_injury_suspended else 0
     record.notes = notes
@@ -468,7 +479,12 @@ def update_suspension_record(
     merged = (bool(matching_records) and request.merge_existing) or bool(duplicate_records)
     message = "伤停记录已保存"
     if request.merge_existing and matching_records:
-        message = f"同名记录已合并，当前累计 {yellow_cards} 张黄牌"
+        status_parts = []
+        if yellow_card_suspended:
+            status_parts.append("3黄停赛")
+        if yellow_cards:
+            status_parts.append(f"额外 {yellow_cards} 张黄牌")
+        message = f"同名记录已合并，当前为{'，'.join(status_parts) or '无黄牌记录'}"
     elif duplicate_records:
         message = "同名记录已合并并保存"
     write_to_log("伤停记录更新", f"{team.name} / {player.name}", operator)

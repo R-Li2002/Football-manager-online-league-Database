@@ -524,6 +524,7 @@ class PlayerSuspensionRecord(Base):
     team_name = Column(String, index=True, nullable=False)
     level = Column(String, index=True, nullable=False)
     yellow_cards = Column(Integer, default=0)
+    yellow_card_suspended = Column(Integer, default=0)
     red_card_suspended = Column(Integer, default=0)
     red_injury_suspended = Column(Integer, default=0)
     notes = Column(Text)

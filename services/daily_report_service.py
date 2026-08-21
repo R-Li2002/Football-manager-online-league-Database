@@ -469,8 +469,10 @@ def _cup_stage_label(match: CupMatch) -> str:
 
 def _suspension_label(row: PlayerSuspensionRecord) -> str:
     parts: list[str] = []
+    if bool(row.yellow_card_suspended):
+        parts.append("3黄停赛")
     if int(row.yellow_cards or 0) > 0:
-        parts.append(f"{int(row.yellow_cards)}黄")
+        parts.append(f"额外{int(row.yellow_cards)}黄")
     if bool(row.red_card_suspended):
         parts.append("红牌停赛")
     if bool(row.red_injury_suspended):

@@ -175,8 +175,10 @@ def _recent_form(db: Session, team: Team) -> dict[str, Any]:
 
 def _absence_label(player) -> str:
     parts: list[str] = []
-    if int(player.yellow_cards or 0) >= 3:
-        parts.append(f"{int(player.yellow_cards)}黄停赛")
+    if player.yellow_card_suspended:
+        parts.append("3黄停赛")
+    if int(player.yellow_cards or 0) > 0:
+        parts.append(f"额外{int(player.yellow_cards)}黄")
     if player.red_card_suspended:
         parts.append("红牌停赛")
     if player.red_injury_suspended:

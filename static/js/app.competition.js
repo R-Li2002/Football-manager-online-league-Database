@@ -3092,10 +3092,12 @@ function handleSuspensionPlayerKeydown(event) {
 
 function resetSuspensionEditorFields(teamId, mode = 'merge') {
     const yellowInput = document.getElementById(`suspension-yellows-${teamId}`);
+    const yellowSuspendedInput = document.getElementById(`suspension-yellow-suspended-${teamId}`);
     const redInput = document.getElementById(`suspension-red-${teamId}`);
     const injuryInput = document.getElementById(`suspension-injury-${teamId}`);
     const notesInput = document.getElementById(`suspension-notes-${teamId}`);
     if (yellowInput) yellowInput.value = '0';
+    if (yellowSuspendedInput) yellowSuspendedInput.checked = false;
     if (redInput) redInput.checked = false;
     if (injuryInput) injuryInput.checked = false;
     if (notesInput) notesInput.value = '';
@@ -3161,7 +3163,8 @@ document.addEventListener('pointerdown', handleSuspensionSuggestionDocumentPoint
 function getSuspensionRecordLabel(record) {
     const labels = [];
     const yellows = Number(record.yellow_cards || 0);
-    if (yellows > 0) labels.push(`${yellows}黄`);
+    if (record.yellow_card_suspended) labels.push('3黄停赛');
+    if (yellows > 0) labels.push(`额外${yellows}黄`);
     if (record.red_card_suspended) labels.push('红牌');
     if (record.red_injury_suspended) labels.push('红伤');
     return labels.join(' / ') || '记录';
@@ -3203,12 +3206,13 @@ function renderSuspensionEditor(team) {
                     <button class="suspension-player-toggle" type="button" title="选择球员" aria-label="选择球员" onclick="toggleSuspensionSuggestions(this, ${teamId})">▾</button>
                 </div>
             </div>
-            <select id="suspension-yellows-${teamId}" aria-label="黄牌数" onchange="queueSuspensionRecordSave(${teamId}, true)">
+            <select id="suspension-yellows-${teamId}" aria-label="本次新增或当前额外黄牌数" title="新增录入时填写本次黄牌；编辑已有记录时表示3黄停赛之外的额外黄牌" onchange="queueSuspensionRecordSave(${teamId}, true)">
                 <option value="0">0黄</option>
                 <option value="1">1黄</option>
                 <option value="2">2黄</option>
-                <option value="3">3黄停赛</option>
+                <option value="3">3黄（触发停赛）</option>
             </select>
+            <label class="suspension-check"><input id="suspension-yellow-suspended-${teamId}" type="checkbox" onchange="queueSuspensionRecordSave(${teamId}, true)">3黄停赛</label>
             <label class="suspension-check"><input id="suspension-red-${teamId}" type="checkbox" onchange="queueSuspensionRecordSave(${teamId}, true)">红牌</label>
             <label class="suspension-check"><input id="suspension-injury-${teamId}" type="checkbox" onchange="queueSuspensionRecordSave(${teamId}, true)">红伤</label>
             <input id="suspension-notes-${teamId}" type="text" placeholder="备注" oninput="queueSuspensionRecordSave(${teamId})" onblur="queueSuspensionRecordSave(${teamId}, true)">
@@ -3692,11 +3696,13 @@ function getSuspensionRecordDraft(teamId) {
     }
     if (!player) return {error: '请先选择球员'};
     const mergeMode = suspensionRecordEntryModes.get(numericTeamId) !== 'replace';
-    const mergeBaseYellowCards = Math.min(3, getLocalSuspensionRecordsForPlayer(player, numericTeamId)
-        .reduce((total, record) => total + Number(record.yellow_cards || 0), 0));
+    const mergeBaseYellowCards = getLocalSuspensionRecordsForPlayer(player, numericTeamId)
+        .reduce((total, record) => total + Number(record.yellow_cards || 0), 0);
+    const yellowCards = Number(document.getElementById(`suspension-yellows-${numericTeamId}`)?.value || 0);
     const payload = {
         player_uid: Number(player.uid),
-        yellow_cards: Number(document.getElementById(`suspension-yellows-${numericTeamId}`)?.value || 0),
+        yellow_cards: yellowCards,
+        yellow_card_suspended: Boolean(document.getElementById(`suspension-yellow-suspended-${numericTeamId}`)?.checked),
         red_card_suspended: Boolean(document.getElementById(`suspension-red-${numericTeamId}`)?.checked),
         red_injury_suspended: Boolean(document.getElementById(`suspension-injury-${numericTeamId}`)?.checked),
         notes: String(document.getElementById(`suspension-notes-${numericTeamId}`)?.value || '').trim(),
@@ -3730,10 +3736,14 @@ function getLocalSuspensionRecordsForPlayer(player, teamId) {
     const normalizedName = normalizeSuspensionPlayerName(player?.name);
     if (!team || !normalizedName) return [];
     const records = [];
+    const seenUids = new Set();
     for (const group of ['one_yellow', 'two_yellows', 'suspended']) {
         for (const record of team[group] || []) {
             if (Number(record.player_uid || 0) === Number(player?.uid || 0)
                 || normalizeSuspensionPlayerName(record.player_name) === normalizedName) {
+                const uid = Number(record.player_uid || 0);
+                if (uid > 0 && seenUids.has(uid)) continue;
+                if (uid > 0) seenUids.add(uid);
                 records.push(record);
             }
         }
@@ -3747,10 +3757,10 @@ function removeSuspensionRecordFromLocalData(playerUid) {
         for (const group of ['one_yellow', 'two_yellows', 'suspended']) {
             team[group] = (team[group] || []).filter(item => Number(item.player_uid || 0) !== uid);
         }
-        team.notes = ['one_yellow', 'two_yellows', 'suspended']
+        team.notes = [...new Set(['one_yellow', 'two_yellows', 'suspended']
             .flatMap(group => team[group] || [])
             .filter(item => String(item.notes || '').trim())
-            .map(item => `${item.player_name}: ${item.notes}`);
+            .map(item => `${item.player_name}: ${item.notes}`))];
     }
 }
 
@@ -3765,6 +3775,7 @@ function applySuspensionRecordToLocalData(teamId, player, payload, savedRecord =
         }
     }
     const isEmpty = Number(source.yellow_cards || 0) <= 0
+        && !source.yellow_card_suspended
         && !source.red_card_suspended
         && !source.red_injury_suspended
         && !String(source.notes || '').trim();
@@ -3777,21 +3788,23 @@ function applySuspensionRecordToLocalData(teamId, player, payload, savedRecord =
         team_name: String(source.team_name || team.team_name || ''),
         level: String(source.level || team.level || currentCompetitionLevel),
         yellow_cards: Number(source.yellow_cards || 0),
+        yellow_card_suspended: Boolean(source.yellow_card_suspended),
         red_card_suspended: Boolean(source.red_card_suspended),
         red_injury_suspended: Boolean(source.red_injury_suspended),
         notes: String(source.notes || '').trim(),
         updated_at: source.updated_at || new Date().toISOString(),
     };
-    const group = record.yellow_cards >= 3 || record.red_card_suspended || record.red_injury_suspended
-        ? 'suspended'
-        : (record.yellow_cards === 2 ? 'two_yellows' : (record.yellow_cards === 1 ? 'one_yellow' : null));
-    if (group) team[group] = [...(team[group] || []), record]
+    const cautionGroup = record.yellow_cards === 2 ? 'two_yellows' : (record.yellow_cards === 1 ? 'one_yellow' : null);
+    if (cautionGroup) team[cautionGroup] = [...(team[cautionGroup] || []), record]
         .sort((a, b) => String(a.player_name || '').localeCompare(String(b.player_name || '')));
-    team.notes = ['one_yellow', 'two_yellows', 'suspended']
+    const isSuspended = record.yellow_card_suspended || record.red_card_suspended || record.red_injury_suspended;
+    if (isSuspended) team.suspended = [...(team.suspended || []), record]
+        .sort((a, b) => String(a.player_name || '').localeCompare(String(b.player_name || '')));
+    team.notes = [...new Set(['one_yellow', 'two_yellows', 'suspended']
         .flatMap(itemGroup => team[itemGroup] || [])
         .filter(item => String(item.notes || '').trim())
-        .map(item => `${item.player_name}: ${item.notes}`);
-    if (!group && record.notes) team.notes.push(`${record.player_name}: ${record.notes}`);
+        .map(item => `${item.player_name}: ${item.notes}`))];
+    if (!cautionGroup && !isSuspended && record.notes) team.notes.push(`${record.player_name}: ${record.notes}`);
 }
 
 function queueSuspensionRecordSave(teamId, immediate = false) {
@@ -3804,9 +3817,10 @@ function queueSuspensionRecordSave(teamId, immediate = false) {
     }
     const existingRecords = getLocalSuspensionRecordsForPlayer(draft.player, numericTeamId);
     const existing = existingRecords[0] || null;
-    const existingYellowCards = Math.min(3, existingRecords
-        .reduce((total, record) => total + Number(record.yellow_cards || 0), 0));
+    const existingYellowCards = existingRecords
+        .reduce((total, record) => total + Number(record.yellow_cards || 0), 0);
     const isEmpty = Number(draft.payload.yellow_cards || 0) <= 0
+        && !draft.payload.yellow_card_suspended
         && !draft.payload.red_card_suspended
         && !draft.payload.red_injury_suspended
         && !draft.payload.notes;
@@ -3816,7 +3830,7 @@ function queueSuspensionRecordSave(teamId, immediate = false) {
             numericTeamId,
             '',
             existing && mergeMode
-                ? `已有 ${existingYellowCards} 张黄牌；填写本次新增数量后自动合并`
+                ? `已有${existing?.yellow_card_suspended ? '3黄停赛' : ''}${existingYellowCards ? `${existing?.yellow_card_suspended ? '，另有' : ''}${existingYellowCards}张黄牌` : ''}；填写本次新增数量后自动合并`
                 : (existing ? '如需清除，请使用记录旁的清除按钮' : '填写伤停信息后自动保存'),
         );
         return;
@@ -3914,6 +3928,7 @@ function fillSuspensionEditor(teamId, playerUid, recordOverride = null) {
     if (!team || !record) return;
     const playerInput = document.getElementById(`suspension-player-${teamId}`);
     const yellowInput = document.getElementById(`suspension-yellows-${teamId}`);
+    const yellowSuspendedInput = document.getElementById(`suspension-yellow-suspended-${teamId}`);
     const redInput = document.getElementById(`suspension-red-${teamId}`);
     const injuryInput = document.getElementById(`suspension-injury-${teamId}`);
     const notesInput = document.getElementById(`suspension-notes-${teamId}`);
@@ -3921,14 +3936,16 @@ function fillSuspensionEditor(teamId, playerUid, recordOverride = null) {
         playerInput.value = record.player_name;
         playerInput.dataset.playerUid = String(Number(record.player_uid || 0));
     }
-    if (yellowInput) yellowInput.value = String(Math.min(3, Number(record.yellow_cards || 0)));
+    if (yellowInput) yellowInput.value = String(Number(record.yellow_cards || 0));
+    if (yellowSuspendedInput) yellowSuspendedInput.checked = Boolean(record.yellow_card_suspended);
     if (redInput) redInput.checked = Boolean(record.red_card_suspended);
     if (injuryInput) injuryInput.checked = Boolean(record.red_injury_suspended);
     if (notesInput) notesInput.value = record.notes || '';
     suspensionRecordEntryModes.set(Number(teamId), 'replace');
     const payload = {
         player_uid: Number(record.player_uid),
-        yellow_cards: Math.min(3, Number(record.yellow_cards || 0)),
+        yellow_cards: Number(record.yellow_cards || 0),
+        yellow_card_suspended: Boolean(record.yellow_card_suspended),
         red_card_suspended: Boolean(record.red_card_suspended),
         red_injury_suspended: Boolean(record.red_injury_suspended),
         notes: String(record.notes || '').trim(),
@@ -3944,6 +3961,7 @@ async function clearSuspensionRecord(playerUid) {
     const result = await saveSuspensionPayload({
         player_uid: Number(playerUid),
         yellow_cards: 0,
+        yellow_card_suspended: false,
         red_card_suspended: false,
         red_injury_suspended: false,
         notes: '',

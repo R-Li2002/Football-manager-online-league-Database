@@ -936,6 +936,7 @@ class SuspensionPlayerResponse(BaseModel):
     team_name: str
     level: str
     yellow_cards: int = 0
+    yellow_card_suspended: bool = False
     red_card_suspended: bool = False
     red_injury_suspended: bool = False
     notes: Optional[str] = None

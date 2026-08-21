@@ -652,7 +652,8 @@ def build_suspensions_excel(db: Session, level: str):
                         "状态分类": status_label,
                         "球员UID": record.player_uid,
                         "球员": record.player_name,
-                        "黄牌数": record.yellow_cards,
+                        "额外黄牌数": record.yellow_cards,
+                        "3黄停赛": "是" if record.yellow_card_suspended else "否",
                         "红牌停赛": "是" if record.red_card_suspended else "否",
                         "红伤停赛": "是" if record.red_injury_suspended else "否",
                         "球员备注": record.notes or "",
@@ -662,7 +663,7 @@ def build_suspensions_excel(db: Session, level: str):
                 )
 
     summary_columns = ["级别", "球队", "主教练", "1张黄牌人数", "2张黄牌人数", "停赛人数", "球队更新备注", "级别更新说明"]
-    detail_columns = ["级别", "球队", "主教练", "状态分类", "球员UID", "球员", "黄牌数", "红牌停赛", "红伤停赛", "球员备注", "球队更新备注", "更新时间"]
+    detail_columns = ["级别", "球队", "主教练", "状态分类", "球员UID", "球员", "额外黄牌数", "3黄停赛", "红牌停赛", "红伤停赛", "球员备注", "球队更新备注", "更新时间"]
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         pd.DataFrame(summary_rows, columns=summary_columns).to_excel(writer, sheet_name="球队汇总", index=False)

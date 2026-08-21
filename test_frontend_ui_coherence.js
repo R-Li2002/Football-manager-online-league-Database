@@ -193,6 +193,8 @@ assert.match(competition, /suspensionRecordSaveVersions/, 'player suspension aut
 assert.match(competition, /Suspension record autosave interrupted; retrying once/, 'player suspension autosave should retry one transient network failure');
 assert.match(competition, /const mergeMode = suspensionRecordEntryModes\.get\(numericTeamId\) !== 'replace'/, 'blank suspension entry should merge repeated player records incrementally');
 assert.match(competition, /merge_base_yellow_cards: mergeMode \? mergeBaseYellowCards : null/, 'incremental suspension retries should carry an idempotent base yellow-card count');
+assert.match(competition, /yellow_card_suspended: Boolean\(document\.getElementById\(`suspension-yellow-suspended-\$\{numericTeamId\}`\)\?\.checked\)/, 'three-yellow suspension should be edited independently from the next caution cycle');
+assert.match(competition, /if \(cautionGroup\)[\s\S]*?if \(isSuspended\)/, 'one player should be able to appear in both caution and suspended groups');
 assert.match(competition, /suspensionRecordEntryModes\.set\(Number\(teamId\), 'replace'\)/, 'opening an existing record should preserve absolute yellow-card correction');
 assert.match(competition, /填写本次新增数量后自动合并/, 'existing suspension records should explain incremental merging before save');
 assert.match(competition, /function handleSuspensionTeamCardClick\(event, teamId\)/, 'editable suspension cards should open their editor from the card surface');

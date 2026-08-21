@@ -256,9 +256,11 @@ class HeigoBotService:
     @staticmethod
     def _format_suspension_player(player: dict) -> str:
         labels: list[str] = []
+        if player.get("yellow_card_suspended"):
+            labels.append("3黄停赛")
         yellow_cards = int(player.get("yellow_cards") or 0)
         if yellow_cards:
-            labels.append(f"{yellow_cards}黄")
+            labels.append(f"额外{yellow_cards}黄")
         if player.get("red_card_suspended"):
             labels.append("红牌停赛")
         if player.get("red_injury_suspended"):
