@@ -49,6 +49,9 @@ class WorkspaceServiceTests(unittest.TestCase):
                 can_manage_rankings=1,
                 can_manage_suspensions=1,
                 can_manage_candidate_lists=0,
+                can_manage_daily_reports=1,
+                can_manage_draws=1,
+                can_manage_archives=0,
             ),
             CoachSession(
                 token="coach-token",
@@ -85,6 +88,24 @@ class WorkspaceServiceTests(unittest.TestCase):
         self.assertIn("rankings.write", coach_identity.capabilities)
         self.assertIn("suspensions.write", coach_identity.capabilities)
         self.assertNotIn("candidate_lists.write", coach_identity.capabilities)
+        self.assertIn("daily_reports.write", coach_identity.capabilities)
+        self.assertIn("draws.write", coach_identity.capabilities)
+        self.assertNotIn("archives.write", coach_identity.capabilities)
+
+    def test_draw_and_archive_permissions_are_independent(self):
+        account = self.session.query(CoachAccount).filter(CoachAccount.coach_uid == "coach-1").one()
+        account.can_manage_draws = 0
+        account.can_manage_archives = 1
+        self.session.commit()
+
+        identity = resolve_workspace_identity(
+            self.session,
+            admin_session_token=None,
+            coach_session_token="coach-token",
+        )
+
+        self.assertNotIn("draws.write", identity.capabilities)
+        self.assertIn("archives.write", identity.capabilities)
 
     def test_unbound_coach_cannot_enter_workspace(self):
         account = self.session.query(CoachAccount).filter(CoachAccount.coach_uid == "coach-1").one()

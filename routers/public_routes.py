@@ -25,6 +25,11 @@ from schemas_read import (
     HomeSummaryResponse,
     CupBracketResponse,
     CupGroupStageResponse,
+    WumingjianQualificationResponse,
+    DrawSessionDetailResponse,
+    DrawSessionSummaryResponse,
+    SeasonArchiveDetailResponse,
+    SeasonArchiveSummaryResponse,
     LeagueInfoResponse,
     ScheduleResponse,
     PlayerReactionActionResponse,
@@ -33,6 +38,7 @@ from schemas_read import (
     PlayerPowerRankingResponse,
     TeamPowerSummariesResponse,
     TeamCenterResponse,
+    MatchPreviewResponse,
     TeamCupOutlookResponse,
     PlayerAttributeDetailResponse,
     PlayerRankingsResponse,
@@ -42,13 +48,14 @@ from schemas_read import (
     SiteVisitStatsResponse,
     SiteNoteResponse,
     StandingsResponse,
+    StandingsHistoryResponse,
     SuspensionsResponse,
     TeamResponse,
     TeamLineupResponse,
     WageDetailResponse,
 )
 from schemas_write import AdvancedAttributeSearchRequest, AttributeBatchLookupRequest, DataFeedbackRequest
-from services import candidate_list_service, coach_service, cup_service, daily_report_image_service, daily_report_service, data_feedback_service, data_status_service, export_service, home_promotion_service, home_service, league_report_image_service, player_ranking_service, project_update_service, ranking_export_service, ranking_service, read_service, reaction_service, site_note_service, site_visit_service, suspension_service, team_center_service, team_lineup_service
+from services import candidate_list_service, coach_service, cup_service, daily_report_image_service, daily_report_service, data_feedback_service, data_status_service, draw_service, export_service, home_promotion_service, home_service, league_report_image_service, match_preview_service, player_ranking_service, project_update_service, ranking_export_service, ranking_service, read_service, reaction_service, site_note_service, site_visit_service, suspension_service, team_center_service, team_lineup_service
 
 REACTION_VISITOR_COOKIE_NAME = "heigo_reaction_visitor"
 ADMIN_SESSION_COOKIE_NAME = "session_token"
@@ -60,6 +67,26 @@ SHARE_CACHE_ROOT = Path(os.environ.get("HEIGO_SHARE_CACHE_ROOT", "data/share-cac
 
 def build_public_router(get_db):
     router = APIRouter()
+
+    @router.get("/api/draws", response_model=list[DrawSessionSummaryResponse])
+    def list_public_draws(db: Session = Depends(get_db)):
+        return draw_service.list_sessions(db, public=True)
+
+    @router.get("/api/draws/{session_id}", response_model=DrawSessionDetailResponse)
+    def get_public_draw(session_id: int, db: Session = Depends(get_db)):
+        return draw_service.get_session(db, session_id, public=True)
+
+    @router.get("/api/draws/{session_id}/export.txt")
+    def export_public_draw_text(session_id: int, db: Session = Depends(get_db)):
+        return Response(content=draw_service.export_text(db, session_id, public=True), media_type="text/plain; charset=utf-8")
+
+    @router.get("/api/season-archives", response_model=list[SeasonArchiveSummaryResponse])
+    def list_public_season_archives(db: Session = Depends(get_db)):
+        return draw_service.list_season_archives(db, public=True)
+
+    @router.get("/api/season-archives/{archive_id}", response_model=SeasonArchiveDetailResponse)
+    def get_public_season_archive(archive_id: int, db: Session = Depends(get_db)):
+        return draw_service.get_season_archive(db, archive_id, public=True)
 
     def ensure_reaction_visitor_token(response: Response, visitor_token: str | None) -> str:
         if visitor_token:
@@ -218,6 +245,17 @@ def build_public_router(get_db):
             coach_session_token=coach_session_token,
         )
 
+    @router.get(
+        "/api/match-previews/{fixture_type}/{match_id}",
+        response_model=MatchPreviewResponse,
+    )
+    def get_match_preview(
+        fixture_type: str,
+        match_id: int,
+        db: Session = Depends(get_db),
+    ):
+        return match_preview_service.get_match_preview(db, fixture_type, match_id)
+
     @router.get("/api/coaches", response_model=CoachesResponse)
     def get_coaches(
         visitor_token: str | None = Cookie(None, alias=REACTION_VISITOR_COOKIE_NAME),
@@ -271,6 +309,13 @@ def build_public_router(get_db):
     ):
         return read_service.get_standings(db, level=level)
 
+    @router.get("/api/standings/history", response_model=StandingsHistoryResponse)
+    def get_standings_history(
+        level: str = Query(..., pattern="^(超级|甲级|乙级)$"),
+        db: Session = Depends(get_db),
+    ):
+        return read_service.get_standings_history(db, level=level)
+
     @router.get("/api/player-rankings", response_model=PlayerRankingsResponse)
     def get_player_rankings(
         level: str | None = Query(None, pattern="^(超级|甲级|乙级)$"),
@@ -308,6 +353,10 @@ def build_public_router(get_db):
     @router.get("/api/cups/{competition}/groups", response_model=CupGroupStageResponse)
     def get_cup_group_stage(competition: str, db: Session = Depends(get_db)):
         return cup_service.get_group_stage(db, competition)
+
+    @router.get("/api/cups/wumingjian_cup/qualification", response_model=WumingjianQualificationResponse)
+    def get_wumingjian_cup_qualification(db: Session = Depends(get_db)):
+        return cup_service.get_wumingjian_qualification(db)
 
     @router.get("/api/teams/{team_id}/cup-outlook", response_model=TeamCupOutlookResponse)
     def get_team_cup_outlook(team_id: int, db: Session = Depends(get_db)):

@@ -144,6 +144,50 @@ def _simulate_score(rng: random.Random, home_advantage: float) -> tuple[int, int
     return loser_goals, loser_goals + margin
 
 
+def predict_fixture_outcome(
+    rows: list[dict[str, Any]],
+    *,
+    home_team: str,
+    away_team: str,
+    neutral_venue: bool = False,
+    home_power: float | None = None,
+    away_power: float | None = None,
+    home_unavailable: int = 0,
+    away_unavailable: int = 0,
+) -> dict[str, float]:
+    """Return an explainable one-match probability estimate using the standings model."""
+    overall, home_form, away_form = _team_strengths(rows)
+    venue_adjustment = 0.0 if neutral_venue else (
+        0.18 + 0.16 * home_form.get(home_team, 0.0) - 0.16 * away_form.get(away_team, 0.0)
+    )
+    power_adjustment = 0.0
+    if home_power is not None and away_power is not None:
+        power_adjustment = max(-0.32, min(0.32, (float(home_power) - float(away_power)) * 0.06))
+    availability_adjustment = max(
+        -0.14,
+        min(0.14, (max(0, int(away_unavailable)) - max(0, int(home_unavailable))) * 0.035),
+    )
+    advantage = (
+        overall.get(home_team, 0.0)
+        - overall.get(away_team, 0.0)
+        + venue_adjustment
+        + power_adjustment
+        + availability_adjustment
+    )
+    draw_probability = max(0.17, 0.29 - min(0.1, abs(advantage) * 0.045))
+    home_share = 1.0 / (1.0 + math.exp(-advantage * 1.28))
+    home_win_probability = (1.0 - draw_probability) * home_share
+    away_win_probability = max(0.0, 1.0 - draw_probability - home_win_probability)
+    return {
+        "home_win_probability": home_win_probability,
+        "draw_probability": draw_probability,
+        "away_win_probability": away_win_probability,
+        "advantage": advantage,
+        "power_adjustment": power_adjustment,
+        "availability_adjustment": availability_adjustment,
+    }
+
+
 def _empty_schedule_predictions(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     team_count = len(rows)
     uniform_champion = 1.0 / team_count if team_count else 0.0

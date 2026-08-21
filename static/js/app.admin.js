@@ -27,6 +27,9 @@ const WORKSPACE_CAPABILITY_LABELS = {
     'rankings.write': '排位统计',
     'suspensions.write': '伤停维护',
     'candidate_lists.write': '候选名单',
+    'daily_reports.write': '日报维护',
+    'draws.write': '抽签管理',
+    'archives.write': '赛季档案管理',
     'roster.write': '球员操作',
     'coach_profile.write_self': '个人中心',
     'coach_profiles.manage': '教练管理',
@@ -42,6 +45,7 @@ const WORKSPACE_DAILY_TEMPLATE_CATEGORIES = {
     goalless_draw: '0:0 闷平', draw: '普通平局', high_scoring_draw: '高比分平局', forfeit: '判负结果', double_forfeit: '双方判负',
     winning_hattrick: '胜方帽子戏法', losing_hattrick: '败方帽子戏法', hattrick: '平局帽子戏法', brace: '梅开二度',
     playmaker: '多次助攻', goal_and_assist: '传射建功', mvp: '本场最佳', power_upset: '战力下风取胜', power_close: '战力接近',
+    series_sweep: '两回合双杀', series_split: '两回合各胜一场', series_unbeaten: '两回合一胜一平', series_draws: '两回合均战平',
 };
 
 function workspaceHasCapability(capability) {
@@ -75,6 +79,9 @@ async function loadWorkspaceSession(options = {}) {
         canManageRankings = capabilities.has('rankings.write');
         canManageSuspensions = capabilities.has('suspensions.write');
         canManageCandidateLists = capabilities.has('candidate_lists.write');
+        canManageDailyReports = capabilities.has('daily_reports.write');
+        canManageDraws = capabilities.has('draws.write');
+        canManageArchives = capabilities.has('archives.write');
         if (identity.source === 'coach_account') {
             currentCoachAccount = {
                 ...currentCoachAccount,
@@ -89,9 +96,21 @@ async function loadWorkspaceSession(options = {}) {
                 can_manage_rankings: canManageRankings,
                 can_manage_suspensions: canManageSuspensions,
                 can_manage_candidate_lists: canManageCandidateLists,
+                can_manage_daily_reports: canManageDailyReports,
+                can_manage_draws: canManageDraws,
+                can_manage_archives: canManageArchives,
             };
             if (typeof renderGlobalCoachAccount === 'function') renderGlobalCoachAccount();
         }
+    } else {
+        canManageSchedule = false;
+        canManageCupStandings = false;
+        canManageRankings = false;
+        canManageSuspensions = false;
+        canManageCandidateLists = false;
+        canManageDailyReports = false;
+        canManageDraws = false;
+        canManageArchives = false;
     }
     syncAdminTabVisibility();
     return workspaceSessionData;
@@ -153,7 +172,7 @@ async function openWorkspace(options = {}) {
 }
 
 function showWorkspaceView(viewName, scrollTarget = '') {
-    const normalized = ['home', 'accounts', 'imports', 'promotions', 'dailyReports', 'logos', 'operations'].includes(viewName) ? viewName : 'home';
+    const normalized = ['home', 'accounts', 'imports', 'promotions', 'dailyReports', 'archives', 'logos', 'operations'].includes(viewName) ? viewName : 'home';
     document.querySelectorAll('.workspace-view').forEach(view => view.classList.remove('active'));
     document.getElementById(`workspace${normalized[0].toUpperCase()}${normalized.slice(1)}View`)?.classList.add('active');
     document.querySelectorAll('[data-workspace-view]').forEach(button => {
@@ -162,6 +181,7 @@ function showWorkspaceView(viewName, scrollTarget = '') {
     if (normalized === 'accounts') loadWorkspaceAccounts();
     if (normalized === 'promotions') loadWorkspacePromotions();
     if (normalized === 'dailyReports') loadWorkspaceDailyReport();
+    if (normalized === 'archives' && typeof loadSeasonArchives === 'function') loadSeasonArchives();
     if (normalized === 'logos') loadWorkspaceLogoMatcher();
     if (normalized === 'imports') loadWorkspaceAdminOperations();
     if (normalized === 'operations') loadWorkspaceAdminOperations();
@@ -319,7 +339,7 @@ function showWorkspaceDailyTemplateEditor(templateId = 0) {
                 <label class="workspace-daily-template-active"><input id="workspaceDailyTemplateActive" type="checkbox" ${item.is_active ? 'checked' : ''}><span>启用这条话术</span></label>
             </div>
             <label class="form-group"><span>话术正文</span><textarea id="workspaceDailyTemplateText" rows="5" maxlength="320">${escapeHtml(item.template_text || '')}</textarea></label>
-            <div class="workspace-daily-template-token-list"><span>比赛</span><code>{winner}</code><code>{loser}</code><code>{home_team}</code><code>{away_team}</code><code>{score}</code><code>{total_goals}</code><span>球员</span><code>{player}</code><code>{team}</code><code>{goals}</code><code>{assists}</code></div>
+            <div class="workspace-daily-template-token-list"><span>比赛</span><code>{winner}</code><code>{loser}</code><code>{home_team}</code><code>{away_team}</code><code>{score}</code><code>{total_goals}</code><span>两回合</span><code>{team_a}</code><code>{team_b}</code><code>{aggregate_score}</code><code>{series_goals}</code><code>{first_leg}</code><code>{second_leg}</code><span>球员</span><code>{player}</code><code>{team}</code><code>{goals}</code><code>{assists}</code></div>
             <div class="workspace-daily-template-editor-actions"><button class="btn btn-secondary" type="button" onclick="closeModal()">取消</button><button class="btn btn-primary" type="submit">保存话术</button></div>
         </form>
     `);
@@ -729,7 +749,7 @@ async function openWorkspaceCompetitionTask(level, roundStart, subtab = 'schedul
 
 async function openWorkspaceMetric(tabName, subtab, key) {
     if (tabName === 'admin') {
-        showWorkspaceView(key === 'accounts' ? 'accounts' : 'operations', key === 'feedback' ? 'dataFeedbackReportsCard' : '');
+        showWorkspaceView(key === 'accounts' ? 'accounts' : key === 'archives' ? 'archives' : 'operations', key === 'feedback' ? 'dataFeedbackReportsCard' : '');
         return;
     }
     await openWorkspaceTask(tabName, subtab);
@@ -894,6 +914,9 @@ function showWorkspaceAccountEditor(coachUid) {
                     <label><input id="workspaceEditRankings" type="checkbox" ${capabilities.has('rankings.write') ? 'checked' : ''}>排位统计</label>
                     <label><input id="workspaceEditSuspensions" type="checkbox" ${capabilities.has('suspensions.write') ? 'checked' : ''}>纪律与伤停</label>
                     <label><input id="workspaceEditCandidates" type="checkbox" ${capabilities.has('candidate_lists.write') ? 'checked' : ''}>候选名单</label>
+                    <label><input id="workspaceEditDailyReports" type="checkbox" ${capabilities.has('daily_reports.write') ? 'checked' : ''}>每日日报</label>
+                    <label><input id="workspaceEditDraws" type="checkbox" ${capabilities.has('draws.write') ? 'checked' : ''}>抽签管理</label>
+                    <label><input id="workspaceEditArchives" type="checkbox" ${capabilities.has('archives.write') ? 'checked' : ''}>赛季档案管理</label>
                 </fieldset>
                 <button class="btn btn-primary" type="submit">保存账号与权限</button>
             </form>
@@ -995,6 +1018,9 @@ async function saveWorkspaceAccount(coachUid) {
         can_manage_rankings: Boolean(document.getElementById('workspaceEditRankings')?.checked),
         can_manage_suspensions: Boolean(document.getElementById('workspaceEditSuspensions')?.checked),
         can_manage_candidate_lists: Boolean(document.getElementById('workspaceEditCandidates')?.checked),
+        can_manage_daily_reports: Boolean(document.getElementById('workspaceEditDailyReports')?.checked),
+        can_manage_draws: Boolean(document.getElementById('workspaceEditDraws')?.checked),
+        can_manage_archives: Boolean(document.getElementById('workspaceEditArchives')?.checked),
     };
     const response = await fetchWithTimeout(`/api/admin/coaches/${encodeURIComponent(coachUid)}/account`, {
         method: 'POST',
@@ -1391,7 +1417,7 @@ async function workspaceCoachLogin() {
 }
 
 async function finishWorkspaceCoachLogin(data) {
-    if (!(data.can_manage_schedule || data.can_manage_cup_standings || data.can_manage_rankings || data.can_manage_suspensions || data.can_manage_candidate_lists)) {
+    if (!(data.can_manage_schedule || data.can_manage_cup_standings || data.can_manage_rankings || data.can_manage_suspensions || data.can_manage_candidate_lists || data.can_manage_daily_reports || data.can_manage_draws || data.can_manage_archives)) {
         showModal('没有工作权限', '该教练账号可以使用个人中心，但尚未获得数据工作权限。');
         return;
     }
@@ -1461,6 +1487,13 @@ function enterAdminLoggedOutState(options = {}) {
     canManageRankings = false;
     canManageSuspensions = false;
     canManageCandidateLists = false;
+    canManageDailyReports = false;
+    canManageDraws = false;
+    canManageArchives = false;
+    workspaceSessionData = null;
+    if (typeof workspaceSessionState !== 'undefined') {
+        workspaceSessionState = {authenticated: false, identity: null};
+    }
     if (typeof endCandidateListMaintenance === 'function') {
         endCandidateListMaintenance();
     }
@@ -1501,7 +1534,7 @@ function isCoachWorkAccountActive() {
     return Boolean(
         !currentAdminRole
         && coachAccount?.authenticated
-        && (canManageSchedule || canManageCupStandings || canManageRankings || canManageSuspensions || canManageCandidateLists)
+        && (canManageSchedule || canManageCupStandings || canManageRankings || canManageSuspensions || canManageCandidateLists || canManageDailyReports || canManageDraws || canManageArchives)
     );
 }
 
@@ -1515,6 +1548,9 @@ async function handleCoachWorkUnauthorized(message = '工作账号登录已失�
         canManageRankings = false;
         canManageSuspensions = false;
         canManageCandidateLists = false;
+        canManageDailyReports = false;
+        canManageDraws = false;
+        canManageArchives = false;
     }
     notifyAdminUnauthorized(message);
 }
@@ -1589,6 +1625,9 @@ async function syncAdminAuthStatus(options = {}) {
     canManageRankings = Boolean(data.authenticated && data.can_manage_rankings);
     canManageSuspensions = Boolean(data.authenticated && data.can_manage_suspensions);
     canManageCandidateLists = Boolean(data.authenticated && data.can_manage_candidate_lists);
+    canManageDailyReports = Boolean(data.authenticated && data.can_manage_daily_reports);
+    canManageDraws = Boolean(data.authenticated && data.can_manage_draws);
+    canManageArchives = Boolean(data.authenticated && data.can_manage_archives);
     syncAdminTabVisibility();
     syncAdminPanelVisibility({
         focusLogin: options.focusLogin !== false && !isAdmin,
@@ -1613,6 +1652,10 @@ function syncAdminTabVisibility() {
         typeof workspaceSessionState !== 'undefined' ? workspaceSessionState?.identity : null,
     );
     adminTab.classList.toggle('hidden-tab', !(isAdmin || adminEntryUnlocked || hasWorkspaceAccess));
+    const fallbackIdentity = typeof workspaceSessionState !== 'undefined' ? workspaceSessionState?.identity : null;
+    const canAccessDraws = Boolean(canManageDraws || (workspaceSessionData?.identity || fallbackIdentity)?.capabilities?.includes('draws.write'));
+    document.getElementById('drawsTab')?.classList.toggle('hidden-tab', !canAccessDraws);
+    document.getElementById('mobileDrawsTab')?.classList.toggle('hidden-tab', !canAccessDraws);
     if (typeof syncMobileNavState === 'function') {
         syncMobileNavState({closeMenu: false});
     }

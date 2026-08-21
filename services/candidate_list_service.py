@@ -37,7 +37,7 @@ from search_normalization import build_search_normalized_keys
 from services.operation_audit_service import AUDIT_SOURCE_ADMIN_UI, persist_admin_operation_audit
 
 
-CANDIDATE_LIST_TYPES = {"transfer", "recommendation", "review", "custom"}
+CANDIDATE_LIST_TYPES = {"transfer", "recommendation", "review", "custom", "lottery"}
 CANDIDATE_LIST_STATUSES = {"draft", "published", "archived"}
 ACTIVE_PLAYER_LIMIT = 5000
 

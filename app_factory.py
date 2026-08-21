@@ -28,7 +28,7 @@ INTERNAL_SHARE_TOKEN = os.environ.get("INTERNAL_SHARE_TOKEN", "").strip()
 INTERNAL_SHARE_HEADER_NAME = "X-Internal-Share-Token"
 INTERNAL_RENDER_SIGNING_KEY = os.environ.get("INTERNAL_RENDER_SIGNING_KEY", "").strip()
 SHARE_CACHE_ROOT = os.environ.get("HEIGO_SHARE_CACHE_ROOT", "data/share-cache").strip() or "data/share-cache"
-SHARE_TEMPLATE_VERSION = int(os.environ.get("HEIGO_SHARE_TEMPLATE_VERSION", "6"))
+SHARE_TEMPLATE_VERSION = int(os.environ.get("HEIGO_SHARE_TEMPLATE_VERSION", "7"))
 SHARE_CACHE_RETENTION_DAYS = int(os.environ.get("HEIGO_SHARE_CACHE_RETENTION_DAYS", "30"))
 COACH_SESSION_COOKIE_NAME = "coach_session_token"
 
@@ -132,6 +132,36 @@ def verify_candidate_list_manager(
     raise HTTPException(status_code=401, detail="未授权")
 
 
+def verify_draw_manager(
+    session_token: Optional[str] = Cookie(None),
+    coach_session_token: Optional[str] = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+    db: Session = Depends(get_db),
+):
+    username = get_session_username(db, session_token)
+    role = auth_service.get_admin_role(db, username)
+    if username and auth_service.can_manage_draws(role):
+        return username
+    coach_operator = auth_service.get_coach_work_operator(db, coach_session_token, "draws")
+    if coach_operator:
+        return coach_operator
+    raise HTTPException(status_code=401, detail="未授权")
+
+
+def verify_archive_manager(
+    session_token: Optional[str] = Cookie(None),
+    coach_session_token: Optional[str] = Cookie(None, alias=COACH_SESSION_COOKIE_NAME),
+    db: Session = Depends(get_db),
+):
+    username = get_session_username(db, session_token)
+    role = auth_service.get_admin_role(db, username)
+    if username and auth_service.can_manage_archives(role):
+        return username
+    coach_operator = auth_service.get_coach_work_operator(db, coach_session_token, "archives")
+    if coach_operator:
+        return coach_operator
+    raise HTTPException(status_code=401, detail="未授权")
+
+
 def health_check():
     try:
         with engine.connect() as conn:
@@ -220,9 +250,11 @@ def _register_routes(app: FastAPI) -> None:
             verify_ranking_manager=verify_ranking_manager,
             verify_suspension_manager=verify_suspension_manager,
             verify_candidate_list_manager=verify_candidate_list_manager,
+            verify_draw_manager=verify_draw_manager,
             set_session_cookie=set_session_cookie,
             clear_session_cookie=clear_session_cookie,
             write_to_log=write_to_log,
+            verify_archive_manager=verify_archive_manager,
         )
     )
     app.include_router(

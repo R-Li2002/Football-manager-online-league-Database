@@ -11,8 +11,10 @@ from models import (
     CoachAccount,
     CupMatch,
     DataFeedbackReport,
+    DrawSession,
     OperationAudit,
     RankingMatch,
+    SeasonArchive,
 )
 from schemas_read import (
     WorkspaceAccountResponse,
@@ -33,6 +35,9 @@ CAPABILITY_LABELS = {
     "rankings.write": "排位统计",
     "suspensions.write": "伤停维护",
     "candidate_lists.write": "候选名单",
+    "daily_reports.write": "日报维护",
+    "draws.write": "抽签管理",
+    "archives.write": "赛季档案管理",
     "roster.write": "球员操作",
     "coach_profile.write_self": "个人中心",
     "coach_profiles.manage": "教练管理",
@@ -51,6 +56,9 @@ WORK_CAPABILITIES = {
     "rankings": ("rankings.write",),
     "suspensions": ("suspensions.write",),
     "candidate_lists": ("candidate_lists.write",),
+    "daily_reports": ("daily_reports.write",),
+    "draws": ("draws.write",),
+    "archives": ("archives.write",),
 }
 
 
@@ -72,6 +80,12 @@ def _admin_capabilities(role: str | None) -> list[str]:
         capabilities.extend(WORK_CAPABILITIES["suspensions"])
     if auth_service.can_manage_candidate_lists(role):
         capabilities.extend(WORK_CAPABILITIES["candidate_lists"])
+    if auth_service.can_manage_daily_reports(role):
+        capabilities.extend(WORK_CAPABILITIES["daily_reports"])
+    if auth_service.can_manage_draws(role):
+        capabilities.extend(WORK_CAPABILITIES["draws"])
+    if auth_service.can_manage_archives(role):
+        capabilities.extend(WORK_CAPABILITIES["archives"])
     return list(dict.fromkeys(capabilities))
 
 
@@ -87,6 +101,12 @@ def _coach_capabilities(account: CoachAccount) -> list[str]:
         capabilities.extend(WORK_CAPABILITIES["suspensions"])
     if account.can_manage_candidate_lists:
         capabilities.extend(WORK_CAPABILITIES["candidate_lists"])
+    if account.can_manage_daily_reports:
+        capabilities.extend(WORK_CAPABILITIES["daily_reports"])
+    if account.can_manage_draws:
+        capabilities.extend(WORK_CAPABILITIES["draws"])
+    if account.can_manage_archives:
+        capabilities.extend(WORK_CAPABILITIES["archives"])
     return list(dict.fromkeys(capabilities))
 
 
@@ -203,6 +223,12 @@ def get_workspace_dashboard(db: Session, identity: WorkspaceIdentityResponse) ->
     if "candidate_lists.write" in capabilities:
         active_lists = db.query(func.count(CandidateList.id)).filter(CandidateList.archived_at.is_(None)).scalar() or 0
         metrics.append(_metric("candidate_lists", "候选名单", active_lists, "当前未归档的候选名单", "database", "candidates"))
+    if "draws.write" in capabilities:
+        active_draws = db.query(func.count(DrawSession.id)).filter(DrawSession.status.in_(["draft", "locked", "drawing", "completed"])).scalar() or 0
+        metrics.append(_metric("draws", "抽签任务", active_draws, "尚未发布或作废的杯赛与乐透抽签", "draws"))
+    if "archives.write" in capabilities:
+        draft_archives = db.query(func.count(SeasonArchive.id)).filter(SeasonArchive.status == "draft").scalar() or 0
+        metrics.append(_metric("archives", "赛季档案草稿", draft_archives, "尚未确认封存的赛季档案版本", "admin", "archives"))
     if identity.is_full_admin:
         open_feedback = db.query(func.count(DataFeedbackReport.id)).filter(DataFeedbackReport.status == "open").scalar() or 0
         metrics.append(_metric("feedback", "待处理纠错", open_feedback, "公开页面提交且尚未关闭的反馈", "admin", "feedback"))

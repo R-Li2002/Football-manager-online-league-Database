@@ -65,6 +65,41 @@ class AdminWriteRoutesTest(unittest.TestCase):
         update_site_note.assert_called_once()
         self.assertEqual(update_site_note.call_args.args[:4], (self.db, "HEIGO01", "competition.suspensions.team.39", request))
 
+    def test_draw_and_archive_routes_use_separate_permissions(self):
+        draw_guard = lambda: "draw-operator"
+        archive_guard = lambda: "archive-operator"
+        router = build_admin_write_router(
+            lambda: self.db,
+            lambda: "HEIGO01",
+            lambda: "HEIGO01",
+            lambda: "HEIGO01",
+            lambda: "HEIGO01",
+            lambda: "HEIGO01",
+            lambda: "HEIGO01",
+            lambda: "HEIGO01",
+            lambda *_args, **_kwargs: None,
+            lambda *_args, **_kwargs: None,
+            lambda *_args: None,
+            verify_draw_manager=draw_guard,
+            verify_archive_manager=archive_guard,
+        )
+        draw_route = next(route for route in router.routes if route.path == "/api/admin/draws")
+        draw_delete_route = next(
+            route
+            for route in router.routes
+            if route.path == "/api/admin/draws/{session_id}" and "DELETE" in route.methods
+        )
+        archive_route = next(route for route in router.routes if route.path == "/api/admin/season-archives")
+        draw_dependencies = {dependency.call for dependency in draw_route.dependant.dependencies}
+        draw_delete_dependencies = {dependency.call for dependency in draw_delete_route.dependant.dependencies}
+        archive_dependencies = {dependency.call for dependency in archive_route.dependant.dependencies}
+
+        self.assertIn(draw_guard, draw_dependencies)
+        self.assertNotIn(archive_guard, draw_dependencies)
+        self.assertIn(draw_guard, draw_delete_dependencies)
+        self.assertIn(archive_guard, archive_dependencies)
+        self.assertNotIn(draw_guard, archive_dependencies)
+
 
 if __name__ == "__main__":
     unittest.main()

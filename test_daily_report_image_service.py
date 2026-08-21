@@ -72,7 +72,7 @@ class DailyReportImageServiceTests(unittest.TestCase):
             self.assertEqual(first.cache_status, "MISS")
             self.assertEqual(second.cache_status, "HIT")
             self.assertEqual(first.etag, second.etag)
-            self.assertIn("_tpl5.png", first.file_name)
+            self.assertIn("_tpl6.png", first.file_name)
             self.assertTrue(Path(first.file_path).exists())
             with Image.open(first.file_path) as image:
                 self.assertEqual(image.format, "PNG")
@@ -100,6 +100,35 @@ class DailyReportImageServiceTests(unittest.TestCase):
             with Image.open(full.file_path) as full_image, Image.open(focus.file_path) as focus_image:
                 self.assertLess(focus_image.height, full_image.height)
                 self.assertEqual(focus_image.width, 1200)
+
+    def test_focus_svg_keeps_the_last_sentence_of_long_edited_content(self):
+        last_sentence = "人工编辑的最后一句必须完整出现在焦点图片中。"
+        report = DailyReportResponse(
+            report_date="2026-08-02",
+            title="HEIGO 联赛日报｜8月2日",
+            content="今日更新 1 场。",
+            focus_content=(
+                "今日更新 1 场。\n\n【焦点头版】\n"
+                "【争冠】超级联赛｜阿森纳 vs 切尔西：阿森纳 2:0 切尔西。"
+                + "双方围绕中场展开了漫长而激烈的争夺。" * 35
+                + last_sentence
+            ),
+            fingerprint="long-edited-focus-content",
+            match_count=1,
+            fixture_group_count=1,
+            focus_count=1,
+            goal_count=2,
+            suspension_count=0,
+            generated_at=datetime(2026, 8, 2, 22, 0),
+        )
+
+        svg = daily_report_image_service._build_svg(report, scope="focus")
+        height_match = re.search(r'<svg[^>]*height="(\d+)"', svg)
+        rendered_text = re.sub(r"<[^>]+>", "", svg)
+
+        self.assertIn(last_sentence, rendered_text)
+        self.assertIsNotNone(height_match)
+        self.assertGreater(int(height_match.group(1)), 820)
 
 
 if __name__ == "__main__":

@@ -140,6 +140,32 @@ class MatchServiceTest(unittest.TestCase):
         self.assertEqual([row.team_name for row in standings.rows], ["First Home", "First Away"])
         self.assertTrue(all(row.level == "甲级" for row in standings.rows))
 
+    def test_standings_history_tracks_rank_changes_and_incomplete_rounds(self):
+        alpha = self.db.query(Team).filter(Team.name == "Alpha").one()
+        beta = self.db.query(Team).filter(Team.name == "Beta").one()
+        gamma = self.db.query(Team).filter(Team.name == "Gamma").one()
+        delta = self.db.query(Team).filter(Team.name == "Delta").one()
+        alpha.logo_path = "/static/team-logos/alpha.png"
+        self.db.add_all([
+            Match(level="超级", round_no=1, home_team_name="Alpha", away_team_name="Beta", home_score=1, away_score=0, status="played"),
+            Match(level="超级", round_no=1, home_team_name="Gamma", away_team_name="Delta", home_score=4, away_score=0, status="played"),
+            Match(level="超级", round_no=2, home_team_name="Beta", away_team_name="Gamma", home_score=5, away_score=0, status="played"),
+            Match(level="超级", round_no=2, home_team_name="Alpha", away_team_name="Delta", status="scheduled"),
+        ])
+        self.db.commit()
+
+        history = match_service.get_standings_history(self.db, level="超级")
+
+        self.assertEqual(history.latest_recorded_round, 2)
+        self.assertEqual(history.latest_complete_round, 1)
+        self.assertEqual([item.round_no for item in history.rounds], [0, 1, 2])
+        self.assertTrue(history.rounds[1].is_complete)
+        self.assertFalse(history.rounds[2].is_complete)
+        beta_round_two = next(row for row in history.rounds[2].rows if row.team_name == "Beta")
+        self.assertEqual((beta_round_two.previous_rank, beta_round_two.rank, beta_round_two.rank_change), (3, 1, 2))
+        alpha_team = next(team for team in history.teams if team.team_name == "Alpha")
+        self.assertEqual(alpha_team.logo_path, "/static/team-logos/alpha.png")
+
     def test_standings_resolve_legacy_schedule_alias_names(self):
         self.db.add(Team(name="RB Leipzig", level="超级", manager="RB Leipzig Boss"))
         self.db.commit()
@@ -234,6 +260,47 @@ class MatchServiceTest(unittest.TestCase):
         self.assertEqual(alpha.losses, 1)
         self.assertEqual(logs[0][0], "赛程比分编辑")
 
+    def test_two_leg_forfeit_awards_one_point_to_penalized_team_and_four_to_opponent(self):
+        alpha_home = Match(level="超级", round_no=1, home_team_name="Alpha", away_team_name="Beta", status="scheduled")
+        beta_home = Match(level="超级", round_no=2, home_team_name="Beta", away_team_name="Alpha", status="scheduled")
+        self.db.add_all([alpha_home, beta_home])
+        self.db.commit()
+
+        match_service.update_match_result(
+            self.db,
+            "admin",
+            alpha_home.id,
+            MatchUpdateRequest(status="home_forfeit"),
+            lambda operation, details, operator: None,
+        )
+        match_service.update_match_result(
+            self.db,
+            "admin",
+            beta_home.id,
+            MatchUpdateRequest(status="away_forfeit"),
+            lambda operation, details, operator: None,
+        )
+
+        self.db.refresh(alpha_home)
+        self.db.refresh(beta_home)
+        self.assertEqual((alpha_home.home_score, alpha_home.away_score), (0, 0))
+        self.assertEqual((beta_home.home_score, beta_home.away_score), (2, 0))
+
+        standings = match_service.get_standings(self.db, level="超级", include_predictions=False)
+        alpha = next(row for row in standings.rows if row.team_name == "Alpha")
+        beta = next(row for row in standings.rows if row.team_name == "Beta")
+        self.assertEqual((alpha.points, alpha.wins, alpha.draws, alpha.losses), (1, 0, 1, 1))
+        self.assertEqual((beta.points, beta.wins, beta.draws, beta.losses), (4, 1, 1, 0))
+        self.assertEqual((alpha.goals_for, alpha.goals_against, alpha.goal_difference), (0, 2, -2))
+        self.assertEqual((beta.goals_for, beta.goals_against, beta.goal_difference), (2, 0, 2))
+
+        history = match_service.get_standings_history(self.db, level="超级")
+        final_rows = history.rounds[-1].rows
+        history_alpha = next(row for row in final_rows if row.team_name == "Alpha")
+        history_beta = next(row for row in final_rows if row.team_name == "Beta")
+        self.assertEqual(history_alpha.points, 1)
+        self.assertEqual(history_beta.points, 4)
+
     def test_batch_update_match_results_infers_played_and_resets_scheduled(self):
         played = Match(level="超级", round_no=1, home_team_name="Alpha", away_team_name="Beta", status="scheduled")
         reset = Match(level="超级", round_no=2, home_team_name="Gamma", away_team_name="Delta", home_score=2, away_score=1, status="played")
@@ -312,6 +379,15 @@ class MatchServiceTest(unittest.TestCase):
         self.assertEqual(coverage.goal_quantity, 2)
         self.assertEqual(coverage.assist_quantity, 1)
         self.assertEqual(coverage.mvp_quantity, 1)
+
+        alpha_rankings = player_ranking_service.get_team_player_rankings(
+            self.db,
+            level="超级",
+            team_id=alpha.id,
+            team_name=alpha.name,
+        )
+        self.assertEqual({row.player_name for row in alpha_rankings.rows}, {"Alpha Scorer", "Alpha Creator"})
+        self.assertTrue(all(row.team_name == "Alpha" for row in alpha_rankings.rows))
 
     def test_own_goal_completes_score_without_crediting_player_ranking(self):
         alpha = self.db.query(Team).filter(Team.name == "Alpha").one()

@@ -781,13 +781,13 @@ def build_standings_excel(db: Session, level: str):
             team_cell,
             "=SUMPRODUCT(--({home}={team}),{active},--((({status}=\"客队判负\")+("
             + normal_status + "*({hs}>{aws})))>0))+SUMPRODUCT(--({away}={team}),{active},"
-            "--((({status}=\"主队判负\")+(" + normal_status + "*({aws}>{hs})))>0))",
+            "--((" + normal_status + "*({aws}>{hs}))>0))",
             last_schedule_row,
         ))
         standings_sheet.cell(index, 6, _standings_sumproduct(
             team_cell,
             "=SUMPRODUCT(--((({home}={team})+({away}={team}))>0),{active},"
-            + normal_status + ",--({hs}={aws}))",
+            "--((({status}=\"主队判负\")+(" + normal_status + "*({hs}={aws})))>0))",
             last_schedule_row,
         ))
         standings_sheet.cell(index, 7, f"=D{index}-E{index}-F{index}")

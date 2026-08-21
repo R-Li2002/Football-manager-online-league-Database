@@ -157,3 +157,25 @@ def get_player_rankings(db: Session, *, level: str | None = None) -> PlayerRanki
         level_rows = [row for row in stats if row["level"] == active_level]
         rows.extend(_rank_rows(level_rows, metric="goals"))
     return PlayerRankingsResponse(levels=active_levels, rows=rows, coverage=_build_coverage(db, levels=active_levels))
+
+
+def get_team_player_rankings(
+    db: Session,
+    *,
+    level: str,
+    team_id: int | None = None,
+    team_name: str | None = None,
+) -> PlayerRankingsResponse:
+    """Return one team's rows from the canonical player-ranking calculation."""
+    rankings = get_player_rankings(db, level=level)
+    normalized_team_id = int(team_id or 0)
+    normalized_team_name = str(team_name or "").strip()
+    rows = [
+        row
+        for row in rankings.rows
+        if (
+            (normalized_team_id > 0 and int(row.team_id or 0) == normalized_team_id)
+            or (normalized_team_name and row.team_name == normalized_team_name)
+        )
+    ]
+    return PlayerRankingsResponse(levels=[level], rows=rows, coverage=rankings.coverage)

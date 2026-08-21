@@ -267,6 +267,9 @@ class CoachServiceTest(unittest.TestCase):
                 can_manage_rankings=True,
                 can_manage_suspensions=True,
                 can_manage_candidate_lists=True,
+                can_manage_daily_reports=True,
+                can_manage_draws=True,
+                can_manage_archives=True,
             ),
             lambda *_args: None,
         )
@@ -281,6 +284,9 @@ class CoachServiceTest(unittest.TestCase):
         self.assertTrue(identity.can_manage_rankings)
         self.assertTrue(identity.can_manage_suspensions)
         self.assertTrue(identity.can_manage_candidate_lists)
+        self.assertTrue(identity.can_manage_daily_reports)
+        self.assertTrue(identity.can_manage_draws)
+        self.assertTrue(identity.can_manage_archives)
 
     def test_coach_session_identity_includes_work_permissions(self):
         payload = coach_service.get_coaches(self.db)
@@ -296,6 +302,9 @@ class CoachServiceTest(unittest.TestCase):
                 can_manage_cup_standings=True,
                 can_manage_rankings=True,
                 can_manage_candidate_lists=True,
+                can_manage_daily_reports=True,
+                can_manage_draws=True,
+                can_manage_archives=False,
             ),
             lambda *_args: None,
         )
@@ -309,6 +318,9 @@ class CoachServiceTest(unittest.TestCase):
         self.assertTrue(identity.can_manage_rankings)
         self.assertFalse(identity.can_manage_suspensions)
         self.assertTrue(identity.can_manage_candidate_lists)
+        self.assertTrue(identity.can_manage_daily_reports)
+        self.assertTrue(identity.can_manage_draws)
+        self.assertFalse(identity.can_manage_archives)
 
     def test_coach_reaction_uses_cooldown(self):
         payload = coach_service.get_coaches(self.db)

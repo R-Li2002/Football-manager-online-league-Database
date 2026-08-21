@@ -1,3 +1,4 @@
+import json
 import unittest
 from datetime import datetime
 from types import SimpleNamespace
@@ -7,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import CupMatch, DailyReportNarrativeTemplate, Match, MatchPlayerEvent, PlayerSuspensionRecord, Team
+from models import CupMatch, DailyReport, DailyReportNarrativeTemplate, Match, MatchPlayerEvent, PlayerSuspensionRecord, Team
 from schemas_read import WorkspaceIdentityResponse
 from schemas_write import DailyReportNarrativeTemplateUpsertRequest, DailyReportUpdateRequest
 from services import daily_report_service, team_name_service
@@ -73,12 +74,12 @@ class DailyReportServiceTests(unittest.TestCase):
         self.assertEqual(report.suspension_count, 1)
         self.assertIn("布莱顿 8:5 科莫", report.content)
         self.assertIn("13 球", report.content)
-        self.assertIn("Hero 帽子戏法仍难救主", report.content)
+        self.assertRegex(report.content, r"Hero (?:帽子戏法仍难救主|独中三元却只能目送)")
         self.assertIn("Suspended Player", report.content)
         self.assertIn("【焦点头版】", report.content)
         self.assertIn("【帽子戏法", report.focus_content)
         self.assertIn("布莱顿 8:5 科莫", report.focus_content)
-        self.assertIn("Hero 帽子戏法仍难救主", report.focus_content)
+        self.assertRegex(report.focus_content, r"Hero (?:帽子戏法仍难救主|独中三元却只能目送)")
         self.assertTrue(report.image_url.startswith("/api/daily-report/image"))
 
     def test_home_and_away_legs_are_grouped_but_scores_stay_separate(self):
@@ -104,8 +105,9 @@ class DailyReportServiceTests(unittest.TestCase):
         self.assertEqual(report.match_count, 2)
         self.assertEqual(report.fixture_group_count, 1)
         self.assertIn("第3轮 Alpha 2:1 Beta；第4轮 Beta 0:3 Alpha", report.content)
-        self.assertIn("Alpha两战全胜：首回合主场以 2:1 一球险胜", report.content)
-        self.assertIn("次回合反客为主以 3:0 大比分取胜", report.content)
+        self.assertIn("Alpha两战通吃，以两回合总比分 5:1 完成双杀", report.content)
+        self.assertIn("首回合主场以 2:1 一球险胜，把胜负差距压到最细", report.content)
+        self.assertIn("次回合反客为主以 3:0 大比分重创对手", report.content)
         self.assertIn("完成双杀", report.content)
         self.assertEqual(report.content.count("Alpha vs Beta"), 1)
 
@@ -132,8 +134,37 @@ class DailyReportServiceTests(unittest.TestCase):
         self.assertEqual(report.match_count, 2)
         self.assertEqual(report.fixture_group_count, 1)
         self.assertIn("A组第1轮 Alpha 1:0 Beta；A组第2轮 Beta 2:2 Alpha", report.content)
-        self.assertIn("Alpha两回合保持不败：首回合主场以 1:0 一球险胜", report.content)
+        self.assertIn("Alpha一胜一平保持不败，两回合总比分 3:2 占据上风", report.content)
+        self.assertIn("首回合主场以 1:0 一球险胜，把胜负差距压到最细", report.content)
         self.assertIn("次回合 2:2 握手言和", report.content)
+
+    def test_two_leg_story_keeps_distinct_player_headlines_from_both_matches(self):
+        first = Match(
+            season_label="test", level="乙级", round_no=3,
+            home_team_name="Alpha", away_team_name="Beta",
+            home_score=4, away_score=1, status="played",
+            created_at=datetime(2026, 8, 2, 18, 0), updated_at=datetime(2026, 8, 2, 18, 0),
+        )
+        second = Match(
+            season_label="test", level="乙级", round_no=4,
+            home_team_name="Beta", away_team_name="Alpha",
+            home_score=2, away_score=5, status="played",
+            created_at=datetime(2026, 8, 2, 19, 0), updated_at=datetime(2026, 8, 2, 19, 0),
+        )
+        self.db.add_all([first, second])
+        self.db.flush()
+        self.db.add_all([
+            MatchPlayerEvent(match_id=first.id, team_name="Alpha", player_name="First Hero", event_type="goal", quantity=3),
+            MatchPlayerEvent(match_id=second.id, team_name="Alpha", player_name="Second Hero", event_type="goal", quantity=3),
+        ])
+        self.db.commit()
+
+        with patch.object(daily_report_service, "_power_values", return_value={}), patch.object(daily_report_service, "_upcoming_power_lines", return_value=[]):
+            report = daily_report_service.build_daily_report(self.db, "2026-08-02")
+
+        self.assertIn("First Hero", report.content)
+        self.assertIn("Second Hero", report.content)
+        self.assertIn("两回合总比分 9:3", report.content)
 
     def test_current_top_two_team_makes_an_ordinary_match_front_page(self):
         teams = [Team(name=f"Team {index}", manager="", level="超级") for index in range(1, 8)]
@@ -199,7 +230,7 @@ class DailyReportServiceTests(unittest.TestCase):
         self.assertGreaterEqual(score, 85)
         self.assertIn("升级关键战", tags)
 
-    def test_legacy_published_focus_is_compacted_to_two_sentences_per_story(self):
+    def test_legacy_published_focus_keeps_every_sentence_in_focus_story(self):
         content = (
             "今日共更新 2 场比赛。\n\n【焦点头版】\n"
             "甲级联赛｜Alpha vs Beta：第1轮 Alpha 5:1 Beta；第2轮 Beta 0:2 Alpha。"
@@ -207,11 +238,34 @@ class DailyReportServiceTests(unittest.TestCase):
             "【常规战报】\nGamma 1:1 Delta。"
         )
 
-        compact = daily_report_service._extract_focus_content(content)
+        focus_content = daily_report_service._extract_focus_content(content)
 
-        self.assertIn("Alpha 两战全胜", compact)
-        self.assertNotIn("Player A 上演帽子戏法", compact)
-        self.assertNotIn("Gamma 1:1 Delta", compact)
+        self.assertIn("Alpha 两战全胜", focus_content)
+        self.assertIn("Alpha 大胜 Beta", focus_content)
+        self.assertIn("Player A 上演帽子戏法", focus_content)
+        self.assertNotIn("Gamma 1:1 Delta", focus_content)
+
+    def test_stored_focus_content_over_1200_characters_is_not_recompressed(self):
+        stored_focus_content = (
+            "今日共更新 2 场比赛。\n\n【焦点头版】\n"
+            + "Alpha 与 Beta 上演漫长拉锯。" * 80
+            + "人工编辑的最后一句必须进入图片。"
+        )
+        row = DailyReport(
+            report_date="2026-08-02",
+            title="HEIGO 联赛日报｜8月2日",
+            content="今日共更新 1 场比赛。\n\n【焦点头版】\n备用正文不应覆盖人工焦点文案。",
+            payload_json=json.dumps({"focus_content": stored_focus_content}, ensure_ascii=False),
+            status="published",
+            fingerprint="stored-long-focus",
+            generated_at=datetime(2026, 8, 2, 22, 0),
+        )
+
+        response = daily_report_service._row_response(row)
+
+        self.assertGreater(len(response.focus_content), 1200)
+        self.assertEqual(response.focus_content, stored_focus_content)
+        self.assertIn("人工编辑的最后一句必须进入图片", response.focus_content)
 
     def test_all_current_league_teams_have_common_chinese_names(self):
         self.assertEqual(len(team_name_service.COMMON_CHINESE_TEAM_NAMES), 54)
@@ -325,6 +379,38 @@ class DailyReportServiceTests(unittest.TestCase):
                     template_text="{unknown_field}",
                 ),
             )
+
+    def test_daily_report_permission_allows_non_admin_worker_and_rejects_unrelated_account(self):
+        daily_worker = WorkspaceIdentityResponse(
+            principal_id="coach:newsroom",
+            source="coach_account",
+            account_type="coach_worker",
+            username="newsroom",
+            display_name="日报编辑",
+            capabilities=["coach_profile.write_self", "daily_reports.write"],
+        )
+        unrelated_worker = WorkspaceIdentityResponse(
+            principal_id="coach:schedule",
+            source="coach_account",
+            account_type="coach_worker",
+            username="schedule",
+            display_name="赛程编辑",
+            capabilities=["coach_profile.write_self", "schedule.write"],
+        )
+
+        created = daily_report_service.create_template(
+            self.db,
+            daily_worker,
+            DailyReportNarrativeTemplateUpsertRequest(
+                category="draw",
+                name="日报权限测试",
+                template_text="{home_team} 与 {away_team} 战平。",
+            ),
+        )
+
+        self.assertEqual(created.created_by, "coach:newsroom")
+        with self.assertRaisesRegex(Exception, "没有日报维护权限"):
+            daily_report_service.list_templates(self.db, unrelated_worker)
 
     def test_disabling_every_template_in_category_stops_that_narrative(self):
         daily_report_service.create_template(

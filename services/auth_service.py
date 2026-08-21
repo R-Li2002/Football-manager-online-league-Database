@@ -77,12 +77,27 @@ def can_manage_candidate_lists(role: str | None) -> bool:
     return normalize_admin_role(role) in {FULL_ADMIN_ROLE, SCHEDULE_EDITOR_ROLE}
 
 
+def can_manage_daily_reports(role: str | None) -> bool:
+    return normalize_admin_role(role) in {FULL_ADMIN_ROLE, SCHEDULE_EDITOR_ROLE}
+
+
+def can_manage_draws(role: str | None) -> bool:
+    return normalize_admin_role(role) in {FULL_ADMIN_ROLE, SCHEDULE_EDITOR_ROLE}
+
+
+def can_manage_archives(role: str | None) -> bool:
+    return normalize_admin_role(role) in {FULL_ADMIN_ROLE, SCHEDULE_EDITOR_ROLE}
+
+
 COACH_WORK_PERMISSION_FIELDS = {
     "schedule": "can_manage_schedule",
     "cup_standings": "can_manage_cup_standings",
     "rankings": "can_manage_rankings",
     "suspensions": "can_manage_suspensions",
     "candidate_lists": "can_manage_candidate_lists",
+    "daily_reports": "can_manage_daily_reports",
+    "draws": "can_manage_draws",
+    "archives": "can_manage_archives",
 }
 
 
@@ -169,6 +184,9 @@ def login_admin(
         can_manage_rankings=can_manage_rankings(role),
         can_manage_suspensions=can_manage_suspensions(role),
         can_manage_candidate_lists=can_manage_candidate_lists(role),
+        can_manage_daily_reports=can_manage_daily_reports(role),
+        can_manage_draws=can_manage_draws(role),
+        can_manage_archives=can_manage_archives(role),
     )
     _persist_auth_audit(
         db,
@@ -227,6 +245,9 @@ def get_auth_status(db: Session, username: str | None) -> AuthStatusResponse:
         can_manage_rankings=can_manage_rankings(role),
         can_manage_suspensions=can_manage_suspensions(role),
         can_manage_candidate_lists=can_manage_candidate_lists(role),
+        can_manage_daily_reports=can_manage_daily_reports(role),
+        can_manage_draws=can_manage_draws(role),
+        can_manage_archives=can_manage_archives(role),
     )
 
 

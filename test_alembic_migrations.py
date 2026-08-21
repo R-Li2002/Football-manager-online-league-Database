@@ -8,7 +8,7 @@ from sqlalchemy.pool import NullPool
 
 from database import init_database, run_manual_runtime_fallback, run_schema_migrations
 
-LATEST_REVISION = "20260802_000044"
+LATEST_REVISION = "20260821_000050"
 
 
 class AlembicMigrationTests(unittest.TestCase):
@@ -40,6 +40,11 @@ class AlembicMigrationTests(unittest.TestCase):
             "competition_round_work_logs",
             "competition_responsibility_assignments",
             "cup_group_teams",
+            "wumingjian_qualification_teams",
+            "season_archives",
+            "draw_sessions",
+            "draw_pool_entries",
+            "draw_picks",
             "ranking_seeds",
             "ranking_matches",
             "daily_report_narrative_templates",
@@ -56,9 +61,12 @@ class AlembicMigrationTests(unittest.TestCase):
         self.assertIn("round_no", {column["name"] for column in inspector.get_columns("site_notes")})
         self.assertIn("can_manage_cup_standings", {column["name"] for column in inspector.get_columns("coach_accounts")})
         self.assertIn("can_manage_rankings", {column["name"] for column in inspector.get_columns("coach_accounts")})
+        self.assertIn("can_manage_daily_reports", {column["name"] for column in inspector.get_columns("coach_accounts")})
+        self.assertIn("can_manage_draws", {column["name"] for column in inspector.get_columns("coach_accounts")})
+        self.assertIn("can_manage_archives", {column["name"] for column in inspector.get_columns("coach_accounts")})
         with self.engine.connect() as conn:
             template_count = conn.execute(text("SELECT COUNT(*) FROM daily_report_narrative_templates")).scalar_one()
-        self.assertEqual(template_count, 29)
+        self.assertEqual(template_count, 52)
 
     def test_run_schema_migrations_upgrades_legacy_schema(self):
         with self.engine.begin() as conn:

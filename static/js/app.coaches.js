@@ -182,7 +182,7 @@ function canEditCurrentCoach(coach = currentCoachDetail) {
 }
 
 function coachAccountHasWorkPermissions(account = currentCoachAccount) {
-    return Boolean(!account?.must_change_password && account?.qq_number && (account?.can_manage_schedule || account?.can_manage_cup_standings || account?.can_manage_rankings || account?.can_manage_suspensions || account?.can_manage_candidate_lists));
+    return Boolean(!account?.must_change_password && account?.qq_number && (account?.can_manage_schedule || account?.can_manage_cup_standings || account?.can_manage_rankings || account?.can_manage_suspensions || account?.can_manage_candidate_lists || account?.can_manage_daily_reports || account?.can_manage_draws || account?.can_manage_archives));
 }
 
 function syncWorkPermissionsFromCoachAccount() {
@@ -193,6 +193,9 @@ function syncWorkPermissionsFromCoachAccount() {
     canManageRankings = Boolean(securityReady && currentCoachAccount.can_manage_rankings);
     canManageSuspensions = Boolean(securityReady && currentCoachAccount.can_manage_suspensions);
     canManageCandidateLists = Boolean(securityReady && currentCoachAccount.can_manage_candidate_lists);
+    canManageDailyReports = Boolean(securityReady && currentCoachAccount.can_manage_daily_reports);
+    canManageDraws = Boolean(securityReady && currentCoachAccount.can_manage_draws);
+    canManageArchives = Boolean(securityReady && currentCoachAccount.can_manage_archives);
 }
 
 async function syncCoachAuthStatus() {
@@ -716,6 +719,9 @@ async function showCoachAccountModal() {
                 <label class="coach-account-toggle"><input id="coachAccountCupStandings" type="checkbox">杯赛积分榜</label>
                 <label class="coach-account-toggle"><input id="coachAccountSuspensions" type="checkbox">伤停编辑</label>
                 <label class="coach-account-toggle"><input id="coachAccountCandidates" type="checkbox">候选名单编辑</label>
+                <label class="coach-account-toggle"><input id="coachAccountDailyReports" type="checkbox">日报维护</label>
+                <label class="coach-account-toggle"><input id="coachAccountDraws" type="checkbox">抽签管理</label>
+                <label class="coach-account-toggle"><input id="coachAccountArchives" type="checkbox">赛季档案管理</label>
             </section>
             <button class="btn btn-primary" type="button" onclick="saveCoachAccount()">保存/重置账号</button>
         </div>
@@ -1004,6 +1010,9 @@ async function loadCoachAccountStatus() {
         if (data.can_manage_rankings) permissions.push('排位统计');
         if (data.can_manage_suspensions) permissions.push('伤停');
         if (data.can_manage_candidate_lists) permissions.push('候选名单');
+        if (data.can_manage_daily_reports) permissions.push('日报维护');
+        if (data.can_manage_draws) permissions.push('抽签管理');
+        if (data.can_manage_archives) permissions.push('赛季档案管理');
         status.textContent = data.exists
             ? `当前账号：${data.username}${data.is_active ? '（启用）' : '（停用）'} · ${data.must_change_password ? '首次登录待改密' : '密码已由教练设置'} · 工作权限：${permissions.join('、') || '无'}`
             : '尚未设置教练账号';
@@ -1020,6 +1029,9 @@ async function loadCoachAccountStatus() {
     const rankingsInput = document.getElementById('coachAccountRankings');
     const suspensionsInput = document.getElementById('coachAccountSuspensions');
     const candidatesInput = document.getElementById('coachAccountCandidates');
+    const dailyReportsInput = document.getElementById('coachAccountDailyReports');
+    const drawsInput = document.getElementById('coachAccountDraws');
+    const archivesInput = document.getElementById('coachAccountArchives');
     if (usernameInput && data.username) usernameInput.value = data.username;
     if (activeInput) activeInput.checked = data.exists ? Boolean(data.is_active) : true;
     if (scheduleInput) scheduleInput.checked = Boolean(data.can_manage_schedule);
@@ -1027,6 +1039,9 @@ async function loadCoachAccountStatus() {
     if (rankingsInput) rankingsInput.checked = Boolean(data.can_manage_rankings);
     if (suspensionsInput) suspensionsInput.checked = Boolean(data.can_manage_suspensions);
     if (candidatesInput) candidatesInput.checked = Boolean(data.can_manage_candidate_lists);
+    if (dailyReportsInput) dailyReportsInput.checked = Boolean(data.can_manage_daily_reports);
+    if (drawsInput) drawsInput.checked = Boolean(data.can_manage_draws);
+    if (archivesInput) archivesInput.checked = Boolean(data.can_manage_archives);
 }
 
 async function unbindCoachQqAsAdmin() {
@@ -1052,6 +1067,9 @@ async function saveCoachAccount() {
         can_manage_rankings: Boolean(document.getElementById('coachAccountRankings')?.checked),
         can_manage_suspensions: Boolean(document.getElementById('coachAccountSuspensions')?.checked),
         can_manage_candidate_lists: Boolean(document.getElementById('coachAccountCandidates')?.checked),
+        can_manage_daily_reports: Boolean(document.getElementById('coachAccountDailyReports')?.checked),
+        can_manage_draws: Boolean(document.getElementById('coachAccountDraws')?.checked),
+        can_manage_archives: Boolean(document.getElementById('coachAccountArchives')?.checked),
     };
     const result = await adminJsonRequest(`/api/admin/coaches/${encodeURIComponent(currentCoachDetail.uid)}/account`, {
         method: 'POST',

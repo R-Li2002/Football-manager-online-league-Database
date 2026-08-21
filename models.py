@@ -328,6 +328,122 @@ class CupMatch(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class WumingjianQualificationTeam(Base):
+    __tablename__ = "wumingjian_qualification_teams"
+    __table_args__ = (
+        UniqueConstraint("team_id", name="uq_wumingjian_qualification_team"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), index=True, nullable=False)
+    team_name = Column(String, nullable=False)
+    manager = Column(String)
+    level = Column(String, index=True, nullable=False)
+    source_rank = Column(Integer, nullable=False)
+    qualification_type = Column(String, index=True, nullable=False)
+    locked_at = Column(DateTime, default=datetime.now, nullable=False)
+
+
+class SeasonArchive(Base):
+    __tablename__ = "season_archives"
+    __table_args__ = (
+        UniqueConstraint("season_key", "revision_no", name="uq_season_archives_key_revision"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    season_key = Column(String, index=True, nullable=False)
+    title = Column(String, nullable=False)
+    revision_no = Column(Integer, nullable=False, default=1)
+    parent_archive_id = Column(Integer, ForeignKey("season_archives.id", ondelete="SET NULL"), index=True)
+    status = Column(String, index=True, nullable=False, default="draft")
+    snapshot_json = Column(Text, nullable=False, default="{}")
+    validation_json = Column(Text, nullable=False, default="{}")
+    revision_reason = Column(Text)
+    created_by = Column(String, index=True)
+    confirmed_by = Column(String, index=True)
+    created_at = Column(DateTime, index=True, default=datetime.now)
+    confirmed_at = Column(DateTime, index=True)
+
+
+class DrawSession(Base):
+    __tablename__ = "draw_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True, nullable=False)
+    draw_type = Column(String, index=True, nullable=False)
+    competition = Column(String, index=True)
+    season_label = Column(String, index=True)
+    status = Column(String, index=True, nullable=False, default="draft")
+    random_seed = Column(String, nullable=False)
+    pool_hash = Column(String, index=True)
+    config_json = Column(Text, nullable=False, default="{}")
+    result_json = Column(Text, nullable=False, default="{}")
+    candidate_list_id = Column(Integer, ForeignKey("candidate_lists.id", ondelete="SET NULL"), index=True)
+    created_by = Column(String, index=True)
+    updated_by = Column(String, index=True)
+    locked_by = Column(String, index=True)
+    completed_by = Column(String, index=True)
+    published_by = Column(String, index=True)
+    voided_by = Column(String, index=True)
+    created_at = Column(DateTime, index=True, default=datetime.now)
+    updated_at = Column(DateTime, index=True, default=datetime.now, onupdate=datetime.now)
+    locked_at = Column(DateTime, index=True)
+    completed_at = Column(DateTime, index=True)
+    published_at = Column(DateTime, index=True)
+    voided_at = Column(DateTime, index=True)
+    void_reason = Column(Text)
+
+
+class DrawPoolEntry(Base):
+    __tablename__ = "draw_pool_entries"
+    __table_args__ = (
+        UniqueConstraint("session_id", "entity_key", name="uq_draw_pool_entries_session_entity"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("draw_sessions.id", ondelete="CASCADE"), index=True, nullable=False)
+    entity_key = Column(String, nullable=False)
+    entity_type = Column(String, index=True, nullable=False)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="SET NULL"), index=True)
+    player_uid = Column(Integer, ForeignKey("players.uid", ondelete="SET NULL"), index=True)
+    entity_name = Column(String, nullable=False)
+    team_name = Column(String, index=True)
+    level = Column(String, index=True)
+    source_rank = Column(Integer)
+    pot_no = Column(Integer, index=True)
+    seed_status = Column(String, index=True)
+    self_save_count = Column(Integer, nullable=False, default=0)
+    weight = Column(Float, nullable=False, default=1.0)
+    final_value = Column(Float)
+    slot_type = Column(String)
+    is_active = Column(Integer, index=True, nullable=False, default=1)
+    metadata_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class DrawPick(Base):
+    __tablename__ = "draw_picks"
+    __table_args__ = (
+        UniqueConstraint("session_id", "sequence_no", name="uq_draw_picks_session_sequence"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("draw_sessions.id", ondelete="CASCADE"), index=True, nullable=False)
+    sequence_no = Column(Integer, nullable=False)
+    entry_id = Column(Integer, ForeignKey("draw_pool_entries.id", ondelete="CASCADE"), index=True, nullable=False)
+    paired_entry_id = Column(Integer, ForeignKey("draw_pool_entries.id", ondelete="SET NULL"), index=True)
+    target_group = Column(String, index=True)
+    target_slot = Column(Integer)
+    random_value = Column(String)
+    status = Column(String, index=True, nullable=False, default="active")
+    reason = Column(Text)
+    created_by = Column(String, index=True)
+    created_at = Column(DateTime, index=True, default=datetime.now)
+    invalidated_by = Column(String, index=True)
+    invalidated_at = Column(DateTime, index=True)
+
+
 class CupGroupTeam(Base):
     __tablename__ = "cup_group_teams"
     __table_args__ = (
@@ -516,6 +632,9 @@ class CoachAccount(Base):
     can_manage_rankings = Column(Integer, nullable=False, default=0)
     can_manage_suspensions = Column(Integer, nullable=False, default=0)
     can_manage_candidate_lists = Column(Integer, nullable=False, default=0)
+    can_manage_daily_reports = Column(Integer, nullable=False, default=0)
+    can_manage_draws = Column(Integer, nullable=False, default=0)
+    can_manage_archives = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     last_login_at = Column(DateTime)

@@ -76,6 +76,63 @@ class SuspensionServiceTest(unittest.TestCase):
         self.assertEqual([item.player_uid for item in alpha.suspended], [103])
         self.assertIn("Alpha Three: 停赛备注", alpha.notes)
 
+    def test_incremental_entry_merges_with_existing_yellow_cards(self):
+        self._save(101, yellow_cards=1)
+
+        result = self._save(101, yellow_cards=1, merge_existing=True, merge_base_yellow_cards=1)
+
+        record = self.db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_uid == 101).one()
+        self.assertEqual(record.yellow_cards, 2)
+        self.assertTrue(result["merged"])
+        self.assertEqual(result["record"]["yellow_cards"], 2)
+        response = suspension_service.get_suspensions(self.db)
+        alpha = next(team for team in response.teams if team.team_name == "Alpha")
+        self.assertEqual([item.player_uid for item in alpha.two_yellows], [101])
+
+    def test_manual_edit_still_replaces_the_accumulated_yellow_count(self):
+        self._save(101, yellow_cards=1)
+        self._save(101, yellow_cards=1, merge_existing=True, merge_base_yellow_cards=1)
+
+        self._save(101, yellow_cards=1)
+
+        record = self.db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_uid == 101).one()
+        self.assertEqual(record.yellow_cards, 1)
+
+    def test_same_name_records_in_one_team_are_consolidated(self):
+        duplicate_player = Player(uid=104, name="Alpha One", team_id=self.team.id, team_name=self.team.name)
+        self.db.add(duplicate_player)
+        self.db.commit()
+        self._save(101, yellow_cards=1, notes="首张")
+
+        result = self._save(
+            104,
+            yellow_cards=1,
+            notes="第二张",
+            merge_existing=True,
+            merge_base_yellow_cards=1,
+        )
+
+        records = self.db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_name == "Alpha One").all()
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].player_uid, 104)
+        self.assertEqual(records[0].yellow_cards, 2)
+        self.assertEqual(records[0].notes, "首张；第二张")
+        self.assertEqual(result["merged_record_count"], 1)
+
+    def test_incremental_merge_is_idempotent_for_network_retry(self):
+        self._save(101, yellow_cards=1)
+        request = {
+            "yellow_cards": 1,
+            "merge_existing": True,
+            "merge_base_yellow_cards": 1,
+        }
+
+        self._save(101, **request)
+        self._save(101, **request)
+
+        record = self.db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_uid == 101).one()
+        self.assertEqual(record.yellow_cards, 2)
+
     def test_suspensions_can_be_limited_to_one_level(self):
         first_team = Team(name="First Team", level="甲级", manager="First Boss")
         self.db.add(first_team)

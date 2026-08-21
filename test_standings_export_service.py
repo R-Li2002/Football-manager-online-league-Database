@@ -71,6 +71,9 @@ class StandingsExportServiceTest(unittest.TestCase):
         self.assertTrue(standings["A4"].value.startswith("=1+COUNTIF"))
         self.assertIn("'赛程'!$B$4:$B$1003", standings["D4"].value)
         self.assertIn("SUMPRODUCT", standings["E4"].value)
+        self.assertIn('="客队判负"', standings["E4"].value)
+        self.assertNotIn('="主队判负"', standings["E4"].value)
+        self.assertIn('="主队判负"', standings["F4"].value)
         self.assertEqual(standings["K4"].value, "=E4*3+F4")
 
         self.assertEqual([schedule.cell(3, column).value for column in range(1, 9)], [

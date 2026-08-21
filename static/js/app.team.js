@@ -11,6 +11,7 @@ let teamCenterCoachAuthReady = false;
 let teamCenterCoachAuthPromise = null;
 let teamRosterCopyToastTimer = null;
 let currentTeamJourneyView = 'league';
+let currentTeamPlayerLeaderMetric = 'goals';
 const teamDetailCache = new Map();
 const TEAM_DETAIL_CACHE_TTL_MS = 60 * 1000;
 const TEAM_ROSTER_VIEW_MODES = new Set(['compact', 'detail', 'cards']);
@@ -18,6 +19,14 @@ const teamCenterExpandedLevels = new Set();
 let teamCenterExpandedInitialized = false;
 let teamCenterSearchQuery = '';
 let teamCenterSearchActiveIndex = -1;
+let currentMatchPreviewData = null;
+let currentMatchPreviewTab = 'summary';
+let matchPreviewAbortController = null;
+let matchPreviewReturnFocus = null;
+let matchPreviewHistoryActive = false;
+let currentMatchPreviewRequest = null;
+const matchPreviewCache = new Map();
+const MATCH_PREVIEW_CACHE_TTL_MS = 90 * 1000;
 
 function getCachedTeamDetail(teamName) {
     const cached = teamDetailCache.get(teamName);
@@ -213,11 +222,14 @@ function teamDetailMatchCard(match, team, compact = false) {
     const opponentScore = isHome ? match.away_score : match.home_score;
     const resultClass = !played ? 'is-upcoming' : ownScore > opponentScore ? 'is-win' : ownScore < opponentScore ? 'is-loss' : 'is-draw';
     const resultText = played ? `${ownScore} : ${opponentScore}` : '';
-    return `<article class="team-match-card ${resultClass} ${compact ? 'is-compact' : ''}">
+    const tag = played ? 'article' : 'button';
+    const interaction = played ? '' : ` type="button" onclick="openMatchPreview('league', ${Number(match.id)}, this)" aria-label="查看${escapeHtml(opponent || '')}赛前情报"`;
+    return `<${tag} class="team-match-card ${resultClass} ${compact ? 'is-compact' : ''}"${interaction}>
         <div class="team-match-round"><span>${escapeHtml(match.level || '')}</span> 第 ${teamDetailSafeNumber(match.round_no)} 轮</div>
         <div class="team-match-opponent"><small class="team-match-venue ${isHome ? 'is-home' : 'is-away'}">${isHome ? '主场' : '客场'}</small><strong>${escapeHtml(opponent || '-')}</strong></div>
         ${resultText ? `<div class="team-match-score">${resultText}</div>` : ''}
-    </article>`;
+        ${played ? '' : '<span class="team-match-preview-hint">赛前情报 <b aria-hidden="true">→</b></span>'}
+    </${tag}>`;
 }
 
 function teamDetailMatchSeriesCard(series, team, compact = false) {
@@ -226,11 +238,16 @@ function teamDetailMatchSeriesCard(series, team, compact = false) {
     const metas = series.map(match => ({match, ...teamDetailMatchMeta(match, team)}));
     const opponent = metas[0].opponent;
     const rounds = metas.map(item => teamDetailSafeNumber(item.match.round_no));
-    return `<article class="team-match-series-card ${compact ? 'is-compact' : ''}">
+    const hasPreviewableLeg = metas.some(item => !item.played);
+    return `<article class="team-match-series-card ${hasPreviewableLeg ? 'has-previewable-legs' : ''} ${compact ? 'is-compact' : ''}">
         <div class="team-match-series-head"><div><span>${escapeHtml(series[0].level || '')}</span><small>第 ${Math.min(...rounds)}–${Math.max(...rounds)} 轮</small></div><strong>${escapeHtml(opponent || '-')}</strong></div>
         <div class="team-match-series-legs">${metas.map(item => {
             const resultClass = !item.played ? 'is-upcoming' : item.ownScore > item.opponentScore ? 'is-win' : item.ownScore < item.opponentScore ? 'is-loss' : 'is-draw';
-            return `<div class="team-match-series-leg ${resultClass}"><span class="team-match-leg-meta"><small>第 ${teamDetailSafeNumber(item.match.round_no)} 轮</small><b class="team-match-venue ${item.isHome ? 'is-home' : 'is-away'}">${item.isHome ? '主场' : '客场'}</b></span>${item.played ? `<strong>${item.ownScore} : ${item.opponentScore}</strong>` : ''}</div>`;
+            const legTag = item.played ? 'div' : 'button';
+            const interaction = item.played
+                ? ''
+                : ` type="button" onclick="openMatchPreview('league', ${Number(item.match.id)}, this)" aria-label="查看第${teamDetailSafeNumber(item.match.round_no)}轮对阵${escapeHtml(opponent || '')}的赛前情报"`;
+            return `<${legTag} class="team-match-series-leg ${resultClass}"${interaction}><span class="team-match-leg-meta"><small>第 ${teamDetailSafeNumber(item.match.round_no)} 轮</small><b class="team-match-venue ${item.isHome ? 'is-home' : 'is-away'}">${item.isHome ? '主场' : '客场'}</b></span>${item.played ? `<strong>${item.ownScore} : ${item.opponentScore}</strong>` : '<strong class="team-match-leg-preview">前瞻 <b aria-hidden="true">→</b></strong>'}</${legTag}>`;
         }).join('')}</div>
     </article>`;
 }
@@ -243,7 +260,7 @@ function teamDetailCupFixtureCard(match) {
     const roundLabel = match.phase === 'knockout'
         ? match.stage_label
         : `第 ${teamDetailSafeNumber(match.round_no)} 轮`;
-    return `<div class="team-cup-next-row"><span><small>${escapeHtml(roundLabel || '杯赛')}</small><b class="team-match-venue ${match.is_home ? 'is-home' : 'is-away'}">${match.is_home ? '主场' : '客场'}</b></span><strong>${escapeHtml(match.opponent_team_name || '待定')}</strong></div>`;
+    return `<button class="team-cup-next-row" type="button" onclick="openMatchPreview('cup', ${Number(match.id)}, this)" aria-label="查看${escapeHtml(match.opponent_team_name || '')}杯赛前瞻"><span><small>${escapeHtml(roundLabel || '杯赛')}</small><b class="team-match-venue ${match.is_home ? 'is-home' : 'is-away'}">${match.is_home ? '主场' : '客场'}</b></span><strong>${escapeHtml(match.opponent_team_name || '待定')}</strong><i aria-hidden="true">→</i></button>`;
 }
 
 function teamDetailCupOpponentProgress(item) {
@@ -261,8 +278,9 @@ function teamDetailCupJourney(item) {
         ? `<span>${escapeHtml(item.group_name || '-')}组</span><span>第 ${teamDetailSafeNumber(item.rank, '-')} 名</span><span>${teamDetailSafeNumber(item.points)} 分</span><span>净胜球 ${teamDetailSafeNumber(item.goal_difference) > 0 ? '+' : ''}${teamDetailSafeNumber(item.goal_difference)}</span>`
         : `<span>${escapeHtml(item.qualification_label || '淘汰赛')}</span>`;
     const statusPrefix = item.qualification_provisional ? '当前' : '最终';
-    const knockoutNext = item.phase === 'knockout'
-        ? `<div class="team-cup-next"><div class="team-cup-section-title"><strong>下一场</strong><small>当前淘汰赛阶段</small></div>${(item.next_matches || []).map(match => teamDetailCupFixtureCard({...match, phase: item.phase})).join('') || '<div class="team-detail-empty-inline">当前没有待进行的杯赛。</div>'}</div>`
+    const nextFixtures = Array.isArray(item.next_matches) ? item.next_matches : [];
+    const knockoutNext = nextFixtures.length || item.phase === 'knockout'
+        ? `<div class="team-cup-next"><div class="team-cup-section-title"><strong>下一场</strong><small>${item.phase === 'group' ? '小组赛前瞻' : '当前淘汰赛阶段'}</small></div>${nextFixtures.map(match => teamDetailCupFixtureCard({...match, phase: item.phase})).join('') || '<div class="team-detail-empty-inline">当前没有待进行的杯赛。</div>'}</div>`
         : '';
     return `<div class="team-cup-outlook ${teamDetailCupThemeClass(item)}">
         <div class="team-cup-summary">${groupMeta}</div>
@@ -296,6 +314,292 @@ function setTeamJourneyView(view) {
     if (currentTeamDetailData) renderTeamDetailLoaded(currentTeamDetailData);
     if (typeof syncAppHistory === 'function') syncAppHistory('replace');
 }
+
+function matchPreviewCacheKey(fixtureType, matchId) {
+    return `${String(fixtureType || '').toLowerCase()}:${Number(matchId)}`;
+}
+
+function getCachedMatchPreview(fixtureType, matchId) {
+    const key = matchPreviewCacheKey(fixtureType, matchId);
+    const cached = matchPreviewCache.get(key);
+    if (!cached) return null;
+    if (Date.now() - Number(cached.cachedAt || 0) > MATCH_PREVIEW_CACHE_TTL_MS) {
+        matchPreviewCache.delete(key);
+        return null;
+    }
+    return cached.data;
+}
+
+function matchPreviewTeamLogo(team) {
+    if (team?.logo_path) {
+        return `<span class="match-preview-team-logo has-logo"><img src="${escapeHtml(team.logo_path)}" alt="${escapeHtml(team.team_name)}队徽"></span>`;
+    }
+    return `<span class="match-preview-team-logo" aria-hidden="true">${escapeHtml(String(team?.team_name || '--').slice(0, 2))}</span>`;
+}
+
+function matchPreviewForm(form = []) {
+    const labels = {W: '胜', D: '平', L: '负'};
+    return `<span class="match-preview-form" aria-label="最近比赛：${form.map(item => labels[item] || item).join('、') || '暂无'}">${form.map(item => `<i class="is-${String(item).toLowerCase()}">${escapeHtml(labels[item] || item)}</i>`).join('') || '<em>暂无赛果</em>'}</span>`;
+}
+
+function teamDetailRecentLeagueForm(matches, team) {
+    const form = (Array.isArray(matches) ? matches : []).slice(0, 5).reverse().map(match => {
+        const meta = teamDetailMatchMeta(match, team);
+        if (teamDetailSafeNumber(meta.ownScore) > teamDetailSafeNumber(meta.opponentScore)) return 'W';
+        if (teamDetailSafeNumber(meta.ownScore) < teamDetailSafeNumber(meta.opponentScore)) return 'L';
+        return 'D';
+    });
+    return matchPreviewForm(form);
+}
+
+function matchPreviewStandingProbability(value) {
+    const number = teamDetailSafeNumber(value);
+    return `${Math.round((number <= 1 ? number * 100 : number) * 10) / 10}%`;
+}
+
+function matchPreviewTeamHeadline(team) {
+    const prediction = team.predicted_rank
+        ? `预测第 ${team.predicted_rank} 名 · 区间 ${team.predicted_rank_min || team.predicted_rank}–${team.predicted_rank_max || team.predicted_rank}`
+        : '预测排名待形成';
+    return `<div class="match-preview-team-headline">
+        ${matchPreviewTeamLogo(team)}
+        <div><strong>${escapeHtml(team.team_name)}</strong><small>${escapeHtml(team.level)} · ${team.rank ? `第 ${team.rank} 名 / ${team.points} 分` : '积分榜数据待更新'}</small><em>${escapeHtml(prediction)}</em></div>
+    </div>`;
+}
+
+function matchPreviewAvailability(team, compact = false) {
+    const availability = team.availability || {};
+    const tone = availability.reliable ? (availability.missing_count > 0 ? 'warning' : 'clear') : 'uncertain';
+    const missing = Array.isArray(availability.missing_players) ? availability.missing_players : [];
+    return `<section class="match-preview-availability is-${tone} ${compact ? 'is-compact' : ''}">
+        <div class="match-preview-availability-head"><span>${availability.reliable ? (availability.missing_count ? '确认缺席' : '阵容完整') : '时效待确认'}</span><strong>${availability.reliable ? `${teamDetailSafeNumber(availability.missing_count)} 人` : '不计入模型'}</strong></div>
+        <p>${escapeHtml(availability.detail || availability.title || '暂时无法判断伤停数据时效')}</p>
+        ${missing.length ? `<div class="match-preview-missing-list">${missing.map(player => `<span><b>${escapeHtml(player.player_name)}</b><small>${escapeHtml(player.absence_label || '停赛')}</small></span>`).join('')}</div>` : ''}
+    </section>`;
+}
+
+function matchPreviewComparisonTeam(team, side) {
+    const power = team.lineup_power ?? team.roster_power;
+    return `<article class="match-preview-comparison-team is-${side}">
+        ${matchPreviewTeamHeadline(team)}
+        <div class="match-preview-team-metrics">
+            <span><small>近5场</small>${matchPreviewForm(team.recent_form)}</span>
+            <span><small>${escapeHtml(team.venue_label || '综合')}战绩</small><strong>${team.venue_wins}-${team.venue_draws}-${team.venue_losses}</strong><em>${team.venue_points} 分 / ${team.venue_played} 场</em></span>
+            <span><small>预计阵容战力</small><strong>${power === null || power === undefined ? '--' : teamDetailFormatNumber(power, 2)}</strong><em>${team.lineup_saved ? `${escapeHtml(team.formation)} 已保存` : '系统推荐阵容'}</em></span>
+        </div>
+        ${matchPreviewAvailability(team, true)}
+    </article>`;
+}
+
+function matchPreviewSummaryMarkup(data) {
+    const prediction = data.prediction || {};
+    const probabilities = [
+        {label: `${data.home.team_name}胜`, value: teamDetailSafeNumber(prediction.home_win_probability), className: 'home'},
+        {label: '平局', value: teamDetailSafeNumber(prediction.draw_probability), className: 'draw'},
+        {label: `${data.away.team_name}胜`, value: teamDetailSafeNumber(prediction.away_win_probability), className: 'away'},
+    ];
+    return `<div class="match-preview-summary">
+        <section class="match-preview-prediction-card">
+            <div class="match-preview-prediction-title"><div><span>模型参考</span><strong>${escapeHtml(prediction.advantage_label || '势均力敌')}</strong></div><small>可信度 ${escapeHtml(prediction.confidence_label || '低')} · ${Math.round(teamDetailSafeNumber(prediction.confidence) * 100)}%</small></div>
+            <div class="match-preview-probabilities">${probabilities.map(item => `<div class="is-${item.className}"><span><b>${escapeHtml(item.label)}</b><strong>${teamDetailFormatNumber(item.value, 1)}%</strong></span><i style="--match-preview-probability:${Math.max(0, Math.min(100, item.value))}%"><b></b></i></div>`).join('')}</div>
+            <ul>${(prediction.reasons || []).map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul>
+            <p>${escapeHtml(prediction.note || '模型结果仅供赛前参考')}</p>
+        </section>
+        <div class="match-preview-team-comparison">
+            ${matchPreviewComparisonTeam(data.home, 'home')}
+            <div class="match-preview-versus" aria-hidden="true"><span>VS</span><i></i></div>
+            ${matchPreviewComparisonTeam(data.away, 'away')}
+        </div>
+    </div>`;
+}
+
+function matchPreviewLeaderRows(team) {
+    const leaders = Array.isArray(team.leaders) ? team.leaders : [];
+    if (!leaders.length) return '<div class="match-preview-empty">暂无足够的球员榜数据。</div>';
+    return `<div class="match-preview-leaders">${leaders.map(player => `<article class="${player.is_unavailable ? 'is-unavailable' : ''}">
+        <div><strong>${escapeHtml(player.player_name)}</strong><small>${escapeHtml(player.position || '位置待补充')} · ${player.appearances} 场</small></div>
+        <span>${(player.roles || []).map(role => `<i>${escapeHtml(role)}</i>`).join('')}</span>
+        <dl><div><dt>进球</dt><dd>${player.goals}</dd></div><div><dt>助攻</dt><dd>${player.assists}</dd></div><div><dt>最佳</dt><dd>${player.mvps}</dd></div><div><dt>HEIGO</dt><dd>${player.heigo_power === null || player.heigo_power === undefined ? '--' : teamDetailFormatNumber(player.heigo_power, 2)}</dd></div></dl>
+        ${player.is_unavailable ? `<em>${escapeHtml(player.absence_label || '本场缺席')}</em>` : ''}
+    </article>`).join('')}</div>`;
+}
+
+function matchPreviewPlayersMarkup(data) {
+    return `<div class="match-preview-player-grid">
+        ${[data.home, data.away].map(team => `<section class="match-preview-player-team">
+            ${matchPreviewTeamHeadline(team)}
+            <div class="match-preview-section-heading"><div><span>Key Players</span><h3>关键球员</h3></div><small>射手、助攻、最佳与战力核心合并</small></div>
+            ${matchPreviewLeaderRows(team)}
+            <div class="match-preview-section-heading is-availability"><div><span>Availability</span><h3>伤停与停赛</h3></div></div>
+            ${matchPreviewAvailability(team)}
+        </section>`).join('')}
+    </div>`;
+}
+
+function matchPreviewProbabilityContext(team) {
+    if (team.level === '超级') {
+        return `<span>争冠 ${matchPreviewStandingProbability(team.title_race_probability)}</span><span>降级 ${matchPreviewStandingProbability(team.relegation_probability)}</span>`;
+    }
+    return `<span>升级 ${matchPreviewStandingProbability(team.promotion_probability)}</span><span>降级 ${matchPreviewStandingProbability(team.relegation_probability)}</span>`;
+}
+
+function matchPreviewStakesTeam(team) {
+    const cupContext = team.competition_context
+        ? `<p>${team.competition_rank ? `杯赛第 ${team.competition_rank} 名 · ${team.competition_points} 分 · ` : ''}${escapeHtml(team.competition_context)}</p>`
+        : '';
+    return `<article>${matchPreviewTeamHeadline(team)}<div class="match-preview-stakes-probabilities">${matchPreviewProbabilityContext(team)}</div>${cupContext}</article>`;
+}
+
+function matchPreviewHeadToHead(data) {
+    const rows = Array.isArray(data.head_to_head) ? data.head_to_head : [];
+    if (!rows.length) return '<div class="match-preview-empty">本赛季暂无双方已完成交锋。</div>';
+    return `<div class="match-preview-h2h-list">${rows.map(row => `<article><div><span>${escapeHtml(row.competition_title)}</span><small>${escapeHtml(row.round_label)}</small></div><p><b>${escapeHtml(row.home_team_name)}</b><strong>${row.home_score} : ${row.away_score}</strong><b>${escapeHtml(row.away_team_name)}</b></p></article>`).join('')}</div>`;
+}
+
+function matchPreviewStakesMarkup(data) {
+    return `<div class="match-preview-stakes">
+        <section class="match-preview-stakes-hero"><span>Match Stakes</span><h3>${escapeHtml(data.stakes_label || '常规比赛')}</h3><p>${escapeHtml(data.stakes_detail || '')}</p></section>
+        <div class="match-preview-stakes-teams">${matchPreviewStakesTeam(data.home)}${matchPreviewStakesTeam(data.away)}</div>
+        <section class="match-preview-h2h"><div class="match-preview-section-heading"><div><span>Head to Head</span><h3>本赛季交锋</h3></div><small>最多显示最近 4 场</small></div>${matchPreviewHeadToHead(data)}</section>
+    </div>`;
+}
+
+function renderMatchPreviewBody() {
+    const body = document.getElementById('matchPreviewBody');
+    if (!body || !currentMatchPreviewData) return;
+    if (currentMatchPreviewTab === 'players') body.innerHTML = matchPreviewPlayersMarkup(currentMatchPreviewData);
+    else if (currentMatchPreviewTab === 'stakes') body.innerHTML = matchPreviewStakesMarkup(currentMatchPreviewData);
+    else body.innerHTML = matchPreviewSummaryMarkup(currentMatchPreviewData);
+}
+
+function renderMatchPreviewShell(data) {
+    const root = document.getElementById('matchPreviewRoot');
+    if (!root) return;
+    const fixture = data.fixture;
+    document.getElementById('matchPreviewTitle').textContent = `${fixture.home_team_name} vs ${fixture.away_team_name}`;
+    root.innerHTML = `<div class="match-preview-fixture-head">
+        <div class="match-preview-fixture-meta"><span>${escapeHtml(fixture.competition_title)}</span><strong>${escapeHtml(fixture.round_label)}</strong>${fixture.neutral_venue ? '<small>中立场地模型</small>' : ''}</div>
+        <div class="match-preview-matchup"><div>${matchPreviewTeamLogo(data.home)}<strong>${escapeHtml(data.home.team_name)}</strong><small>${fixture.neutral_venue ? '对阵上方' : '主队'}</small></div><b aria-hidden="true">VS</b><div>${matchPreviewTeamLogo(data.away)}<strong>${escapeHtml(data.away.team_name)}</strong><small>${fixture.neutral_venue ? '对阵下方' : '客队'}</small></div></div>
+        <nav class="match-preview-tabs" role="tablist" aria-label="比赛前瞻内容">
+            ${[['summary', '综合'], ['players', '球员'], ['stakes', '形势']].map(([key, label]) => `<button class="${currentMatchPreviewTab === key ? 'active' : ''}" type="button" role="tab" aria-selected="${currentMatchPreviewTab === key ? 'true' : 'false'}" onclick="setMatchPreviewTab('${key}')">${label}</button>`).join('')}
+        </nav>
+    </div><div id="matchPreviewBody" class="match-preview-body" role="tabpanel"></div>`;
+    renderMatchPreviewBody();
+}
+
+function setMatchPreviewTab(tab) {
+    if (!['summary', 'players', 'stakes'].includes(tab) || tab === currentMatchPreviewTab) return;
+    currentMatchPreviewTab = tab;
+    if (currentMatchPreviewData) renderMatchPreviewShell(currentMatchPreviewData);
+}
+
+function renderMatchPreviewLoading() {
+    const root = document.getElementById('matchPreviewRoot');
+    if (!root) return;
+    document.getElementById('matchPreviewTitle').textContent = '正在生成比赛前瞻';
+    root.innerHTML = `<div class="match-preview-loading" aria-label="正在加载比赛前瞻"><div class="match-preview-loading-matchup"><span></span><i></i><span></span></div><div class="match-preview-loading-tabs"></div><div class="match-preview-loading-grid"><span></span><span></span></div></div>`;
+}
+
+async function loadMatchPreview(fixtureType, matchId, options = {}) {
+    const cached = options.force ? null : getCachedMatchPreview(fixtureType, matchId);
+    if (cached) return cached;
+    const data = await fetchJsonOrThrow(`/api/match-previews/${encodeURIComponent(fixtureType)}/${Number(matchId)}`, {signal: options.signal});
+    matchPreviewCache.set(matchPreviewCacheKey(fixtureType, matchId), {data, cachedAt: Date.now()});
+    return data;
+}
+
+async function retryMatchPreview() {
+    if (!currentMatchPreviewRequest) return;
+    await openMatchPreview(currentMatchPreviewRequest.fixtureType, currentMatchPreviewRequest.matchId, matchPreviewReturnFocus, {force: true, preserveHistory: true});
+}
+
+function handleMatchPreviewKeydown(event) {
+    const modal = document.getElementById('matchPreviewModal');
+    if (!modal?.classList.contains('active')) return;
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMatchPreview();
+        return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = [...modal.querySelectorAll('button:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])')].filter(element => !element.hidden && element.getClientRects().length);
+    if (!focusable.length) {
+        event.preventDefault();
+        modal.querySelector('.match-preview-dialog')?.focus();
+        return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
+}
+
+async function openMatchPreview(fixtureType, matchId, triggerElement = null, options = {}) {
+    const modal = document.getElementById('matchPreviewModal');
+    if (!modal || !Number(matchId)) return;
+    matchPreviewAbortController?.abort();
+    matchPreviewAbortController = new AbortController();
+    const requestController = matchPreviewAbortController;
+    currentMatchPreviewRequest = {fixtureType: String(fixtureType), matchId: Number(matchId)};
+    currentMatchPreviewData = null;
+    currentMatchPreviewTab = 'summary';
+    if (triggerElement instanceof HTMLElement) matchPreviewReturnFocus = triggerElement;
+    else if (!matchPreviewReturnFocus) matchPreviewReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('match-preview-open');
+    renderMatchPreviewLoading();
+    requestAnimationFrame(() => {
+        modal.classList.add('active');
+        modal.querySelector('.match-preview-close')?.focus();
+    });
+    modal.removeEventListener('keydown', handleMatchPreviewKeydown);
+    modal.addEventListener('keydown', handleMatchPreviewKeydown);
+    if (!matchPreviewHistoryActive && options.preserveHistory !== true) {
+        history.pushState({...history.state, __matchPreview: true}, '', window.location.href);
+        matchPreviewHistoryActive = true;
+    }
+    try {
+        const data = await loadMatchPreview(fixtureType, matchId, {force: options.force, signal: requestController.signal});
+        if (requestController !== matchPreviewAbortController) return;
+        currentMatchPreviewData = data;
+        renderMatchPreviewShell(data);
+    } catch (error) {
+        if (error?.name === 'AbortError' || requestController !== matchPreviewAbortController) return;
+        const root = document.getElementById('matchPreviewRoot');
+        if (root) root.innerHTML = renderUiState({tone: 'danger', title: '比赛前瞻暂时无法加载', message: error.message || '请稍后重试。', actionLabel: '重新加载', actionClass: 'btn-primary', actionOnclick: 'retryMatchPreview()'});
+    }
+}
+
+function closeMatchPreview(options = {}) {
+    const modal = document.getElementById('matchPreviewModal');
+    if (!modal || modal.hidden) return;
+    matchPreviewAbortController?.abort();
+    matchPreviewAbortController = null;
+    currentMatchPreviewData = null;
+    currentMatchPreviewRequest = null;
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('match-preview-open');
+    window.setTimeout(() => {
+        if (!modal.classList.contains('active')) modal.hidden = true;
+    }, 220);
+    const returnFocus = matchPreviewReturnFocus;
+    matchPreviewReturnFocus = null;
+    const shouldPopHistory = matchPreviewHistoryActive && options.fromPopState !== true && history.state?.__matchPreview;
+    matchPreviewHistoryActive = false;
+    if (shouldPopHistory) history.back();
+    if (returnFocus?.isConnected) requestAnimationFrame(() => returnFocus.focus());
+}
+
+window.addEventListener('popstate', event => {
+    if (matchPreviewHistoryActive && !event.state?.__matchPreview) closeMatchPreview({fromPopState: true});
+});
 
 function teamDetailGrowthStepFromCa(player) {
     const gain = Math.max(0, teamDetailSafeNumber(player.ca) - teamDetailSafeNumber(player.initial_ca));
@@ -359,12 +663,73 @@ function teamDetailSpineBand(key, label, items, powerByUid) {
 
 function teamDetailPowerCore(items) {
     if (!items.length) return '<div class="team-detail-empty-inline">当前球队暂无可用战力数据。</div>';
-    return `<div class="team-power-core-list">${items.slice(0, 5).map((item, index) => `<article class="team-power-core-item">
+    return `<div class="team-power-core-list">${items.slice(0, 4).map((item, index) => `<article class="team-power-core-item">
         <span class="team-power-rank">${String(index + 1).padStart(2, '0')}</span>
         <div class="team-power-player">${teamDetailPlayerButton(item)}<small>${escapeHtml(item.position || '-')} · 当前 CA ${teamDetailSafeNumber(item.league_ca, item.ca)} ${teamDetailGrowthBadge(item)}</small></div>
-        <div class="team-power-metric team-power-weighted"><strong>${teamDetailFormatNumber(item.weighted_power, 2)}</strong><span>加权战力</span></div>
-        <div class="team-power-metric team-power-heigo"><strong>${teamDetailFormatNumber(item.heigo_power, 2)}</strong><span>HEIGO 战力</span><small>前 ${teamDetailFormatNumber(item.top_percent, 2)}%</small></div>
+        <div class="team-power-metric team-power-compact-score"><strong>${teamDetailFormatNumber(item.heigo_power, 2)}</strong><span>HEIGO 战力</span><small>加权 ${teamDetailFormatNumber(item.weighted_power, 2)} · 前 ${teamDetailFormatNumber(item.top_percent, 2)}%</small></div>
     </article>`).join('')}</div>`;
+}
+
+function teamDetailPlayerLeaderConfig(metric = currentTeamPlayerLeaderMetric) {
+    return {
+        goals: {label: '射手榜', unit: '球', empty: '暂无进球记录'},
+        assists: {label: '助攻榜', unit: '次', empty: '暂无助攻记录'},
+        mvps: {label: '最佳球员榜', unit: '次', empty: '暂无最佳球员记录'},
+    }[metric] || {label: '射手榜', unit: '球', empty: '暂无进球记录'};
+}
+
+function teamDetailPlayerLeaderRows(payload, metric = currentTeamPlayerLeaderMetric) {
+    return (Array.isArray(payload?.rows) ? payload.rows : [])
+        .filter(row => Number(row?.[metric] || 0) > 0)
+        .sort((a, b) => {
+            const metricDiff = Number(b?.[metric] || 0) - Number(a?.[metric] || 0);
+            if (metricDiff) return metricDiff;
+            const goalsDiff = Number(b?.goals || 0) - Number(a?.goals || 0);
+            if (goalsDiff) return goalsDiff;
+            const assistsDiff = Number(b?.assists || 0) - Number(a?.assists || 0);
+            if (assistsDiff) return assistsDiff;
+            const mvpsDiff = Number(b?.mvps || 0) - Number(a?.mvps || 0);
+            if (mvpsDiff) return mvpsDiff;
+            return String(a?.player_name || '').localeCompare(String(b?.player_name || ''));
+        })
+        .slice(0, 5);
+}
+
+function teamDetailPlayerLeaderLink(row) {
+    const uid = Number(row?.player_uid || 0);
+    const name = escapeHtml(row?.player_name || '-');
+    if (!Number.isInteger(uid) || uid <= 0) return `<span class="team-player-leader-name">${name}</span>`;
+    return `<button class="team-detail-player-link team-player-leader-name" type="button" onclick="openPlayerAttributeDetail(${uid}, {returnTab: 'team'})"><span>${name}</span></button>`;
+}
+
+function teamDetailPlayerLeaderTabs() {
+    return `<div class="team-player-leader-tabs" role="tablist" aria-label="队内球员数据榜">
+        ${[['goals', '射手', '射手榜'], ['assists', '助攻', '助攻榜'], ['mvps', '最佳', '最佳球员榜']].map(([key, label, ariaLabel]) => `<button class="team-player-leader-tab ${currentTeamPlayerLeaderMetric === key ? 'active' : ''}" type="button" role="tab" data-team-player-leader-metric="${key}" aria-label="${ariaLabel}" aria-selected="${currentTeamPlayerLeaderMetric === key ? 'true' : 'false'}" onclick="setTeamPlayerLeaderMetric('${key}')">${label}</button>`).join('')}
+    </div>`;
+}
+
+function teamDetailPlayerLeaders(payload) {
+    const metric = currentTeamPlayerLeaderMetric;
+    const config = teamDetailPlayerLeaderConfig(metric);
+    const rows = teamDetailPlayerLeaderRows(payload, metric);
+    return `<div class="team-player-leader-list" role="tabpanel" aria-label="${config.label}">
+        ${rows.length ? rows.map((row, index) => `<article class="team-player-leader-row ${index === 0 ? 'is-first' : ''}">
+            <span class="team-player-leader-rank">${String(index + 1).padStart(2, '0')}</span>
+            <div class="team-player-leader-player">${teamDetailPlayerLeaderLink(row)}<small>${teamDetailSafeNumber(row.appearances)} 场</small></div>
+            <strong>${teamDetailSafeNumber(row[metric])}<small>${config.unit}</small></strong>
+        </article>`).join('') : `<div class="team-player-leader-empty">${config.empty}</div>`}
+    </div>`;
+}
+
+function setTeamPlayerLeaderMetric(metric) {
+    currentTeamPlayerLeaderMetric = ['goals', 'assists', 'mvps'].includes(metric) ? metric : 'goals';
+    document.querySelectorAll('.team-player-leader-tab').forEach(button => {
+        const active = button.dataset.teamPlayerLeaderMetric === currentTeamPlayerLeaderMetric;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    const root = document.getElementById('teamPlayerLeadersContent');
+    if (root && currentTeamDetailData) root.innerHTML = teamDetailPlayerLeaders(currentTeamDetailData.playerRankingsPayload);
 }
 
 function teamDetailSuspensionFreshness(teamSuspensions) {
@@ -400,9 +765,9 @@ function teamDetailDiscipline(teamSuspensions, freshness) {
     const freshnessMarkup = `<div class="team-discipline-freshness is-${escapeHtml(status.state)}"><span aria-hidden="true">${statusIcon}</span><div><strong>${escapeHtml(status.title)}</strong><small>${escapeHtml(status.detail)}</small></div></div>`;
     const hasGaps = Boolean(status.matchGapRounds?.length);
     const progressMarkup = `<div class="team-discipline-progress" aria-label="赛果与伤停轮次进度">
-        <span><small>${hasGaps ? '赛果连续至' : '赛果至'}</small><strong>R${teamDetailSafeNumber(hasGaps ? status.matchContinuousRound : status.matchLatestRound)}</strong>${hasGaps ? `<em>最高 R${teamDetailSafeNumber(status.matchLatestRound)}</em>` : ''}</span>
-        <span><small>伤停至</small><strong>${status.suspensionCheckedRound === null || status.suspensionCheckedRound === undefined ? '--' : `R${teamDetailSafeNumber(status.suspensionCheckedRound)}`}</strong></span>
-        <span><small>适用于</small><strong>${status.appliesFromRound === null || status.appliesFromRound === undefined ? '--' : `R${teamDetailSafeNumber(status.appliesFromRound)}`}</strong></span>
+        <span><small>${hasGaps ? '赛果连续至' : '赛果至'}</small><strong>第 ${teamDetailSafeNumber(hasGaps ? status.matchContinuousRound : status.matchLatestRound)} 轮</strong>${hasGaps ? `<em>最高第 ${teamDetailSafeNumber(status.matchLatestRound)} 轮</em>` : ''}</span>
+        <span><small>伤停至</small><strong>${status.suspensionCheckedRound === null || status.suspensionCheckedRound === undefined ? '--' : `第 ${teamDetailSafeNumber(status.suspensionCheckedRound)} 轮`}</strong></span>
+        <span><small>适用于</small><strong>${status.appliesFromRound === null || status.appliesFromRound === undefined ? '--' : `第 ${teamDetailSafeNumber(status.appliesFromRound)} 轮`}</strong></span>
     </div>`;
     if (!teamSuspensions) return `${freshnessMarkup}${progressMarkup}<div class="team-detail-empty-inline">暂无纪律数据。</div>`;
     const sections = [
@@ -1022,7 +1387,7 @@ function renderTeamCenterLanding() {
 function renderTeamDetailLoaded(data) {
     const root = document.getElementById('teamDetailRoot');
     if (!root || data.team.name !== currentTeamDetailName) return;
-    const {team, players, standings, matchesPayload, suspensionsPayload, powerPayload, lineupPayload, teamPowerSummaries, cupOutlookPayload} = data;
+    const {team, players, standings, matchesPayload, suspensionsPayload, playerRankingsPayload, powerPayload, lineupPayload, teamPowerSummaries, cupOutlookPayload} = data;
     const allPowerItems = Array.isArray(powerPayload?.items) ? powerPayload.items : [];
     const powerByUid = teamDetailSelectPowerShapes(players, allPowerItems);
     const powerItems = [...powerByUid.values()].sort((a, b) => teamDetailSafeNumber(b.heigo_power) - teamDetailSafeNumber(a.heigo_power));
@@ -1062,11 +1427,11 @@ function renderTeamDetailLoaded(data) {
     </div>
     <section class="team-hero surface-card">
         <div class="team-hero-identity"><div class="team-hero-crest ${team.logo_path ? 'has-logo' : ''}">${logo}</div><div><span class="panel-kicker">HEIGO Team Hub</span><h1>${escapeHtml(team.name)}</h1><p>主教练 ${renderCoachProfileLink(team.manager || '待定', 'coach-profile-link team-hero-coach')}</p></div></div>
-        <div class="team-hero-standing"><div><span>联赛排名</span><strong>${standing ? `#${standing.rank}` : '--'}</strong></div><div><span>积分</span><strong>${standing ? standing.points : '--'}</strong></div><div><span>战绩</span><strong>${standing ? `${standing.wins}-${standing.draws}-${standing.losses}` : '--'}</strong></div></div>
+        <div class="team-hero-standing"><div class="team-hero-form">${teamDetailRecentLeagueForm(playedMatches, team)}</div><div><span>联赛排名</span><strong>${standing ? `#${standing.rank}` : '--'}</strong></div><div><span>积分</span><strong>${standing ? standing.points : '--'}</strong></div><div><span>战绩</span><strong>${standing ? `${standing.wins}-${standing.draws}-${standing.losses}` : '--'}</strong></div></div>
     </section>
     <section class="team-stat-strip">
         <article><span>一线队人数</span><strong>${teamDetailSafeNumber(team.team_size, players.length)}</strong><small>${teamDetailSafeNumber(team.gk_count)} 名门将</small></article>
-        <article><span>球队工资</span><strong>${teamDetailFormatNumber(team.final_wage, 2)}M</strong><small>工资帽 ${teamDetailFormatNumber(wageCap, 2)}M · 球员工资 ${teamDetailFormatNumber(team.wage, 2)}M</small></article>
+        <article><span>球队工资 / 工资帽</span><strong>${teamDetailFormatNumber(team.final_wage, 2)}M / ${teamDetailFormatNumber(wageCap, 2)}M</strong><small>球员工资 ${teamDetailFormatNumber(team.wage, 2)}M</small></article>
         <article><span>平均 CA / PA</span><strong>${teamDetailFormatNumber(team.avg_ca, 1)} / ${teamDetailFormatNumber(team.avg_pa, 1)}</strong><small>总成长 ${teamDetailFormatNumber(team.total_growth)}</small></article>
         <article class="team-power-summary-stat"><span class="team-power-summary-title">平均 HEIGO 战力</span><div class="team-power-summary-values">
             <section><span>阵型预览 · 估计值</span><strong>${previewAverage !== null ? teamDetailFormatNumber(previewAverage, 2) : '--'}</strong><small>${teamDetailPowerRankLabel(team.level, teamPowerSummary?.lineup_rank, levelPowerRows.length)}</small></section>
@@ -1081,7 +1446,10 @@ function renderTeamDetailLoaded(data) {
         </aside>
     </div>
     <div class="team-detail-secondary-grid">
-        <section class="team-panel surface-card"><div class="team-panel-header"><div><span class="panel-kicker">Power Core</span><h2>队内战力核心</h2></div><button class="team-panel-link" type="button" onclick="openTeamPowerRanking(decodeURIComponent('${encodedName}'))">查看战力榜 →</button></div>${teamDetailPowerCore(powerItems)}</section>
+        <section class="team-panel team-performance-panel surface-card"><div class="team-panel-header team-performance-header"><div><span class="panel-kicker">Team Leaders</span><h2>队内表现</h2></div><span class="team-panel-note">比赛数据与球员榜同步</span></div><div class="team-performance-grid">
+            <section class="team-performance-section team-power-core-section"><div class="team-performance-section-header"><div><span>Power Core</span><h3>队内战力核心</h3></div><button class="team-panel-link team-panel-link-compact" type="button" onclick="openTeamPowerRanking(decodeURIComponent('${encodedName}'))">完整战力榜 →</button></div>${teamDetailPowerCore(powerItems)}</section>
+            <section class="team-performance-section team-player-leaders-section"><div class="team-performance-section-header"><div><span>Match Leaders</span><h3>队内球员榜</h3></div>${teamDetailPlayerLeaderTabs()}</div><div id="teamPlayerLeadersContent">${teamDetailPlayerLeaders(playerRankingsPayload)}</div></section>
+        </div></section>
         <section class="team-panel surface-card"><div class="team-panel-header"><div><span class="panel-kicker">Form</span><h2>最近赛果</h2></div><span class="team-panel-note">按同一对手两轮合并</span></div><div class="team-match-stack">${playedSeries.slice(0, 3).map(series => teamDetailMatchSeriesCard(series, team, true)).join('') || '<div class="team-detail-empty-inline">导入赛程暂未产生赛果。</div>'}</div></section>
     </div>
     <section class="team-panel team-roster-panel surface-card"><div class="team-panel-header team-roster-panel-header"><div><span class="panel-kicker">First Team · ${players.length}</span><h2>完整球队名单</h2><p class="team-roster-explain">简略版突出战力，详细版完整展示名单字段，卡片版适合移动浏览。</p></div><div class="team-roster-header-actions">${teamDetailRosterViewSwitch()}<button class="team-panel-link team-roster-copy-button" type="button" onclick="copyTeamRosterImage()">复制球队名单图</button></div></div><div id="teamRosterViewBody">${teamDetailRosterView(players, powerByUid)}</div></section>`;
@@ -1099,6 +1467,7 @@ async function loadTeamDetailData(teamName, options = {}) {
         standings: payload.standings,
         matchesPayload: payload.matches,
         suspensionsPayload: payload.suspensions,
+        playerRankingsPayload: payload.player_rankings || {levels: [team.level], rows: [], coverage: []},
         powerPayload: payload.power,
         lineupPayload: payload.lineup || {team_id: team.id, team_name: team.name, formation: '4-3-3', picks: {}, is_saved: false, can_edit: false},
         teamPowerSummaries: payload.team_power_summaries,
@@ -1137,7 +1506,10 @@ async function renderTeamDetail(options = {}) {
 }
 
 async function openTeamDetail(teamName, options = {}) {
-    if (String(teamName || '').trim() !== currentTeamDetailName) currentTeamJourneyView = 'league';
+    if (String(teamName || '').trim() !== currentTeamDetailName) {
+        currentTeamJourneyView = 'league';
+        currentTeamPlayerLeaderMetric = 'goals';
+    }
     currentTeamDetailName = String(teamName || '').trim();
     await showTab('team', options.triggerElement || null, {syncHistory: false});
     window.scrollTo({top: 0, behavior: options.smooth === false ? 'auto' : 'smooth'});

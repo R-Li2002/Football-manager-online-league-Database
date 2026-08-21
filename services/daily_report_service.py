@@ -36,6 +36,7 @@ ALLOWED_TEMPLATE_FIELDS = {
     "winner", "loser", "home_team", "away_team", "home_score", "away_score", "score",
     "total_goals", "margin", "competition", "stage", "player", "team", "goals", "assists",
     "winner_power", "loser_power", "power_gap",
+    "team_a", "team_b", "aggregate_score", "series_goals", "first_leg", "second_leg",
 }
 CATEGORY_LABELS = {
     "narrow_win": "一球小胜",
@@ -57,6 +58,10 @@ CATEGORY_LABELS = {
     "mvp": "本场最佳",
     "power_upset": "战力下风取胜",
     "power_close": "战力接近",
+    "series_sweep": "两回合双杀",
+    "series_split": "两回合各胜一场",
+    "series_unbeaten": "两回合一胜一平",
+    "series_draws": "两回合均战平",
 }
 AUTO_REPORT_CACHE_TTL_SECONDS = 180
 MAX_FOCUS_STORIES = 6
@@ -91,6 +96,29 @@ FALLBACK_TEMPLATES = (
     _FallbackTemplate(16, "mvp", "{player} 当选本场最佳，成为这场比赛最受认可的球员。"),
     _FallbackTemplate(17, "power_upset", "赛前阵容战力处于下风的 {winner} 打出更高效率，击败了 {loser}。"),
     _FallbackTemplate(18, "power_close", "两队阵容战力十分接近，这场比赛也呈现出势均力敌的走势。"),
+    _FallbackTemplate(20, "narrow_win", "{winner}以 {score} 擦过胜负线，{loser}距离改写结局只差一球。", 30),
+    _FallbackTemplate(21, "regular_win", "{winner} {score} 击退 {loser}，用更直接的终结把差距写上比分牌。", 30),
+    _FallbackTemplate(22, "big_win", "{winner} {score} 重创 {loser}，三球以上的优势彻底撕开了双方差距。", 30),
+    _FallbackTemplate(23, "clean_sheet_rout", "{winner} {score} 零封横扫 {loser}，自己火力全开，也让对手的进球栏始终归零。", 30),
+    _FallbackTemplate(24, "high_scoring_win", "{winner}在 {total_goals} 球对轰中以 {score} 笑到最后，进攻回击压过了防线失守。", 30),
+    _FallbackTemplate(25, "goalless_draw", "{home_team}与{away_team}把进球栏锁成 0:0，整场拉扯最终只留下两张白卷。", 30),
+    _FallbackTemplate(26, "draw", "{home_team}与{away_team}战成 {score}，谁也没能把有限优势真正写成胜果。", 30),
+    _FallbackTemplate(27, "high_scoring_draw", "{home_team}与{away_team}轰出 {score}，合计 {total_goals} 球仍分不出赢家。", 30),
+    _FallbackTemplate(28, "winning_hattrick", "{player} 一人轰入三球，几乎以个人名义接管了 {team} 的进攻头条。", 30),
+    _FallbackTemplate(29, "losing_hattrick", "{player} 独中三元却只能目送 {team} 落败，最耀眼的个人演出撞上了最残酷的团队结果。", 30),
+    _FallbackTemplate(30, "brace", "{player} 梅开二度，两次破门把名字牢牢钉在 {team} 本场的进攻主线上。", 30),
+    _FallbackTemplate(31, "playmaker", "{player}送出 {assists} 次助攻，用传球连续撕开对手防线。", 30),
+    _FallbackTemplate(32, "goal_and_assist", "{player} 交出 {goals} 球 {assists} 助攻，一人包办得分与输送两条火线。", 30),
+    _FallbackTemplate(33, "mvp", "{player} 当选本场最佳，用全场最醒目的表现压过了其他竞争者。", 30),
+    _FallbackTemplate(34, "power_upset", "纸面战力落后的 {winner} 掀翻 {loser}，用结果把 {power_gap} 点差距变成了赛前数字。", 30),
+    _FallbackTemplate(35, "series_sweep", "{winner}两战通吃，以两回合总比分 {aggregate_score} 完成双杀。{first_leg}；{second_leg}，把胜果与气势一并收入囊中。", 10),
+    _FallbackTemplate(36, "series_sweep", "{winner}包办两回合胜利，累计以 {aggregate_score} 压过 {loser}。{first_leg}；{second_leg}，主客场都没给对手留下胜果。", 20),
+    _FallbackTemplate(37, "series_split", "{team_a}与{team_b}各赢一场，两回合针锋相对。{first_leg}；{second_leg}，胜负各自带走，悬念谁也没能独占。", 10),
+    _FallbackTemplate(38, "series_split", "两回合演成一场隔空对攻：{first_leg}；{second_leg}。{team_a}与{team_b}各守一胜，谁也没能彻底压住对方。", 20),
+    _FallbackTemplate(39, "series_unbeaten", "{winner}一胜一平保持不败，两回合总比分 {aggregate_score} 占据上风。{first_leg}；{second_leg}，没有让 {loser} 拿走完整胜果。", 10),
+    _FallbackTemplate(40, "series_unbeaten", "{winner}用一胜一平接管两回合叙事：{first_leg}；{second_leg}。不败背后，是总比分 {aggregate_score} 的稳定压制。", 20),
+    _FallbackTemplate(41, "series_draws", "两回合都没有赢家，{team_a}与{team_b}合计打入 {series_goals} 球。{first_leg}；{second_leg}，两次交锋都停在平局线上。", 10),
+    _FallbackTemplate(42, "series_draws", "{team_a}与{team_b}连续两场互不相让：{first_leg}；{second_leg}。总计 {series_goals} 粒进球，仍没人带走胜利。", 20),
 )
 
 
@@ -115,9 +143,11 @@ def _date_bounds(report_date: date) -> tuple[datetime, datetime]:
     return start, start + timedelta(days=1)
 
 
-def _require_full_admin(identity: WorkspaceIdentityResponse) -> str:
-    if not identity or not identity.is_full_admin:
-        raise HTTPException(status_code=403, detail="只有完整管理员可以维护每日日报")
+def _require_daily_report_manager(identity: WorkspaceIdentityResponse) -> str:
+    if not identity or (not identity.is_full_admin and "daily_reports.write" not in identity.capabilities):
+        raise HTTPException(status_code=403, detail="当前账号没有日报维护权限")
+    if identity.source == "coach_account":
+        return identity.principal_id
     return identity.username or identity.display_name or identity.principal_id
 
 
@@ -179,7 +209,7 @@ def _validate_template_request(request: DailyReportNarrativeTemplateUpsertReques
 
 
 def list_templates(db: Session, identity: WorkspaceIdentityResponse) -> list[DailyReportNarrativeTemplateResponse]:
-    _require_full_admin(identity)
+    _require_daily_report_manager(identity)
     rows = db.query(DailyReportNarrativeTemplate).order_by(
         DailyReportNarrativeTemplate.category,
         DailyReportNarrativeTemplate.sort_order,
@@ -193,7 +223,7 @@ def create_template(
     identity: WorkspaceIdentityResponse,
     request: DailyReportNarrativeTemplateUpsertRequest,
 ) -> DailyReportNarrativeTemplateResponse:
-    operator = _require_full_admin(identity)
+    operator = _require_daily_report_manager(identity)
     now = datetime.now()
     row = DailyReportNarrativeTemplate(**_validate_template_request(request), created_by=operator, updated_by=operator, created_at=now, updated_at=now)
     db.add(row)
@@ -211,7 +241,7 @@ def update_template(
     template_id: int,
     request: DailyReportNarrativeTemplateUpsertRequest,
 ) -> DailyReportNarrativeTemplateResponse:
-    operator = _require_full_admin(identity)
+    operator = _require_daily_report_manager(identity)
     row = db.query(DailyReportNarrativeTemplate).filter(DailyReportNarrativeTemplate.id == template_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="日报话术不存在")
@@ -227,7 +257,7 @@ def update_template(
 
 
 def delete_template(db: Session, identity: WorkspaceIdentityResponse, template_id: int) -> dict[str, str | bool]:
-    operator = _require_full_admin(identity)
+    operator = _require_daily_report_manager(identity)
     row = db.query(DailyReportNarrativeTemplate).filter(DailyReportNarrativeTemplate.id == template_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="日报话术不存在")
@@ -339,14 +369,14 @@ def _event_stats(events: list[MatchPlayerEvent]) -> list[dict[str, Any]]:
     return list(by_player.values())
 
 
-def _player_phrase(
+def _player_highlight(
     pool: dict[str, list[Any]],
     stats: list[dict[str, Any]],
     context: dict[str, Any],
     seed: str,
-) -> str:
+) -> tuple[str, str]:
     if not stats:
-        return ""
+        return "", ""
     winner = str(context.get("winner") or "")
     loser = str(context.get("loser") or "")
     candidates: list[tuple[int, str, dict[str, Any]]] = []
@@ -369,9 +399,18 @@ def _player_phrase(
         elif row["mvp"]:
             candidates.append((50, "mvp", row))
     if not candidates:
-        return ""
+        return "", ""
     _priority, category, selected = sorted(candidates, key=lambda item: (-item[0], item[2]["player"]))[0]
-    return _render_template(pool, category, selected, seed)
+    return _render_template(pool, category, selected, seed), str(selected.get("player") or "")
+
+
+def _player_phrase(
+    pool: dict[str, list[Any]],
+    stats: list[dict[str, Any]],
+    context: dict[str, Any],
+    seed: str,
+) -> str:
+    return _player_highlight(pool, stats, context, seed)[0]
 
 
 def _power_values(db: Session) -> dict[str, float]:
@@ -654,11 +693,11 @@ def _leg_narrative(story: dict[str, Any], index: int) -> tuple[str, str]:
     if category == "forfeit":
         return winner, f"{prefix}{venue}因比赛判定获胜"
     tone = {
-        "clean_sheet_rout": "零封横扫",
-        "high_scoring_win": "赢下进球大战",
-        "big_win": "大比分取胜",
-        "narrow_win": "一球险胜",
-        "regular_win": "力克对手",
+        "clean_sheet_rout": "零封横扫，把对手的进球栏牢牢锁死",
+        "high_scoring_win": "赢下进球大战，在火力对轰中笑到最后",
+        "big_win": "大比分重创对手",
+        "narrow_win": "一球险胜，把胜负差距压到最细",
+        "regular_win": "力克对手，把效率写成胜果",
     }.get(category, "取胜")
     return winner, f"{prefix}{venue}以 {winner_score}:{loser_score} {tone}"
 
@@ -669,9 +708,63 @@ def _single_match_narrative(story: dict[str, Any]) -> str:
     return f"{winner}{detail}。".strip() if winner else f"{detail}。".strip()
 
 
-def _series_narrative(stories: list[dict[str, Any]]) -> str:
+def _series_template_context(stories: list[dict[str, Any]]) -> tuple[str, dict[str, Any], str]:
+    teams = sorted({str(story["match"].home_team_name or "") for story in stories} | {str(story["match"].away_team_name or "") for story in stories})
+    if len(teams) < 2:
+        return "", {}, ""
+    team_a, team_b = teams[:2]
+    aggregate = {team_a: 0, team_b: 0}
+    legs = [_leg_narrative(story, index) for index, story in enumerate(stories[:2])]
+    wins: dict[str, int] = defaultdict(int)
+    for story in stories[:2]:
+        match = story["match"]
+        aggregate[str(match.home_team_name or "")] = aggregate.get(str(match.home_team_name or ""), 0) + int(match.home_score or 0)
+        aggregate[str(match.away_team_name or "")] = aggregate.get(str(match.away_team_name or ""), 0) + int(match.away_score or 0)
+        winner, _loser = _winner_and_loser(match)
+        if winner:
+            wins[winner] += 1
+    first_winner, first_clause = legs[0]
+    second_winner, second_clause = legs[1]
+    first_leg = f"{first_winner}{first_clause}" if first_winner else first_clause
+    second_leg = f"{second_winner}{second_clause}" if second_winner else second_clause
+    winner = ""
+    loser = ""
+    if first_winner and first_winner == second_winner:
+        category = "series_sweep"
+        winner = first_winner
+    elif first_winner and second_winner:
+        category = "series_split"
+    elif not first_winner and not second_winner:
+        category = "series_draws"
+    else:
+        category = "series_unbeaten"
+        winner = first_winner or second_winner
+    if winner:
+        loser = team_b if winner == team_a else team_a
+        aggregate_score = f"{aggregate.get(winner, 0)}:{aggregate.get(loser, 0)}"
+    else:
+        aggregate_score = f"{aggregate.get(team_a, 0)}:{aggregate.get(team_b, 0)}"
+    context = {
+        "winner": winner,
+        "loser": loser,
+        "team_a": team_a,
+        "team_b": team_b,
+        "aggregate_score": aggregate_score,
+        "series_goals": sum(aggregate.values()),
+        "first_leg": first_leg,
+        "second_leg": second_leg,
+    }
+    seed = "series:" + ":".join(str(int(story["match"].id or 0)) for story in stories[:2])
+    return category, context, seed
+
+
+def _series_narrative(stories: list[dict[str, Any]], pool: dict[str, list[Any]]) -> str:
     if len(stories) < 2:
         return ""
+    category, context, seed = _series_template_context(stories)
+    rendered = _render_template(pool, category, context, seed) if category else ""
+    if rendered:
+        return rendered
     legs = [_leg_narrative(story, index) for index, story in enumerate(stories)]
     if len(legs) != 2:
         return _series_summary(stories)
@@ -687,39 +780,59 @@ def _series_narrative(stories: list[dict[str, Any]]) -> str:
     return f"{unbeaten}两回合保持不败：{first_clause}，{second_clause}。"
 
 
-def _group_story_line(stories: list[dict[str, Any]]) -> str:
+def _story_highlights(stories: list[dict[str, Any]], limit: int = 2) -> list[str]:
+    highlights: list[str] = []
+    highlighted_players: set[str] = set()
+    ordered = sorted(stories, key=lambda story: (-int(story.get("focus_score") or 0), int(story.get("sort_order") or 0)))
+    for story in ordered:
+        for key in ("player_phrase", "power_phrase"):
+            value = str(story.get(key) or "").strip()
+            player_name = str(story.get("highlight_player") or "").strip() if key == "player_phrase" else ""
+            if player_name and player_name in highlighted_players:
+                continue
+            if value and value not in highlights:
+                highlights.append(value)
+                if player_name:
+                    highlighted_players.add(player_name)
+            if len(highlights) >= limit:
+                return highlights
+    return highlights
+
+
+def _group_story_line(stories: list[dict[str, Any]], pool: dict[str, list[Any]]) -> str:
     first = stories[0]
     teams = sorted({str(first["match"].home_team_name or ""), str(first["match"].away_team_name or "")})
     tickets = "；".join(story["ticket"] for story in stories)
     best = max(stories, key=lambda story: (story["focus_score"], -story["sort_order"]))
     if len(stories) >= 2:
-        narrative = _series_narrative(stories)
-        highlight = str(best.get("player_phrase") or best.get("power_phrase") or "").strip()
+        narrative = _series_narrative(stories, pool)
+        highlights = _story_highlights(stories, 2)
     else:
         narrative = ""
-        highlight = " ".join(
+        highlights = [" ".join(
             item for item in (
                 str(best.get("lead") or "").strip(),
-                str(best.get("player_phrase") or best.get("power_phrase") or "").strip(),
+                str(best.get("player_phrase") or "").strip(),
+                str(best.get("power_phrase") or "").strip(),
             ) if item
-        )
-    suffix = " ".join(item for item in (narrative, highlight) if item)
+        )]
+    suffix = " ".join(item for item in (narrative, *highlights) if item)
     return f"{first['competition_label']}｜{teams[0]} vs {teams[1]}：{tickets}。{suffix}".strip()
 
 
-def _group_focus_line(stories: list[dict[str, Any]], tags: list[str]) -> str:
+def _group_focus_line(stories: list[dict[str, Any]], tags: list[str], pool: dict[str, list[Any]]) -> str:
     first = stories[0]
     teams = sorted({str(first["match"].home_team_name or ""), str(first["match"].away_team_name or "")})
     tickets = "；".join(story["ticket"] for story in stories)
     tag_text = "·".join(tags[:3]) or "焦点"
     best = max(stories, key=lambda story: (story["focus_score"], -story["sort_order"]))
-    narrative = _series_narrative(stories) if len(stories) >= 2 else _single_match_narrative(best)
-    player_highlight = str(best.get("player_phrase") or "").strip()
-    suffix = " ".join(item for item in (narrative, player_highlight) if item)
+    narrative = _series_narrative(stories, pool) if len(stories) >= 2 else _single_match_narrative(best)
+    highlights = _story_highlights(stories, 2)
+    suffix = " ".join(item for item in (narrative, *highlights) if item)
     return f"【{tag_text}】{first['competition_label']}｜{teams[0]} vs {teams[1]}：{tickets}。{suffix}".strip()
 
 
-def _group_match_stories(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _group_match_stories(stories: list[dict[str, Any]], pool: dict[str, list[Any]]) -> list[dict[str, Any]]:
     grouped: dict[tuple[str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for story in stories:
         match = story["match"]
@@ -730,8 +843,8 @@ def _group_match_stories(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ordered = sorted(group, key=lambda story: (story["sort_order"], int(story["match"].id or 0)))
         tags = list(dict.fromkeys(tag for story in ordered for tag in story["tags"]))
         result.append({
-            "line": _group_story_line(ordered),
-            "focus_line": _group_focus_line(ordered, tags),
+            "line": _group_story_line(ordered, pool),
+            "focus_line": _group_focus_line(ordered, tags, pool),
             "focus_score": sum(story["focus_score"] for story in ordered) + (25 if len(ordered) > 1 and tags else 0),
             "tags": tags,
             "sort_order": min(story["sort_order"] for story in ordered),
@@ -760,20 +873,20 @@ def _select_focus_stories(candidates: list[dict[str, Any]]) -> list[dict[str, An
 
 def _extract_focus_content(content: str) -> str:
     lines = [line.rstrip() for line in str(content or "").splitlines()]
-    overview = next((line for line in lines if line.strip() and not line.startswith("【")), "今日暂无可播报内容。")
-    try:
-        start = lines.index("【焦点头版】")
-    except ValueError:
-        compact = "\n".join(line for line in lines if line.strip())
-        return compact[:900] or overview
+    non_empty = [line for line in lines if line.strip()]
+    overview = next((line for line in non_empty if not line.strip().startswith("【")), "今日暂无可播报内容。")
+    start = next((index for index, line in enumerate(lines) if line.strip() == "【焦点头版】"), None)
+    if start is None:
+        if not non_empty:
+            return overview
+        return "\n".join([overview, "", "【焦点头版】", *non_empty]).strip()
     selected = [overview, "", "【焦点头版】"]
     for line in lines[start + 1:]:
-        if line.startswith("【"):
+        stripped = line.strip()
+        if stripped.startswith("【") and stripped.endswith("】"):
             break
-        if line.strip():
-            sentences = [sentence.strip() for sentence in line.split("。") if sentence.strip()]
-            compact = "。".join(sentences[:2])
-            selected.append(f"{compact}。" if compact else line)
+        if stripped:
+            selected.append(line)
     return "\n".join(selected).strip()
 
 
@@ -826,7 +939,7 @@ def build_daily_report(db: Session, report_date: str | date | None = None) -> Da
         seed = f"league:{match.id}:{selected_date.isoformat()}"
         lead = _render_template(pool, _match_category(match), context, seed)
         stats = _event_stats(events_by_match.get(int(match.id), []))
-        player = _player_phrase(pool, stats, context, seed)
+        player, highlight_player = _player_highlight(pool, stats, context, seed)
         power = _power_phrase(pool, context, power_values, seed)
         focus_score, tags = _focus_score(
             match,
@@ -843,6 +956,7 @@ def build_daily_report(db: Session, report_date: str | date | None = None) -> Da
             "ticket": _score_ticket(match, f"第{int(match.round_no)}轮"),
             "lead": lead,
             "player_phrase": player,
+            "highlight_player": highlight_player,
             "power_phrase": power,
             "focus_score": focus_score,
             "tags": tags,
@@ -873,6 +987,7 @@ def build_daily_report(db: Session, report_date: str | date | None = None) -> Da
             "ticket": _score_ticket(match, stage),
             "lead": lead,
             "player_phrase": "",
+            "highlight_player": "",
             "power_phrase": power,
             "focus_score": focus_score,
             "tags": tags,
@@ -880,7 +995,7 @@ def build_daily_report(db: Session, report_date: str | date | None = None) -> Da
         })
         total_goals += int(match.home_score or 0) + int(match.away_score or 0)
 
-    grouped_stories = _group_match_stories(match_stories)
+    grouped_stories = _group_match_stories(match_stories, pool)
     focus_candidates = [story for story in grouped_stories if int(story["focus_score"]) >= 65]
     focus_stories = _select_focus_stories(focus_candidates)
     focus_line_set = {story["line"] for story in focus_stories}
@@ -966,7 +1081,7 @@ def _row_response(row: DailyReport, *, localize_team_names: bool = False) -> Dai
     stored_focus_content = str(payload.get("focus_content") or "").strip()
     if localize_team_names:
         stored_focus_content = team_name_service.localize_team_names_in_text(stored_focus_content)
-    focus_content = stored_focus_content if stored_focus_content and len(stored_focus_content) <= 1200 else _extract_focus_content(content)
+    focus_content = stored_focus_content or _extract_focus_content(content)
     fingerprint = _fingerprint(date.fromisoformat(row.report_date), row.title, content) if localize_team_names else stored_fingerprint
     return DailyReportResponse(
         report_date=row.report_date,
@@ -1014,7 +1129,7 @@ def get_workspace_report(
     identity: WorkspaceIdentityResponse,
     report_date: str | date | None = None,
 ) -> DailyReportResponse:
-    _require_full_admin(identity)
+    _require_daily_report_manager(identity)
     selected_date = _parse_report_date(report_date)
     row = db.query(DailyReport).filter(DailyReport.report_date == selected_date.isoformat()).first()
     return _row_response(row) if row else build_daily_report(db, selected_date)
@@ -1025,7 +1140,7 @@ def generate_workspace_report(
     identity: WorkspaceIdentityResponse,
     report_date: str | date | None = None,
 ) -> DailyReportResponse:
-    operator = _require_full_admin(identity)
+    operator = _require_daily_report_manager(identity)
     generated = build_daily_report(db, report_date)
     row = db.query(DailyReport).filter(DailyReport.report_date == generated.report_date).first()
     now = datetime.now()
@@ -1055,7 +1170,7 @@ def update_workspace_report(
     report_date: str,
     request: DailyReportUpdateRequest,
 ) -> DailyReportResponse:
-    operator = _require_full_admin(identity)
+    operator = _require_daily_report_manager(identity)
     selected_date = _parse_report_date(report_date)
     title = str(request.title or "").strip()
     content = str(request.content or "").strip()

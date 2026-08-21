@@ -343,6 +343,43 @@ def _should_delete(request: SuspensionRecordUpdateRequest) -> bool:
     )
 
 
+def _normalize_player_name(value: str | None) -> str:
+    return " ".join(str(value or "").strip().casefold().split())
+
+
+def _merge_record_notes(records: list[PlayerSuspensionRecord], incoming: str | None) -> str | None:
+    notes: list[str] = []
+    for value in [*(record.notes for record in records), incoming]:
+        normalized = str(value or "").strip()
+        if normalized and normalized not in notes:
+            notes.append(normalized)
+    return "；".join(notes) or None
+
+
+def _matching_suspension_records(
+    db: Session,
+    player: Player,
+    team: Team,
+) -> list[PlayerSuspensionRecord]:
+    normalized_name = _normalize_player_name(player.name)
+    candidates = db.query(PlayerSuspensionRecord).filter(
+        or_(
+            PlayerSuspensionRecord.player_uid == player.uid,
+            PlayerSuspensionRecord.team_id == team.id,
+            PlayerSuspensionRecord.team_name == team.name,
+        )
+    ).all()
+    return [
+        record
+        for record in candidates
+        if record.player_uid == player.uid
+        or (
+            (record.team_id == team.id or record.team_name == team.name)
+            and _normalize_player_name(record.player_name) == normalized_name
+        )
+    ]
+
+
 def get_suspension_request_level(db: Session, request: SuspensionRecordUpdateRequest) -> str:
     record = db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_uid == request.player_uid).first()
     if _should_delete(request) and record and record.level in LEAGUE_LEVELS:
@@ -365,6 +402,10 @@ def update_suspension_record(
     operator = require_admin(admin)
     if request.yellow_cards < 0 or request.yellow_cards > 3:
         raise HTTPException(status_code=400, detail="黄牌数只能填写 0 到 3")
+    if request.merge_base_yellow_cards is not None and (
+        request.merge_base_yellow_cards < 0 or request.merge_base_yellow_cards > 3
+    ):
+        raise HTTPException(status_code=400, detail="合并前黄牌数只能填写 0 到 3")
 
     record = db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_uid == request.player_uid).first()
 
@@ -383,21 +424,58 @@ def update_suspension_record(
         return {"success": True, "message": "伤停记录已清除"}
 
     player, team = _load_player_with_team(db, request.player_uid)
+    matching_records = _matching_suspension_records(db, player, team)
+    record = next((item for item in matching_records if item.player_uid == player.uid), None)
+    affected_levels = {item.level for item in matching_records if item.level in LEAGUE_LEVELS}
     if not record:
         record = PlayerSuspensionRecord(player_uid=player.uid)
         db.add(record)
+
+    if request.merge_existing:
+        existing_yellow_cards = min(3, sum(int(item.yellow_cards or 0) for item in matching_records))
+        if request.merge_base_yellow_cards is None:
+            requested_total = existing_yellow_cards + int(request.yellow_cards or 0)
+        else:
+            requested_total = int(request.merge_base_yellow_cards) + int(request.yellow_cards or 0)
+        yellow_cards = min(3, max(existing_yellow_cards, requested_total))
+        red_card_suspended = bool(request.red_card_suspended) or any(bool(item.red_card_suspended) for item in matching_records)
+        red_injury_suspended = bool(request.red_injury_suspended) or any(bool(item.red_injury_suspended) for item in matching_records)
+        notes = _merge_record_notes(matching_records, request.notes)
+    else:
+        yellow_cards = int(request.yellow_cards or 0)
+        red_card_suspended = bool(request.red_card_suspended)
+        red_injury_suspended = bool(request.red_injury_suspended)
+        notes = str(request.notes or "").strip() or None
+
+    duplicate_records = [item for item in matching_records if item is not record]
+    for duplicate in duplicate_records:
+        db.delete(duplicate)
     now = datetime.now()
     record.player_name = player.name
     record.team_id = team.id
     record.team_name = team.name
     record.level = team.level
-    record.yellow_cards = int(request.yellow_cards or 0)
-    record.red_card_suspended = 1 if request.red_card_suspended else 0
-    record.red_injury_suspended = 1 if request.red_injury_suspended else 0
-    record.notes = str(request.notes or "").strip() or None
+    record.yellow_cards = yellow_cards
+    record.red_card_suspended = 1 if red_card_suspended else 0
+    record.red_injury_suspended = 1 if red_injury_suspended else 0
+    record.notes = notes
     record.updated_at = now
     from services import competition_work_service
-    competition_work_service.invalidate_current_round_suspension_confirmation(db, team.level)
+    affected_levels.add(team.level)
+    for level in affected_levels:
+        competition_work_service.invalidate_current_round_suspension_confirmation(db, level)
     db.commit()
+    merged = (bool(matching_records) and request.merge_existing) or bool(duplicate_records)
+    message = "伤停记录已保存"
+    if request.merge_existing and matching_records:
+        message = f"同名记录已合并，当前累计 {yellow_cards} 张黄牌"
+    elif duplicate_records:
+        message = "同名记录已合并并保存"
     write_to_log("伤停记录更新", f"{team.name} / {player.name}", operator)
-    return {"success": True, "message": "伤停记录已保存"}
+    return {
+        "success": True,
+        "message": message,
+        "record": _record_response(record).model_dump(mode="json"),
+        "merged": merged,
+        "merged_record_count": len(matching_records),
+    }

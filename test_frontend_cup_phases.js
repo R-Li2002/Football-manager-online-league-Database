@@ -56,6 +56,16 @@ assert.match(competition, /\['standings', 'schedule'\]\.includes\(currentCompeti
 assert.match(competition, /currentCompetitionSubtab === 'schedule'[\s\S]*?renderScheduleBoard\(\)/);
 assert.match(competition, /renderCupGroupStageBoard\(\)/);
 assert.doesNotMatch(competition, /分组名单请在“积分榜 → 小组赛阶段”查看/);
+assert.match(competition, /function renderWumingjianQualificationBoard\(\)/);
+assert.match(competition, /无铭剑杯预选赛/);
+assert.match(competition, /44队经抽签进行22场单场淘汰/);
+assert.match(competition, /\/api\/cups\/wumingjian_cup\/qualification/);
+assert.match(competition, /首次保存对阵时锁定名单/);
+assert.match(competition, /qualification\.direct_qualifiers/);
+assert.match(competition, /qualification\.preliminary_matches/);
+assert.match(competition, /cup-team-venue is-\$\{side\}/);
+assert.match(competition, />主场球队</);
+assert.match(competition, />客场球队</);
 
 assert.match(app, /params\.set\('cupPhase', competition\.cupPhase\)/);
 assert.match(app, /currentCupPhase = competitionState\.cupPhase === 'group'/);

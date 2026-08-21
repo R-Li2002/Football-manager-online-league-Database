@@ -300,9 +300,9 @@ def _progress_badge(progress: Any) -> tuple[str, str]:
     checked = progress.suspension_checked_round
     applies = progress.applies_from_round
     if checked is not None and applies is not None:
-        label = f"R{checked} → R{applies}"
+        label = f"第{checked}轮 → 第{applies}轮"
     elif checked is not None:
-        label = f"核对至 R{checked}"
+        label = f"核对至第{checked}轮"
     else:
         label = _truncate_text(progress.title or "轮次待补", 14)
     color = SUCCESS if progress.state in {"current", "ahead"} else DANGER if progress.state in {"stale", "gap"} else TEXT_SECONDARY

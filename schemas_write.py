@@ -19,6 +19,9 @@ class LoginResponse(BaseModel):
     can_manage_rankings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
+    can_manage_daily_reports: bool = False
+    can_manage_draws: bool = False
+    can_manage_archives: bool = False
 
 
 class LogoutResponse(BaseModel):
@@ -28,6 +31,12 @@ class LogoutResponse(BaseModel):
 class AdminActionResponse(BaseModel):
     success: bool
     message: str
+
+
+class SuspensionRecordUpdateResponse(AdminActionResponse):
+    record: Optional[dict[str, Any]] = None
+    merged: bool = False
+    merged_record_count: int = 0
 
 
 class TeamLogoMatchApplyRequest(BaseModel):
@@ -171,6 +180,7 @@ class CupMatchResultUpdateRequest(BaseModel):
     winner_team_id: Optional[int] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    advancement_reason: Optional[Literal["away_goals", "extra_time", "penalties", "other"]] = None
 
 
 class SuspensionRecordUpdateRequest(BaseModel):
@@ -179,6 +189,8 @@ class SuspensionRecordUpdateRequest(BaseModel):
     red_card_suspended: bool = False
     red_injury_suspended: bool = False
     notes: Optional[str] = None
+    merge_existing: bool = False
+    merge_base_yellow_cards: Optional[int] = None
 
 
 class SiteNoteUpdateRequest(BaseModel):
@@ -231,6 +243,80 @@ class CoachAccountUpsertRequest(BaseModel):
     can_manage_rankings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
+    can_manage_daily_reports: bool = False
+    can_manage_draws: bool = False
+    can_manage_archives: bool = False
+
+
+class DrawPoolEntryRequest(BaseModel):
+    team_id: Optional[int] = None
+    player_uid: Optional[int] = None
+    entity_name: Optional[str] = None
+    team_name: Optional[str] = None
+    level: Optional[str] = None
+    source_rank: Optional[int] = None
+    pot_no: Optional[int] = Field(default=None, ge=1, le=12)
+    seed_status: Optional[Literal["seeded", "unseeded"]] = None
+    self_save_count: int = Field(default=0, ge=0, le=20)
+    is_active: bool = True
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DrawSessionCreateRequest(BaseModel):
+    name: str
+    draw_type: Literal[
+        "champions_group",
+        "league_group",
+        "champions_r16",
+        "league_r16",
+        "wumingjian_qualifying",
+        "wumingjian_r32",
+        "lottery",
+        "custom_team",
+        "custom_player",
+    ]
+    season_label: Optional[str] = None
+    random_seed: Optional[str] = None
+    config: dict[str, Any] = Field(default_factory=dict)
+    entries: list[DrawPoolEntryRequest] = Field(default_factory=list)
+
+
+class DrawSessionUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    season_label: Optional[str] = None
+    random_seed: Optional[str] = None
+    config: Optional[dict[str, Any]] = None
+    entries: Optional[list[DrawPoolEntryRequest]] = None
+
+
+class DrawNextRequest(BaseModel):
+    entry_id: int = Field(ge=1)
+
+
+class LotteryPoolBuildRequest(BaseModel):
+    min_final_value: float = Field(default=5.0, ge=0, le=50)
+    team_ids: list[int] = Field(default_factory=list)
+    excluded_candidate_list_ids: list[int] = Field(default_factory=list)
+    excluded_player_uids: list[int] = Field(default_factory=list)
+    restored_player_uids: list[int] = Field(default_factory=list)
+    self_save_counts: dict[str, int] = Field(default_factory=dict)
+    limit: int = Field(default=15, ge=1, le=100)
+
+
+class DrawVoidRequest(BaseModel):
+    reason: str
+
+
+class DrawInvalidatePickRequest(BaseModel):
+    reason: str
+
+
+class SeasonArchiveCreateRequest(BaseModel):
+    season_key: str
+    title: Optional[str] = None
+    confirm: bool = False
+    revision_of: Optional[int] = None
+    revision_reason: Optional[str] = None
 
 
 class CoachTeamAssignmentRequest(BaseModel):

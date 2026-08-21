@@ -636,6 +636,50 @@ body:not(.light-mode) .nav-tab.active .nav-tab-icon {
     font-variant-numeric: tabular-nums;
 }
 
+.footer-compliance {
+    margin-top: 6px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    text-align: center;
+    font-size: 0.72rem;
+    line-height: 1.35;
+}
+
+.footer-compliance-separator {
+    color: var(--text-muted);
+    opacity: 0.5;
+}
+
+.footer-compliance a {
+    color: var(--text-muted);
+    text-decoration: none;
+    opacity: 0.76;
+    transition: color 0.2s ease, opacity 0.2s ease, text-decoration-color 0.2s ease;
+}
+
+.footer-public-security-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.footer-public-security-icon {
+    width: 18px;
+    height: 20px;
+    object-fit: contain;
+    flex: 0 0 auto;
+}
+
+.footer-compliance a:hover,
+.footer-compliance a:focus-visible {
+    color: var(--text-primary);
+    text-decoration: underline;
+    opacity: 1;
+}
+
 body.light-mode .footer-link-card:hover {
     color: var(--text-primary);
 }

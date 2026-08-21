@@ -11,6 +11,7 @@ const DB_SORT_FIELD_CONFIG = {
     nationality: {label: '国籍', type: 'text'},
     heigo_club: {label: 'HEIGO俱乐部', type: 'text'},
     club: {label: '现实俱乐部', type: 'text'},
+    added_at: {label: '加入时间', type: 'date'},
 };
 
 const WEIGHTED_POWER_COLLAPSED_STORAGE_KEY = 'heigo_weighted_power_collapsed';
@@ -48,6 +49,15 @@ function getDefaultDbSortOrder(type) {
     return type === 'text' ? 'asc' : 'desc';
 }
 
+function parseDbDateSortValue(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return 0;
+    const isoValue = raw.includes('T') ? raw : raw.replace(' ', 'T');
+    const zonedValue = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(isoValue) ? isoValue : `${isoValue}Z`;
+    const timestamp = Date.parse(zonedValue);
+    return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
 function compareDbValues(left, right, type, order) {
     if (type === 'text') {
         const lhs = String(left || '').trim();
@@ -55,8 +65,8 @@ function compareDbValues(left, right, type, order) {
         const result = lhs.localeCompare(rhs, ['en', 'zh-CN'], {numeric: true, sensitivity: 'base'});
         return order === 'asc' ? result : -result;
     }
-    const lhs = Number(left || 0);
-    const rhs = Number(right || 0);
+    const lhs = type === 'date' ? parseDbDateSortValue(left) : Number(left || 0);
+    const rhs = type === 'date' ? parseDbDateSortValue(right) : Number(right || 0);
     return order === 'asc' ? lhs - rhs : rhs - lhs;
 }
 

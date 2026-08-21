@@ -21,7 +21,7 @@ from repositories.match_repository import (
 )
 from repositories.player_repository import get_players_by_team_name, get_team_players
 from repositories.team_repository import get_team_by_id, get_team_by_name, list_visible_teams
-from schemas_read import MatchPlayerEventResponse, MatchResponse, ScheduleResponse, StandingRowResponse, StandingsPredictionSummaryResponse, StandingsResponse
+from schemas_read import MatchPlayerEventResponse, MatchResponse, ScheduleResponse, StandingHistoryRoundResponse, StandingHistoryRowResponse, StandingHistoryTeamResponse, StandingRowResponse, StandingsHistoryResponse, StandingsPredictionSummaryResponse, StandingsResponse
 from schemas_write import MatchBatchUpdateRequest, MatchPlayerEventUpdateItem, MatchUpdateRequest, ScheduleImportResponse
 from services.admin_common import LogWriter, require_admin
 from services import standings_prediction_service
@@ -31,6 +31,7 @@ VISIBLE_LEVEL = "隐藏"
 FORFEIT_STATUSES = {"home_forfeit", "away_forfeit", "double_forfeit"}
 MATCH_STATUSES = {"scheduled", "played", "postponed", "cancelled", *FORFEIT_STATUSES}
 PLAYED_MATCH_STATUSES = {"played", *FORFEIT_STATUSES}
+HISTORY_RESOLVED_MATCH_STATUSES = {*PLAYED_MATCH_STATUSES, "cancelled"}
 MATCH_EVENT_TYPES = {"goal", "own_goal", "assist", "mvp"}
 SCHEDULE_ROOT = Path("imports") / "schedules"
 SCHEDULE_TEAM_ALIASES = {
@@ -288,7 +289,7 @@ def get_schedule(db: Session, *, level: str | None = None, round_no: int | None 
     )
 
 
-def get_standings(db: Session, *, level: str | None = None) -> StandingsResponse:
+def get_standings(db: Session, *, level: str | None = None, include_predictions: bool = True) -> StandingsResponse:
     teams = list_visible_teams(db, VISIBLE_LEVEL)
     if level:
         teams = [team for team in teams if team.level == level]
@@ -388,12 +389,14 @@ def get_standings(db: Session, *, level: str | None = None) -> StandingsResponse
         away["away_goals_against"] += home_score
 
         if match.status == "home_forfeit":
-            home["losses"] += 1
-            home["home_losses"] += 1
-            away["wins"] += 1
-            away["away_wins"] += 1
-            away["points"] += 3
-            away["away_points"] += 3
+            home["draws"] += 1
+            home["home_draws"] += 1
+            away["draws"] += 1
+            away["away_draws"] += 1
+            home["points"] += 1
+            away["points"] += 1
+            home["home_points"] += 1
+            away["away_points"] += 1
         elif match.status == "away_forfeit":
             home["wins"] += 1
             home["home_wins"] += 1
@@ -457,6 +460,10 @@ def get_standings(db: Session, *, level: str | None = None) -> StandingsResponse
         for index, row in enumerate(ranked_rows, start=1):
             row["rank"] = index
 
+        if not include_predictions:
+            response_rows.extend(StandingRowResponse(**row) for row in ranked_rows)
+            continue
+
         remaining_fixtures: list[tuple[str, str]] = []
         resolved_match_count = 0
         for match in all_matches:
@@ -501,6 +508,190 @@ def get_standings(db: Session, *, level: str | None = None) -> StandingsResponse
     )
 
 
+def get_standings_history(db: Session, *, level: str) -> StandingsHistoryResponse:
+    teams = sorted(
+        [team for team in list_visible_teams(db, VISIBLE_LEVEL) if team.level == level],
+        key=lambda team: team.name,
+    )
+    matches = sorted(list_matches(db, level=level), key=lambda match: (match.round_no, match.id))
+    team_by_id = {int(team.id): team for team in teams}
+    team_by_name = {team.name: team for team in teams}
+    team_by_normalized_name = {
+        _normalize_team_lookup_name(team.name): team
+        for team in teams
+        if _normalize_team_lookup_name(team.name)
+    }
+    for raw_name, canonical_name in SCHEDULE_TEAM_ALIASES.items():
+        team = team_by_name.get(canonical_name)
+        if not team:
+            continue
+        team_by_name.setdefault(raw_name, team)
+        normalized = _normalize_team_lookup_name(raw_name)
+        if normalized:
+            team_by_normalized_name.setdefault(normalized, team)
+
+    def resolve_team(match: Match, side: str) -> Team | None:
+        team_id = getattr(match, f"{side}_team_id")
+        team_name = str(getattr(match, f"{side}_team_name") or "")
+        team = team_by_id.get(int(team_id)) if team_id is not None else None
+        return team or team_by_name.get(team_name) or team_by_normalized_name.get(_normalize_team_lookup_name(team_name))
+
+    stats = {
+        int(team.id): {
+            "team_id": int(team.id),
+            "team_name": team.name,
+            "played": 0,
+            "wins": 0,
+            "draws": 0,
+            "losses": 0,
+            "goals_for": 0,
+            "goals_against": 0,
+            "goal_difference": 0,
+            "points": 0,
+        }
+        for team in teams
+    }
+
+    def ranked_snapshot(previous_ranks: dict[int, int]) -> tuple[list[StandingHistoryRowResponse], dict[int, int]]:
+        ranked = sorted(
+            stats.values(),
+            key=lambda row: (
+                -row["points"],
+                -row["goal_difference"],
+                -row["goals_for"],
+                -row["wins"],
+                row["team_name"],
+            ),
+        )
+        ranks = {int(row["team_id"]): index for index, row in enumerate(ranked, start=1)}
+        response_rows = [
+            StandingHistoryRowResponse(
+                **row,
+                rank=ranks[int(row["team_id"])],
+                previous_rank=previous_ranks.get(int(row["team_id"]), ranks[int(row["team_id"])]),
+                rank_change=previous_ranks.get(int(row["team_id"]), ranks[int(row["team_id"])]) - ranks[int(row["team_id"])],
+            )
+            for row in ranked
+        ]
+        return response_rows, ranks
+
+    opening_rows, previous_ranks = ranked_snapshot({})
+    history_rounds = [
+        StandingHistoryRoundResponse(
+            round_no=0,
+            round_label="开赛前",
+            is_complete=True,
+            rows=opening_rows,
+        )
+    ]
+    matches_by_round: dict[int, list[Match]] = {}
+    latest_recorded_round = 0
+    for match in matches:
+        matches_by_round.setdefault(int(match.round_no), []).append(match)
+        if (
+            match.status in PLAYED_MATCH_STATUSES
+            and match.home_score is not None
+            and match.away_score is not None
+        ):
+            latest_recorded_round = max(latest_recorded_round, int(match.round_no))
+
+    latest_complete_round = 0
+    continuous_rounds_complete = True
+    for round_no in sorted(round_no for round_no in matches_by_round if round_no <= latest_recorded_round):
+        round_matches = matches_by_round[round_no]
+        played_match_count = 0
+        round_complete = bool(round_matches)
+        for match in round_matches:
+            home_team = resolve_team(match, "home")
+            away_team = resolve_team(match, "away")
+            if not home_team or not away_team or home_team.id == away_team.id:
+                round_complete = False
+                continue
+            is_played = (
+                match.status in PLAYED_MATCH_STATUSES
+                and match.home_score is not None
+                and match.away_score is not None
+            )
+            is_resolved = match.status in HISTORY_RESOLVED_MATCH_STATUSES and (
+                match.status == "cancelled" or (match.home_score is not None and match.away_score is not None)
+            )
+            if not is_resolved:
+                round_complete = False
+            if not is_played:
+                continue
+            played_match_count += 1
+            home = stats[int(home_team.id)]
+            away = stats[int(away_team.id)]
+            home_score = int(match.home_score or 0)
+            away_score = int(match.away_score or 0)
+            home["played"] += 1
+            away["played"] += 1
+            home["goals_for"] += home_score
+            home["goals_against"] += away_score
+            away["goals_for"] += away_score
+            away["goals_against"] += home_score
+            if match.status == "home_forfeit":
+                home["draws"] += 1
+                away["draws"] += 1
+                home["points"] += 1
+                away["points"] += 1
+            elif match.status == "away_forfeit":
+                home["wins"] += 1
+                home["points"] += 3
+                away["losses"] += 1
+            elif match.status == "double_forfeit":
+                home["losses"] += 1
+                away["losses"] += 1
+            elif home_score > away_score:
+                home["wins"] += 1
+                home["points"] += 3
+                away["losses"] += 1
+            elif home_score < away_score:
+                away["wins"] += 1
+                away["points"] += 3
+                home["losses"] += 1
+            else:
+                home["draws"] += 1
+                away["draws"] += 1
+                home["points"] += 1
+                away["points"] += 1
+            home["goal_difference"] = home["goals_for"] - home["goals_against"]
+            away["goal_difference"] = away["goals_for"] - away["goals_against"]
+
+        rows, previous_ranks = ranked_snapshot(previous_ranks)
+        history_rounds.append(
+            StandingHistoryRoundResponse(
+                round_no=round_no,
+                round_label=f"第{round_no}轮",
+                is_complete=round_complete,
+                played_match_count=played_match_count,
+                total_match_count=len(round_matches),
+                rows=rows,
+            )
+        )
+        if continuous_rounds_complete and round_complete and round_no == latest_complete_round + 1:
+            latest_complete_round = round_no
+        else:
+            continuous_rounds_complete = False
+
+    return StandingsHistoryResponse(
+        level=level,
+        total_rounds=max(matches_by_round, default=0),
+        latest_recorded_round=latest_recorded_round,
+        latest_complete_round=latest_complete_round,
+        teams=[
+            StandingHistoryTeamResponse(
+                team_id=int(team.id),
+                team_name=team.name,
+                manager=team.manager,
+                logo_path=team.logo_path,
+            )
+            for team in teams
+        ],
+        rounds=history_rounds,
+    )
+
+
 def _parse_match_date(value: str | None):
     raw = str(value or "").strip()
     if not raw:
@@ -527,7 +718,7 @@ def _get_forfeit_score(status: str) -> tuple[int, int] | None:
     if status == "home_forfeit":
         return 0, 0
     if status == "away_forfeit":
-        return 3, 0
+        return 2, 0
     if status == "double_forfeit":
         return 0, 0
     return None

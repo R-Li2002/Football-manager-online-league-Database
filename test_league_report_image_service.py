@@ -71,6 +71,8 @@ class LeagueReportImageServiceTests(unittest.TestCase):
                     progress=SuspensionProgressResponse(
                         state="stale", title="伤停仅核对至第 2 轮",
                         detail="赛果已更新至第 4 轮，落后 2 轮",
+                        suspension_checked_round=2,
+                        applies_from_round=3,
                     ),
                 )
             ],
@@ -134,6 +136,8 @@ class LeagueReportImageServiceTests(unittest.TestCase):
         self.assertIn("Player One", svg)
         self.assertIn("Player Two", svg)
         self.assertIn("伤停仅核对至第 2 轮", svg)
+        self.assertIn("第2轮 → 第3轮", svg)
+        self.assertNotIn("R2", svg)
         self.assertIn("红牌停赛", svg)
         self.assertIn("HEIGO DISCIPLINE REPORT", svg)
         self.assertIn("#292E42", svg)

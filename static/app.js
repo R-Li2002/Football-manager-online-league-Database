@@ -22,7 +22,8 @@ const APP_MODULE_ASSETS = {
         '/static/js/database.compare.js',
     ],
     'database-tactics': ['/static/js/database.tactics.js'],
-    admin: ['/static/js/app.admin.js'],
+    draws: ['/static/js/app.admin.js', '/static/js/app.draws.js'],
+    admin: ['/static/js/app.admin.js', '/static/js/app.draws.js'],
 };
 const APP_MODULE_STYLES = {
     overview: ['/static/css/pages/team.css'],
@@ -30,6 +31,8 @@ const APP_MODULE_STYLES = {
     competition: ['/static/css/pages/competition.css'],
     database: ['/static/css/pages/database.css'],
     'database-tactics': ['/static/css/pages/database.css'],
+    draws: ['/static/css/pages/draws.css'],
+    admin: ['/static/css/pages/draws.css'],
 };
 const APP_MODULE_READY_CHECKS = {
     coaches: () => typeof loadCoaches === 'function',
@@ -39,6 +42,7 @@ const APP_MODULE_READY_CHECKS = {
     competition: () => typeof loadCompetitionData === 'function',
     database: () => typeof searchDatabase === 'function' && typeof showPlayerDetail === 'function',
     'database-tactics': () => typeof loadDatabaseTacticsBoard === 'function',
+    draws: () => typeof loadWorkspaceDraws === 'function',
     admin: () => typeof showAdminLoginPanel === 'function',
 };
 let globalCoachMenuOpen = false;
@@ -170,7 +174,7 @@ function renderGlobalCoachAccount() {
     const avatar = account.avatar_path
         ? `<img src="${escapeHtml(account.avatar_path)}" alt="${escapeHtml(account.nickname || '教练')}头像" width="256" height="256" decoding="async">`
         : `<span class="global-coach-avatar-fallback">${escapeHtml(getGlobalCoachInitials(account.nickname || account.username))}</span>`;
-    const hasWork = Boolean(!account.must_change_password && account.qq_number && (account.can_manage_schedule || account.can_manage_cup_standings || account.can_manage_rankings || account.can_manage_suspensions || account.can_manage_candidate_lists));
+    const hasWork = Boolean(!account.must_change_password && account.qq_number && (account.can_manage_schedule || account.can_manage_cup_standings || account.can_manage_rankings || account.can_manage_suspensions || account.can_manage_candidate_lists || account.can_manage_daily_reports || account.can_manage_draws || account.can_manage_archives));
     const identityMeta = account.team_name || (account.qq_number ? `QQ ${account.qq_number}` : '教练账号');
     host.classList.toggle('is-open', globalCoachMenuOpen);
     document.body?.classList.toggle('global-coach-menu-open', globalCoachMenuOpen);
@@ -353,6 +357,9 @@ function syncLightweightAdminTabVisibility() {
         && (workspaceSessionState.identity.is_full_admin || (workspaceSessionState.identity.capabilities || []).some(item => item !== 'coach_profile.write_self'))
     );
     document.getElementById('adminTab')?.classList.toggle('hidden-tab', !(isAdmin || adminEntryUnlocked || hasWorkspaceAccess));
+    const canAccessDraws = Boolean(canManageDraws || workspaceSessionState?.identity?.capabilities?.includes('draws.write'));
+    document.getElementById('drawsTab')?.classList.toggle('hidden-tab', !canAccessDraws);
+    document.getElementById('mobileDrawsTab')?.classList.toggle('hidden-tab', !canAccessDraws);
     syncMobileNavState({closeMenu: false});
 }
 
@@ -370,6 +377,8 @@ async function prepareAppTab(tabName) {
         await ensureAppModule('coaches');
     } else if (tabName === 'database') {
         await ensureAppModule('database');
+    } else if (tabName === 'draws') {
+        await ensureAppModule('draws');
     }
     if (isAdmin || tabName === 'admin') {
         await ensureAppModule('admin');
@@ -421,6 +430,10 @@ const AppModules = {
         if (typeof loadDataStatus === 'function') await loadDataStatus();
         if (typeof renderDataStatusStrip === 'function') renderDataStatusStrip('databaseDataStatus', 'attributes', 'all');
     }},
+    draws: {onEnter: async () => {
+        if (typeof loadWorkspaceSession === 'function') await loadWorkspaceSession();
+        if (typeof loadWorkspaceDraws === 'function') await loadWorkspaceDraws();
+    }},
     admin: {onEnter: async () => {
         if (typeof openWorkspace === 'function') {
             await openWorkspace();
@@ -429,13 +442,25 @@ const AppModules = {
 };
 
 const APP_HISTORY_MARKER = 'heigo-spa';
-const APP_TAB_NAMES = new Set(['home', 'overview', 'team', 'players', 'competition', 'coaches', 'database', 'admin']);
+const APP_TAB_NAMES = new Set(['home', 'overview', 'team', 'players', 'competition', 'coaches', 'database', 'draws', 'admin']);
 let appHistoryReady = false;
 let appHistoryRestoring = false;
 let appHistoryIndex = 0;
 
 function normalizeAppTabName(tabName) {
     return APP_TAB_NAMES.has(tabName) ? tabName : 'home';
+}
+
+function canAccessAppTab(tabName) {
+    if (tabName !== 'draws') return true;
+    const identity = typeof workspaceSessionState !== 'undefined' ? workspaceSessionState?.identity : null;
+    const hasPermissionFlag = typeof canManageDraws !== 'undefined' && canManageDraws;
+    return Boolean(hasPermissionFlag || identity?.capabilities?.includes('draws.write'));
+}
+
+function resolveAccessibleAppTab(tabName) {
+    const normalized = normalizeAppTabName(tabName);
+    return canAccessAppTab(normalized) ? normalized : 'home';
 }
 
 function getActiveTabName() {
@@ -702,7 +727,7 @@ function applyInitialUrlState(rawState) {
         }
     }
     if (state.tab === 'competition') {
-        if (['standings', 'schedule', 'playerRankings', 'rating', 'suspensions'].includes(competitionSubtab)) {
+        if (['standings', 'schedule', 'playerRankings', 'rating', 'suspensions', 'archives'].includes(competitionSubtab)) {
             state.competition.subtab = competitionSubtab;
         }
         if (['超级', '甲级', '乙级', '冠军杯', '联盟杯', '无铭剑杯'].includes(competitionLevel)) {
@@ -804,7 +829,7 @@ function captureCompetitionHistoryState() {
     const suspensionFilter = typeof currentSuspensionViewFilter === 'string' ? currentSuspensionViewFilter : 'active';
     const standingsScope = typeof currentMobileStandingsScope === 'string' ? currentMobileStandingsScope : 'total';
     return {
-        subtab: ['schedule', 'playerRankings', 'rating', 'suspensions'].includes(subtab)
+        subtab: ['schedule', 'playerRankings', 'rating', 'suspensions', 'archives'].includes(subtab)
             ? subtab
             : 'standings',
         level: ['超级', '甲级', '乙级', '冠军杯', '联盟杯', '无铭剑杯'].includes(level)
@@ -880,7 +905,7 @@ function normalizeHistoryState(rawState, index = appHistoryIndex) {
                 : null,
         },
         competition: {
-            subtab: ['schedule', 'playerRankings', 'rating', 'suspensions'].includes(baseState.competition?.subtab)
+            subtab: ['schedule', 'playerRankings', 'rating', 'suspensions', 'archives'].includes(baseState.competition?.subtab)
                 ? baseState.competition.subtab
                 : 'standings',
             level: ['超级', '甲级', '乙级', '冠军杯', '联盟杯', '无铭剑杯'].includes(baseState.competition?.level)
@@ -1142,7 +1167,7 @@ async function restoreDatabaseHistoryState(databaseState) {
     }
 
     if (databaseState.scopeType === 'candidate_list' && databaseState.scopeId && typeof enterCandidateListScope === 'function') {
-        await enterCandidateListScope(databaseState.scopeId, {pushHistory: false, query: databaseState.query || ''});
+        await enterCandidateListScope(databaseState.scopeId, {pushHistory: false, query: databaseState.query || '', preserveSort: true});
         return;
     }
 
@@ -1173,6 +1198,7 @@ async function restoreDatabaseHistoryState(databaseState) {
 
 async function restoreAppHistoryState(rawState) {
     const state = normalizeHistoryState(rawState, appHistoryIndex);
+    state.tab = resolveAccessibleAppTab(state.tab);
     appHistoryRestoring = true;
 
     try {
@@ -1259,6 +1285,9 @@ async function init() {
         canManageRankings = Boolean(adminData.authenticated && adminData.can_manage_rankings);
         canManageSuspensions = Boolean(adminData.authenticated && adminData.can_manage_suspensions);
         canManageCandidateLists = Boolean(adminData.authenticated && adminData.can_manage_candidate_lists);
+        canManageDailyReports = Boolean(adminData.authenticated && adminData.can_manage_daily_reports);
+        canManageDraws = Boolean(adminData.authenticated && adminData.can_manage_draws);
+        canManageArchives = Boolean(adminData.authenticated && adminData.can_manage_archives);
         workspaceSessionState = workspaceSession || workspaceSessionState;
         currentCoachAccount = coachAccount || {authenticated: false};
         renderGlobalCoachAccount();
@@ -1269,6 +1298,9 @@ async function init() {
             canManageRankings = capabilities.has('rankings.write');
             canManageSuspensions = capabilities.has('suspensions.write');
             canManageCandidateLists = capabilities.has('candidate_lists.write');
+            canManageDailyReports = capabilities.has('daily_reports.write');
+            canManageDraws = capabilities.has('draws.write');
+            canManageArchives = capabilities.has('archives.write');
         }
         syncLightweightAdminTabVisibility();
         updateAttributeVersionPlayerCountLabels();
@@ -1375,7 +1407,11 @@ async function refreshLeagueInfoDataset() {
 }
 
 async function showTab(tabName, triggerElement = null, options = {}) {
-    const normalizedTab = normalizeAppTabName(tabName);
+    const requestedTab = normalizeAppTabName(tabName);
+    const normalizedTab = resolveAccessibleAppTab(requestedTab);
+    if (requestedTab !== normalizedTab && options.quietAccessDenied !== true && typeof showUiToast === 'function') {
+        showUiToast('当前账号没有抽签管理权限。', 'warning');
+    }
     const previousTab = getActiveTabName();
     if (previousTab && previousTab !== normalizedTab) {
         closeGlobalCoachMenu();

@@ -38,10 +38,17 @@ assert.match(coreCode, /var canManageCupStandings = false;/, 'cup standings capa
 assert.match(adminCode, /id="workspaceEditCupStandings"/, 'workspace account editor should expose cup standings as a separate permission');
 assert.match(adminCode, /can_manage_cup_standings: Boolean/, 'workspace account updates should persist the cup standings permission');
 assert.match(coachesCode, /id="coachAccountCupStandings"/, 'legacy coach account editor should expose the same permission');
+assert.match(coreCode, /var canManageDailyReports = false;/, 'daily reports should have independent frontend capability state');
+assert.match(adminCode, /id="workspaceEditDailyReports"/, 'workspace account editor should expose daily reports as a separate permission');
+assert.match(coachesCode, /id="coachAccountDailyReports"/, 'legacy coach account editor should expose the daily report permission');
 assert.match(competitionCss, /\.cup-group-pair-legs::before/, 'paired legs should use a visual home-and-away connector');
 assert.match(competitionCode, /competition\.suspensions\.team\.\$\{Number\(teamId\)\}/);
 assert.match(competitionCode, /\/api\/export\/suspensions\.xlsx\?level=/);
 assert.match(competitionCode, /导出 Excel/);
+assert.match(competitionCode, /SUSPENSION_IMAGE_MAX_BYTES = \(4 \* 1024 \* 1024\) - \(64 \* 1024\)/, 'suspension images should keep a safety margin below 4 MB');
+assert.match(competitionCode, /function getCompetitionImagePixelRatio\(kind, target\)[\s\S]*?SUSPENSION_IMAGE_TARGET_PIXELS/, 'long suspension captures should use an area-aware pixel ratio');
+assert.match(competitionCode, /async function compressSuspensionImageBlob\(blob, backgroundColor\)[\s\S]*?'image\/jpeg'/, 'oversized suspension PNG files should be recompressed as JPEG');
+assert.match(competitionCode, /optimized\.blob[\s\S]*?buildCompetitionImageFileName\(kind, level, optimized\.extension\)/, 'the downloaded file should use the optimized blob and matching extension');
 assert.match(
     competitionCode,
     /oninput="updateMatchEventSuggestions\(this, \$\{Number\(match\.id\)\}\)" onchange="scheduleMatchAutoSave/,
@@ -328,6 +335,11 @@ function assertUnifiedMatchResultPayloads() {
 
     statusSelect.value = 'home_forfeit';
     assert.equal(JSON.stringify(context.readMatchScorePayload(101, [{event_type: 'goal'}])), JSON.stringify({match_id: 101, home_score: 0, away_score: 0, status: 'home_forfeit', events: []}));
+
+    statusSelect.value = 'away_forfeit';
+    assert.equal(JSON.stringify(context.readMatchScorePayload(101, [{event_type: 'goal'}])), JSON.stringify({match_id: 101, home_score: 2, away_score: 0, status: 'away_forfeit', events: []}));
+    assert.equal(context.getForfeitRuleNote('home_forfeit'), '主队判负：本场记为 0:0，双方各得 1 分。');
+    assert.equal(context.getForfeitRuleNote('away_forfeit'), '客队判负：本场记为 2:0，主队得 3 分、客队不得分。');
 }
 
 async function assertResponsibilityDialogRefreshesEligibleAccounts() {

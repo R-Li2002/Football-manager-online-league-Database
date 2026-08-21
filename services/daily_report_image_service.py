@@ -18,7 +18,7 @@ from services.team_name_service import COMMON_CHINESE_TEAM_NAMES
 IMAGE_WIDTH = 1200
 SIDE_PADDING = 64
 CONTENT_WIDTH = IMAGE_WIDTH - SIDE_PADDING * 2
-TEMPLATE_VERSION = 5
+TEMPLATE_VERSION = 6
 
 SCORE_PATTERN = re.compile(r"(?<!\d)\d{1,2}:\d{1,2}(?!\d)")
 ITEM_PATTERN = re.compile(

@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from models import CupGroupTeam, CupMatch, Team
+from models import CupGroupTeam, CupMatch, Match, Team, WumingjianQualificationTeam
 from repositories.team_repository import get_team_by_id, list_visible_teams
 from schemas_read import (
     CupBracketResponse,
@@ -17,6 +17,8 @@ from schemas_read import (
     CupGroupStageResponse,
     CupGroupStandingResponse,
     CupMatchResponse,
+    WumingjianQualificationResponse,
+    WumingjianQualificationTeamResponse,
     TeamCupCompetitionOutlookResponse,
     TeamCupFixtureResponse,
     TeamCupOpponentProgressResponse,
@@ -63,6 +65,14 @@ CUP_STAGES_32 = [
     ("final", "决赛", 1),
 ]
 
+WUMINGJIAN_QUALIFYING_STAGE = "qualifying_round"
+WUMINGJIAN_QUALIFYING_LABEL = "预选赛（单场淘汰）"
+WUMINGJIAN_QUALIFYING_MATCH_COUNT = 22
+WUMINGJIAN_DIRECT_LIMITS = {"超级": 6, "甲级": 2, "乙级": 2}
+WUMINGJIAN_EXPECTED_TEAM_COUNT = 54
+WUMINGJIAN_DIRECT_TEAM_COUNT = 10
+WUMINGJIAN_PRELIMINARY_TEAM_COUNT = 44
+
 VISIBLE_LEVEL = "隐藏"
 VALID_STATUSES = {"scheduled", "played"}
 
@@ -99,7 +109,10 @@ def normalize_competition(competition: str) -> str:
 def ensure_bracket(db: Session, competition: str) -> int:
     competition = normalize_competition(competition)
     created = 0
-    for stage, _label, count in get_cup_stages(competition):
+    stages = list(get_cup_stages(competition))
+    if competition == "wumingjian_cup":
+        stages.insert(0, (WUMINGJIAN_QUALIFYING_STAGE, WUMINGJIAN_QUALIFYING_LABEL, WUMINGJIAN_QUALIFYING_MATCH_COUNT))
+    for stage, _label, count in stages:
         existing_slots = {
             slot
             for (slot,) in db.query(CupMatch.slot_no)
@@ -150,6 +163,123 @@ def get_bracket(db: Session, competition: str) -> CupBracketResponse:
         title=definition["title"],
         trophy_url=definition["trophy_url"],
         stages=stages,
+    )
+
+
+def _wumingjian_rounds_complete(db: Session) -> bool:
+    for level in WUMINGJIAN_DIRECT_LIMITS:
+        for round_no in (15, 16):
+            matches = (
+                db.query(Match)
+                .filter(Match.level == level, Match.round_no == round_no)
+                .all()
+            )
+            if not matches or any(
+                match.status not in {"played", "home_forfeit", "away_forfeit", "double_forfeit"}
+                or match.home_score is None
+                or match.away_score is None
+                for match in matches
+            ):
+                return False
+    return True
+
+
+def _current_wumingjian_qualification_teams(db: Session) -> list[dict[str, Any]]:
+    from services import match_service
+
+    standings = match_service.get_standings(db, include_predictions=False)
+    rows: list[dict[str, Any]] = []
+    for level, direct_limit in WUMINGJIAN_DIRECT_LIMITS.items():
+        level_rows = sorted(
+            [row for row in standings.rows if row.level == level],
+            key=lambda row: int(row.rank),
+        )
+        for row in level_rows:
+            rows.append({
+                "team_id": int(row.team_id),
+                "team_name": row.team_name,
+                "manager": row.manager,
+                "level": level,
+                "source_rank": int(row.rank),
+                "qualification_type": "direct" if int(row.rank) <= direct_limit else "preliminary",
+            })
+    return rows
+
+
+def _stored_wumingjian_qualification_teams(db: Session) -> list[dict[str, Any]]:
+    return [
+        {
+            "team_id": int(row.team_id),
+            "team_name": row.team_name,
+            "manager": row.manager,
+            "level": row.level,
+            "source_rank": int(row.source_rank),
+            "qualification_type": row.qualification_type,
+        }
+        for row in (
+            db.query(WumingjianQualificationTeam)
+            .order_by(WumingjianQualificationTeam.level, WumingjianQualificationTeam.source_rank)
+            .all()
+        )
+    ]
+
+
+def _lock_wumingjian_qualification(db: Session) -> list[dict[str, Any]]:
+    stored = _stored_wumingjian_qualification_teams(db)
+    if stored:
+        return stored
+    if not _wumingjian_rounds_complete(db):
+        raise HTTPException(status_code=400, detail="联赛第15至16轮尚未全部完赛，暂不能锁定无铭剑杯预选资格")
+    rows = _current_wumingjian_qualification_teams(db)
+    direct_count = sum(1 for row in rows if row["qualification_type"] == "direct")
+    preliminary_count = sum(1 for row in rows if row["qualification_type"] == "preliminary")
+    if len(rows) != WUMINGJIAN_EXPECTED_TEAM_COUNT or direct_count != WUMINGJIAN_DIRECT_TEAM_COUNT or preliminary_count != WUMINGJIAN_PRELIMINARY_TEAM_COUNT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"当前联赛球队结构为 {len(rows)} 支（直通 {direct_count}、预选 {preliminary_count}），不符合无铭剑杯 54 支球队赛制",
+        )
+    locked_at = datetime.now()
+    for row in rows:
+        db.add(WumingjianQualificationTeam(**row, locked_at=locked_at))
+    db.flush()
+    return rows
+
+
+def _wumingjian_team_response(row: dict[str, Any]) -> WumingjianQualificationTeamResponse:
+    return WumingjianQualificationTeamResponse(**row)
+
+
+def get_wumingjian_qualification(db: Session) -> WumingjianQualificationResponse:
+    ensure_bracket(db, "wumingjian_cup")
+    stored_rows = _stored_wumingjian_qualification_teams(db)
+    qualification_locked = bool(stored_rows)
+    rows = stored_rows or _current_wumingjian_qualification_teams(db)
+    direct_rows = [row for row in rows if row["qualification_type"] == "direct"]
+    preliminary_rows = [row for row in rows if row["qualification_type"] == "preliminary"]
+    matches = (
+        db.query(CupMatch)
+        .filter(CupMatch.competition == "wumingjian_cup", CupMatch.stage == WUMINGJIAN_QUALIFYING_STAGE)
+        .order_by(CupMatch.slot_no)
+        .all()
+    )
+    rows_by_team_id = {int(row["team_id"]): row for row in rows}
+    winner_rows = [
+        rows_by_team_id[int(match.winner_team_id)]
+        for match in matches
+        if match.status == "played" and match.winner_team_id and int(match.winner_team_id) in rows_by_team_id
+    ]
+    assigned_match_count = sum(1 for match in matches if match.home_team_id and match.away_team_id)
+    played_match_count = sum(1 for match in matches if match.status == "played" and match.winner_team_id)
+    return WumingjianQualificationResponse(
+        league_rounds_complete=_wumingjian_rounds_complete(db),
+        qualification_locked=qualification_locked,
+        direct_qualifiers=[_wumingjian_team_response(row) for row in direct_rows],
+        preliminary_eligible_teams=[_wumingjian_team_response(row) for row in preliminary_rows],
+        preliminary_matches=[_cup_match_response(match) for match in matches],
+        preliminary_winners=[_wumingjian_team_response(row) for row in winner_rows],
+        assigned_match_count=assigned_match_count,
+        played_match_count=played_match_count,
+        round_of_32_pool_count=len(direct_rows) + len(winner_rows),
     )
 
 
@@ -344,6 +474,7 @@ def _qualified_team(row: CupGroupStandingResponse, competition: str, group_name:
         points=row.points,
         goal_difference=row.goal_difference,
         goals_for=row.goals_for,
+        wins=row.wins,
     )
 
 
@@ -838,6 +969,8 @@ def _stage_index(competition: str, stage: str) -> int:
 
 
 def _next_slot(match: CupMatch) -> tuple[str, int, str] | None:
+    if match.competition == "wumingjian_cup" and match.stage == WUMINGJIAN_QUALIFYING_STAGE:
+        return None
     stages = get_cup_stages(match.competition)
     index = _stage_index(match.competition, match.stage)
     if index >= len(stages) - 1:
@@ -952,6 +1085,8 @@ def initialize_cup_bracket(
         return {"success": True, "message": message}
 
     knockout_stage_keys = [stage for stage, _label, _count in get_cup_stages(competition)]
+    if competition == "wumingjian_cup":
+        knockout_stage_keys.insert(0, WUMINGJIAN_QUALIFYING_STAGE)
     matches = (
         db.query(CupMatch)
         .filter(CupMatch.competition == competition, CupMatch.stage.in_(knockout_stage_keys))
@@ -986,6 +1121,8 @@ def initialize_cup_bracket(
         match.status = "scheduled"
         match.notes = None
         match.updated_at = updated_at
+    if competition == "wumingjian_cup":
+        db.query(WumingjianQualificationTeam).delete(synchronize_session=False)
     db.commit()
     write_to_log(
         "杯赛初始化",
@@ -1009,12 +1146,67 @@ def update_cup_match_teams(
     match = db.query(CupMatch).filter(CupMatch.id == match_id).first()
     if not match:
         raise HTTPException(status_code=404, detail="杯赛对阵不存在")
-    if match.stage != get_first_stage(match.competition):
+    manually_editable_stage = match.stage == get_first_stage(match.competition) or (
+        match.competition == "wumingjian_cup"
+        and match.stage in {WUMINGJIAN_QUALIFYING_STAGE, "round_of_32"}
+    )
+    if not manually_editable_stage:
         raise HTTPException(status_code=400, detail="只能手动编辑杯赛首轮球队，后续轮次由晋级自动生成")
     home = _visible_team(db, request.home_team_id)
     away = _visible_team(db, request.away_team_id)
     if home and away and home.id == away.id:
         raise HTTPException(status_code=400, detail="同一场对阵不能选择相同球队")
+    if match.competition == "wumingjian_cup":
+        qualification_rows = _lock_wumingjian_qualification(db)
+        if match.stage == WUMINGJIAN_QUALIFYING_STAGE:
+            eligible_ids = {
+                int(row["team_id"])
+                for row in qualification_rows
+                if row["qualification_type"] == "preliminary"
+            }
+            invalid_message = "预选赛只能选择未直通32强的44支球队"
+        else:
+            qualifying_matches = (
+                db.query(CupMatch)
+                .filter(
+                    CupMatch.competition == "wumingjian_cup",
+                    CupMatch.stage == WUMINGJIAN_QUALIFYING_STAGE,
+                )
+                .all()
+            )
+            winner_ids = {
+                int(item.winner_team_id)
+                for item in qualifying_matches
+                if item.status == "played" and item.winner_team_id
+            }
+            if len(winner_ids) != WUMINGJIAN_QUALIFYING_MATCH_COUNT:
+                raise HTTPException(status_code=400, detail="22场预选赛尚未全部决出胜者，暂不能编排32强对阵")
+            eligible_ids = {
+                int(row["team_id"])
+                for row in qualification_rows
+                if row["qualification_type"] == "direct"
+            } | winner_ids
+            invalid_message = "32强只能选择10支直通球队或22支预选赛胜者"
+        for team in (home, away):
+            if team and int(team.id) not in eligible_ids:
+                raise HTTPException(status_code=400, detail=invalid_message)
+        selected_ids = {int(team.id) for team in (home, away) if team}
+        if selected_ids:
+            duplicate = (
+                db.query(CupMatch)
+                .filter(
+                    CupMatch.competition == "wumingjian_cup",
+                    CupMatch.stage == match.stage,
+                    CupMatch.id != match.id,
+                    (
+                        CupMatch.home_team_id.in_(selected_ids)
+                        | CupMatch.away_team_id.in_(selected_ids)
+                    ),
+                )
+                .first()
+            )
+            if duplicate:
+                raise HTTPException(status_code=400, detail="同一支球队不能在本阶段重复参加对阵")
     _set_team(match, "home", home)
     _set_team(match, "away", away)
     match.home_score = None
@@ -1056,6 +1248,8 @@ def update_cup_match_result(
         if home_score == away_score:
             if not request.winner_team_id:
                 raise HTTPException(status_code=400, detail="总比分相同，请按客场进球规则选择晋级球队")
+            if request.advancement_reason not in {"away_goals", "extra_time", "penalties", "other"}:
+                raise HTTPException(status_code=400, detail="总比分相同，请记录晋级原因")
             _set_match_winner(match, int(request.winner_team_id))
         else:
             _set_match_winner(match, match.home_team_id if home_score > away_score else match.away_team_id)
@@ -1069,7 +1263,13 @@ def update_cup_match_result(
     match.status = status
     notes = str(request.notes or "").strip()
     if status == "played" and home_score == away_score and not notes:
-        notes = "总比分相同，按客场进球规则晋级"
+        reason_labels = {
+            "away_goals": "客场进球",
+            "extra_time": "加时赛",
+            "penalties": "点球大战",
+            "other": "其他规则",
+        }
+        notes = f"总比分相同，按{reason_labels.get(request.advancement_reason, '人工确认')}晋级"
     match.notes = notes or None
     match.updated_at = datetime.now()
     if status == "played":

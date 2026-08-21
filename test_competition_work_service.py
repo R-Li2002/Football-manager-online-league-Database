@@ -318,7 +318,7 @@ class CompetitionWorkServiceTests(unittest.TestCase):
         self.assertIn("invalid_mvp_total", pair.tasks[0].issue_codes)
 
     def test_forfeit_match_does_not_require_player_events(self):
-        self._add_match(1, status="away_forfeit", home_score=3, away_score=0)
+        self._add_match(1, status="away_forfeit", home_score=2, away_score=0)
         self.db.commit()
 
         summary = competition_work_service.get_competition_work_summary(self.db)

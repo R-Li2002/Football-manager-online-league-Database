@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import CupGroupTeam, CupMatch, Team
+from models import CupGroupTeam, CupMatch, Match, Team, WumingjianQualificationTeam
 from schemas_write import CupGroupMatchResultUpdateRequest, CupGroupUpdateRequest, CupMatchResultUpdateRequest, CupMatchTeamsUpdateRequest
 from services import cup_service
 
@@ -28,6 +28,33 @@ class CupServiceTest(unittest.TestCase):
 
     def _team_id(self, name):
         return self.db.query(Team).filter(Team.name == name).one().id
+
+    def _seed_wumingjian_field(self):
+        for index in range(7, 19):
+            self.db.add(Team(name=f"Super {index:02d}", level="超级", manager=f"Super Boss {index:02d}"))
+        for level, prefix in (("甲级", "First"), ("乙级", "Second")):
+            for index in range(1, 19):
+                self.db.add(Team(name=f"{prefix} {index:02d}", level=level, manager=f"{prefix} Boss {index:02d}"))
+        self.db.commit()
+        for level in ("超级", "甲级", "乙级"):
+            level_teams = self.db.query(Team).filter(Team.level == level).order_by(Team.name).all()
+            for round_no in (15, 16):
+                rotated = level_teams[round_no - 15:] + level_teams[:round_no - 15]
+                for slot_no in range(9):
+                    home = rotated[slot_no]
+                    away = rotated[-(slot_no + 1)]
+                    self.db.add(Match(
+                        level=level,
+                        round_no=round_no,
+                        home_team_id=home.id,
+                        home_team_name=home.name,
+                        away_team_id=away.id,
+                        away_team_name=away.name,
+                        home_score=slot_no % 4,
+                        away_score=(slot_no + round_no) % 3,
+                        status="played",
+                    ))
+        self.db.commit()
 
     @staticmethod
     def _qualification_group(group_name, team_id_start, fourth_points, complete=True):
@@ -54,11 +81,17 @@ class CupServiceTest(unittest.TestCase):
         self.assertEqual(self.db.query(CupMatch).filter(CupMatch.stage == "round_of_16").count(), 8)
         self.assertEqual(self.db.query(CupMatch).filter(CupMatch.stage == "final").count(), 1)
 
-    def test_wumingjian_cup_starts_from_round_of_32(self):
+    def test_wumingjian_cup_creates_qualifying_round_before_round_of_32(self):
         created = cup_service.ensure_bracket(self.db, "wumingjian_cup")
 
-        self.assertEqual(created, 31)
-        self.assertEqual(self.db.query(CupMatch).filter(CupMatch.competition == "wumingjian_cup").count(), 31)
+        self.assertEqual(created, 53)
+        self.assertEqual(self.db.query(CupMatch).filter(CupMatch.competition == "wumingjian_cup").count(), 53)
+        self.assertEqual(
+            self.db.query(CupMatch)
+            .filter(CupMatch.competition == "wumingjian_cup", CupMatch.stage == "qualifying_round")
+            .count(),
+            22,
+        )
         self.assertEqual(
             self.db.query(CupMatch)
             .filter(CupMatch.competition == "wumingjian_cup", CupMatch.stage == "round_of_32")
@@ -379,7 +412,7 @@ class CupServiceTest(unittest.TestCase):
             )
 
     def test_reinitialize_clears_existing_bracket_data_for_every_cup(self):
-        expected_slots = {"champions_cup": 15, "league_cup": 15, "wumingjian_cup": 31}
+        expected_slots = {"champions_cup": 15, "league_cup": 15, "wumingjian_cup": 53}
         for competition, slot_count in expected_slots.items():
             cup_service.ensure_bracket(self.db, competition)
             first = (
@@ -419,6 +452,63 @@ class CupServiceTest(unittest.TestCase):
                 self.assertIsNone(match.winner_team_id)
                 self.assertIsNone(match.notes)
                 self.assertEqual(match.status, "scheduled")
+
+    def test_wumingjian_qualification_uses_six_two_two_direct_places(self):
+        self._seed_wumingjian_field()
+
+        qualification = cup_service.get_wumingjian_qualification(self.db)
+
+        self.assertTrue(qualification.league_rounds_complete)
+        self.assertFalse(qualification.qualification_locked)
+        self.assertEqual(len(qualification.direct_qualifiers), 10)
+        self.assertEqual(len(qualification.preliminary_eligible_teams), 44)
+        self.assertEqual(len(qualification.preliminary_matches), 22)
+        direct_by_level = {
+            level: len([team for team in qualification.direct_qualifiers if team.level == level])
+            for level in ("超级", "甲级", "乙级")
+        }
+        self.assertEqual(direct_by_level, {"超级": 6, "甲级": 2, "乙级": 2})
+
+    def test_first_preliminary_edit_locks_snapshot_and_rejects_duplicate_team(self):
+        self._seed_wumingjian_field()
+        qualification = cup_service.get_wumingjian_qualification(self.db)
+        first, second = qualification.preliminary_matches[:2]
+        eligible_ids = [team.team_id for team in qualification.preliminary_eligible_teams]
+
+        cup_service.update_cup_match_teams(
+            self.db,
+            "editor",
+            first.id,
+            CupMatchTeamsUpdateRequest(home_team_id=eligible_ids[0], away_team_id=eligible_ids[1]),
+            lambda *_args: None,
+        )
+
+        self.assertEqual(self.db.query(WumingjianQualificationTeam).count(), 54)
+        with self.assertRaisesRegex(HTTPException, "不能在本阶段重复"):
+            cup_service.update_cup_match_teams(
+                self.db,
+                "editor",
+                second.id,
+                CupMatchTeamsUpdateRequest(home_team_id=eligible_ids[0], away_team_id=eligible_ids[2]),
+                lambda *_args: None,
+            )
+
+    def test_direct_qualifier_cannot_enter_preliminary_round(self):
+        self._seed_wumingjian_field()
+        qualification = cup_service.get_wumingjian_qualification(self.db)
+        first = qualification.preliminary_matches[0]
+
+        with self.assertRaisesRegex(HTTPException, "44支球队"):
+            cup_service.update_cup_match_teams(
+                self.db,
+                "editor",
+                first.id,
+                CupMatchTeamsUpdateRequest(
+                    home_team_id=qualification.direct_qualifiers[0].team_id,
+                    away_team_id=qualification.preliminary_eligible_teams[0].team_id,
+                ),
+                lambda *_args: None,
+            )
 
     def test_result_propagates_winner_to_next_round(self):
         cup_service.ensure_bracket(self.db, "champions_cup")
@@ -554,6 +644,7 @@ class CupServiceTest(unittest.TestCase):
                 home_score=2,
                 away_score=2,
                 winner_team_id=self._team_id("Beta"),
+                advancement_reason="away_goals",
                 status="played",
             ),
             lambda *_args: None,

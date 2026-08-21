@@ -20,6 +20,7 @@ from schemas_write import (
     ScheduleImportResponse,
     SiteNoteUpdateRequest,
     SuspensionRecordUpdateRequest,
+    SuspensionRecordUpdateResponse,
     TeamUpdateRequest,
     TransferRequest,
     UpdateUidRequest,
@@ -428,7 +429,7 @@ def update_suspension_record(
     admin: str | None,
     request: SuspensionRecordUpdateRequest,
     write_to_log,
-) -> AdminActionResponse:
+) -> SuspensionRecordUpdateResponse:
     return execute_admin_action(
         db,
         category="competition",
@@ -437,7 +438,7 @@ def update_suspension_record(
         operator=admin,
         request_payload=to_payload(request),
         executor=lambda: suspension_service.update_suspension_record(db, admin, request, write_to_log),
-        response_model=AdminActionResponse,
+        response_model=SuspensionRecordUpdateResponse,
     )
 
 

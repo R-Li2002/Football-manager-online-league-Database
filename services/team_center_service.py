@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from models import Team
 from schemas_read import ScheduleResponse, StandingsResponse, SuspensionsResponse, TeamCenterResponse, TeamPowerSummariesResponse
-from services import cup_service, player_power_ranking_service, read_service, suspension_service, team_lineup_service
+from services import cup_service, player_power_ranking_service, player_ranking_service, read_service, suspension_service, team_lineup_service
 
 
 def _belongs_to_team(match, team: Team) -> bool:
@@ -32,7 +32,11 @@ def get_team_center(
     if not team_response:
         raise HTTPException(status_code=404, detail="球队不在当前联赛范围内")
 
-    standings = read_service.get_standings(db)
+    standings = read_service.get_standings(
+        db,
+        level=team.level,
+        include_predictions=False,
+    )
     team_standings = StandingsResponse(
         levels=[team.level],
         rows=[row for row in standings.rows if int(row.team_id or 0) == int(team.id) or row.team_name == team.name],
@@ -68,6 +72,12 @@ def get_team_center(
         standings=team_standings,
         matches=team_schedule,
         suspensions=team_suspensions,
+        player_rankings=player_ranking_service.get_team_player_rankings(
+            db,
+            level=team.level,
+            team_id=team.id,
+            team_name=team.name,
+        ),
         power=player_power_ranking_service.get_player_power_ranking(
             db,
             shape="all",

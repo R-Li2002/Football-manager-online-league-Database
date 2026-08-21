@@ -14,6 +14,10 @@ from schemas_read import (
     CandidateListPublishPreviewResponse,
     CandidateListRemovePreviewResponse,
     CandidateListSummaryResponse,
+    DrawSessionDetailResponse,
+    DrawSessionSummaryResponse,
+    SeasonArchiveDetailResponse,
+    SeasonArchiveSummaryResponse,
     TeamLineupResponse,
 )
 from schemas_write import (
@@ -37,6 +41,13 @@ from schemas_write import (
     CandidateListPlayerCommitRequest,
     CandidateListPlayerPreviewRequest,
     CandidateListUpsertRequest,
+    DrawInvalidatePickRequest,
+    DrawNextRequest,
+    DrawSessionCreateRequest,
+    DrawSessionUpdateRequest,
+    DrawVoidRequest,
+    LotteryPoolBuildRequest,
+    SeasonArchiveCreateRequest,
     CupGroupMatchResultUpdateRequest,
     CupGroupUpdateRequest,
     CupMatchResultUpdateRequest,
@@ -53,13 +64,14 @@ from schemas_write import (
     ScheduleImportResponse,
     SiteNoteUpdateRequest,
     SuspensionRecordUpdateRequest,
+    SuspensionRecordUpdateResponse,
     TeamUpdateRequest,
     TeamLineupUpdateRequest,
     TeamLogoMatchApplyRequest,
     TransferRequest,
     UpdateUidRequest,
 )
-from services import admin_write_service, auth_service, candidate_list_service, coach_service, competition_work_service, import_upload_service, ranking_service, site_note_service, suspension_service, team_lineup_service, team_logo_match_service, team_logo_service
+from services import admin_write_service, auth_service, candidate_list_service, coach_service, competition_work_service, draw_service, import_upload_service, ranking_service, site_note_service, suspension_service, team_lineup_service, team_logo_match_service, team_logo_service
 
 COACH_SESSION_COOKIE_NAME = "coach_session_token"
 ADMIN_SESSION_COOKIE_NAME = "session_token"
@@ -78,8 +90,105 @@ def build_admin_write_router(
     set_session_cookie,
     clear_session_cookie,
     write_to_log,
+    verify_draw_manager=None,
+    verify_archive_manager=None,
 ):
+    verify_draw_manager = verify_draw_manager or verify_candidate_list_manager
+    verify_archive_manager = verify_archive_manager or verify_draw_manager
     router = APIRouter()
+
+    @router.get("/api/admin/draws", response_model=list[DrawSessionSummaryResponse])
+    def admin_list_draws(db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return draw_service.list_sessions(db)
+
+    @router.get("/api/admin/draws/proposals/{draw_type}")
+    def admin_get_draw_proposal(draw_type: str, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return draw_service.propose_pool(db, draw_type)
+
+    @router.get("/api/admin/draws/{session_id}", response_model=DrawSessionDetailResponse)
+    def admin_get_draw(session_id: int, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return draw_service.get_session(db, session_id)
+
+    @router.post("/api/admin/draws", response_model=DrawSessionDetailResponse)
+    def admin_create_draw(request: DrawSessionCreateRequest, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return draw_service.create_session(db, operator, request)
+
+    @router.patch("/api/admin/draws/{session_id}", response_model=DrawSessionDetailResponse)
+    def admin_update_draw(session_id: int, request: DrawSessionUpdateRequest, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return draw_service.update_session(db, operator, session_id, request)
+
+    @router.delete("/api/admin/draws/{session_id}", response_model=AdminActionResponse)
+    def admin_delete_draw(session_id: int, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return draw_service.delete_session(db, operator, session_id)
+
+    @router.post("/api/admin/draws/{session_id}/lottery-pool", response_model=DrawSessionDetailResponse)
+    def admin_build_lottery_pool(session_id: int, request: LotteryPoolBuildRequest, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return draw_service.build_lottery_pool(db, operator, session_id, request)
+
+    @router.post("/api/admin/draws/{session_id}/lock", response_model=DrawSessionDetailResponse)
+    def admin_lock_draw(session_id: int, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return draw_service.lock_session(db, operator, session_id)
+
+    @router.post("/api/admin/draws/{session_id}/execute", response_model=DrawSessionDetailResponse)
+    def admin_execute_draw(session_id: int, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return draw_service.execute_draw(db, operator, session_id)
+
+    @router.post("/api/admin/draws/{session_id}/next", response_model=DrawSessionDetailResponse)
+    def admin_draw_next(session_id: int, request: DrawNextRequest, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return draw_service.draw_next(db, operator, session_id, request.entry_id)
+
+    @router.post("/api/admin/draws/{session_id}/picks/{pick_id}/invalidate", response_model=DrawSessionDetailResponse)
+    def admin_invalidate_lottery_pick(session_id: int, pick_id: int, request: DrawInvalidatePickRequest, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return draw_service.invalidate_lottery_pick(db, operator, session_id, pick_id, request.reason)
+
+    @router.post("/api/admin/draws/{session_id}/candidate-list", response_model=DrawSessionDetailResponse)
+    def admin_create_lottery_candidate_list(session_id: int, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return draw_service.create_lottery_candidate_list(db, operator, session_id)
+
+    @router.post("/api/admin/draws/{session_id}/publish", response_model=DrawSessionDetailResponse)
+    def admin_publish_draw(session_id: int, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return draw_service.publish_session(db, operator, session_id)
+
+    @router.post("/api/admin/draws/{session_id}/void", response_model=DrawSessionDetailResponse)
+    def admin_void_draw(session_id: int, request: DrawVoidRequest, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return draw_service.void_session(db, operator, session_id, request.reason)
+
+    @router.post("/api/admin/draws/{session_id}/write-to-cup", response_model=DrawSessionDetailResponse)
+    def admin_write_draw_to_cup(
+        session_id: int,
+        db: Session = Depends(get_db),
+        operator: str = Depends(verify_draw_manager),
+        schedule_operator: str = Depends(verify_schedule_manager),
+    ):
+        return draw_service.write_to_cup(db, operator, session_id)
+
+    @router.get("/api/admin/draws/{session_id}/export.txt")
+    def admin_export_draw_text(session_id: int, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return Response(content=draw_service.export_text(db, session_id), media_type="text/plain; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="draw_{session_id}.txt"'})
+
+    @router.get("/api/admin/draws/{session_id}/export.xlsx")
+    def admin_export_draw_excel(session_id: int, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return Response(content=draw_service.export_excel(db, session_id), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="draw_{session_id}.xlsx"'})
+
+    @router.get("/api/admin/draws/{session_id}/export.png")
+    def admin_export_draw_png(session_id: int, db: Session = Depends(get_db), operator: str = Depends(verify_draw_manager)):
+        return Response(content=draw_service.export_png(db, session_id), media_type="image/png", headers={"Content-Disposition": f'attachment; filename="draw_{session_id}.png"'})
+
+    @router.get("/api/admin/season-archives", response_model=list[SeasonArchiveSummaryResponse])
+    def admin_list_season_archives(db: Session = Depends(get_db), operator: str = Depends(verify_archive_manager)):
+        return draw_service.list_season_archives(db)
+
+    @router.get("/api/admin/season-archives/{archive_id}", response_model=SeasonArchiveDetailResponse)
+    def admin_get_season_archive(archive_id: int, db: Session = Depends(get_db), operator: str = Depends(verify_archive_manager)):
+        return draw_service.get_season_archive(db, archive_id)
+
+    @router.post("/api/admin/season-archives", response_model=SeasonArchiveDetailResponse)
+    def admin_create_season_archive(request: SeasonArchiveCreateRequest, db: Session = Depends(get_db), operator: str = Depends(verify_archive_manager)):
+        return draw_service.create_season_archive(db, operator, request)
+
+    @router.post("/api/admin/season-archives/{archive_id}/confirm", response_model=SeasonArchiveDetailResponse)
+    def admin_confirm_season_archive(archive_id: int, db: Session = Depends(get_db), operator: str = Depends(verify_archive_manager)):
+        return draw_service.confirm_season_archive(db, operator, archive_id)
 
     @router.post("/api/admin/rankings/matches", response_model=RankingsResponse)
     def create_ranking_match(
@@ -685,7 +794,7 @@ def build_admin_write_router(
             require_level_responsibility(db, admin, match.level, "schedule")
         return admin_write_service.update_match_result(db, admin, match_id, request, write_to_log)
 
-    @router.patch("/api/admin/suspensions", response_model=AdminActionResponse)
+    @router.patch("/api/admin/suspensions", response_model=SuspensionRecordUpdateResponse)
     def update_suspension_record(
         request: SuspensionRecordUpdateRequest,
         db: Session = Depends(get_db),

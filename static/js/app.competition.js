@@ -8,9 +8,11 @@ var scheduleData = {levels: [], rounds: [], matches: []};
 var playerRankingData = {levels: [], rows: []};
 var rankingData = {initial_points: 1000, appearance_bonus: 20, transfer_rate: 0.1, total_matches: 0, rows: [], matches: []};
 var suspensionData = {levels: [], teams: []};
+var seasonArchiveData = [];
 var siteNotesData = {};
 var cupBracketData = {};
 var cupGroupStageData = {};
+var wumingjianQualificationData = null;
 var currentCupGroupScheduleView = 'groups';
 var cupGroupScoreSaveTimers = new Map();
 var cupGroupScoreSaveVersions = new Map();
@@ -26,6 +28,19 @@ var activeSuspensionEditorTeamId = null;
 var competitionImageExportBusy = false;
 var currentMobileStandingsScope = 'total';
 var expandedMobileStandingRows = new Set();
+var standingsHistoryCache = new Map();
+var standingsHistoryState = {
+    level: '',
+    data: null,
+    index: 0,
+    speed: 1,
+    playing: false,
+    timer: null,
+    focusMode: 'all',
+    selectedTeamIds: new Set(),
+    returnFocus: null,
+    resizeObserver: null,
+};
 var matchTeamPlayerCache = new Map();
 var activeMatchEventSuggestionContext = null;
 var activeSuspensionSuggestionContext = null;
@@ -50,6 +65,12 @@ var currentSuspensionViewFilter = 'active';
 var suspensionProgressSaveTimers = new Map();
 var suspensionProgressSaveVersions = new Map();
 var suspensionProgressSaveInFlight = new Set();
+var suspensionRecordSaveTimers = new Map();
+var suspensionRecordSaveVersions = new Map();
+var suspensionRecordSaveInFlight = new Set();
+var suspensionRecordDrafts = new Map();
+var suspensionRecordLastSavedSignatures = new Map();
+var suspensionRecordEntryModes = new Map();
 var competitionWorkData = null;
 var competitionWorkLoadPromise = null;
 var competitionWorkLoadError = '';
@@ -58,11 +79,14 @@ var currentCompetitionWorkTargetMatchId = null;
 var competitionAssignableAccounts = [];
 var competitionWorkPanelExpanded = false;
 var rankingMatchMutationBusy = false;
+const SUSPENSION_IMAGE_MAX_BYTES = (4 * 1024 * 1024) - (64 * 1024);
+const SUSPENSION_IMAGE_TARGET_PIXELS = 6500000;
+const SUSPENSION_IMAGE_MIN_WIDTH = 640;
 
 function renderCompetitionDataStatus() {
     const container = document.getElementById('competitionDataStatus');
     if (!container) return;
-    if (currentCompetitionSubtab === 'rating') {
+    if (['rating', 'archives'].includes(currentCompetitionSubtab)) {
         container.hidden = true;
         return;
     }
@@ -82,7 +106,8 @@ function renderCompetitionDataStatus() {
     const metrics = getCompetitionModuleMetrics();
     const item = isCupCompetitionLevel() ? null : getDataStatusItem(keys[currentCompetitionSubtab] || 'standings', currentCompetitionLevel);
     const status = item?.status || (isCupCompetitionLevel() ? 'normal' : 'unknown');
-    const cupScheduleLabel = currentCupGroupScheduleView === 'results' ? '小组赛赛况' : '小组赛分组';
+    const isWumingjianSchedule = getCurrentCupConfig()?.key === 'wumingjian_cup' && currentCompetitionSubtab === 'schedule';
+    const cupScheduleLabel = isWumingjianSchedule ? '预选赛' : (currentCupGroupScheduleView === 'results' ? '小组赛赛况' : '小组赛分组');
     const cupStandingLabel = currentCupPhase === 'group' ? '小组赛积分榜' : '淘汰赛阶段';
     const statusLabel = item
         ? getDataStatusDisplayLabel(item)
@@ -95,7 +120,9 @@ function renderCompetitionDataStatus() {
         : `${currentCompetitionLevel}${moduleLabel}`;
     const description = isCupCompetitionLevel()
         ? (currentCompetitionSubtab === 'schedule'
-            ? (currentCupGroupScheduleView === 'results' ? '填写小组赛比分后，积分与跨组晋级顺位自动更新' : '维护小组球队名单；输入球队名的几个字母即可自动补全')
+            ? (isWumingjianSchedule
+                ? '联赛第15至16轮完赛后锁定资格；44支球队通过22场单场淘汰争夺32强席位'
+                : (currentCupGroupScheduleView === 'results' ? '填写小组赛比分后，积分与跨组晋级顺位自动更新' : '维护小组球队名单；输入球队名的几个字母即可自动补全'))
             : (currentCupPhase === 'group' ? '查看各组积分、跨组顺位和当前晋级去向' : '查看淘汰赛对阵、比分与晋级关系'))
         : (item?.message || `${moduleLabel}会随当前赛事数据自动更新`);
     const compactForWorker = !isCupCompetitionLevel() && hasLeagueCompetitionWorkAccess();
@@ -131,6 +158,15 @@ function renderCompetitionDataStatus() {
 function getCompetitionModuleMetrics() {
     if (isCupCompetitionLevel()) {
         const cupConfig = getCurrentCupConfig();
+        if (currentCompetitionSubtab === 'schedule' && cupConfig?.key === 'wumingjian_cup') {
+            const qualification = wumingjianQualificationData;
+            const matches = qualification?.preliminary_matches || [];
+            return [
+                {label: '直通32强', value: `${qualification?.direct_qualifiers?.length || 0}/10`, tone: qualification?.qualification_locked ? 'normal' : 'warning', note: qualification?.qualification_locked ? '资格已锁定' : '当前暂列'},
+                {label: '预选已抽签', value: `${qualification?.assigned_match_count || 0}/22`},
+                {label: '已决晋级', value: `${qualification?.played_match_count || 0}/${matches.length || 22}`, tone: qualification?.played_match_count === 22 ? 'normal' : ''},
+            ];
+        }
         const groupStage = cupConfig ? cupGroupStageData[cupConfig.key] : null;
         if (currentCupPhase === 'group') {
             if (currentCompetitionSubtab === 'schedule' && currentCupGroupScheduleView === 'results') {
@@ -328,6 +364,15 @@ function syncCupPhaseTabs() {
     container.hidden = !visible;
     container.className = `cup-phase-switch surface-card ${cupConfig?.className || ''}`;
     if (!visible) return;
+    if (currentCompetitionSubtab === 'schedule' && cupConfig?.key === 'wumingjian_cup') {
+        container.setAttribute('aria-label', '无铭剑杯预选赛阶段');
+        container.innerHTML = `
+            <button class="cup-phase-tab active is-single" id="cupPhaseGroupTab" type="button" role="tab" aria-selected="true">
+                <span class="cup-phase-index">QR</span><span class="cup-phase-copy"><strong>预选赛</strong><small>QUALIFYING ROUND</small></span>
+            </button>
+        `;
+        return;
+    }
     if (currentCompetitionSubtab === 'schedule' && cupConfig?.groupCount) {
         container.setAttribute('aria-label', '杯赛小组赛内容切换');
         container.innerHTML = `
@@ -396,9 +441,16 @@ function isScheduleForfeitStatus(status) {
 
 function getForfeitScoreForStatus(status) {
     if (status === 'home_forfeit') return {home_score: 0, away_score: 0};
-    if (status === 'away_forfeit') return {home_score: 3, away_score: 0};
+    if (status === 'away_forfeit') return {home_score: 2, away_score: 0};
     if (status === 'double_forfeit') return {home_score: 0, away_score: 0};
     return null;
+}
+
+function getForfeitRuleNote(status) {
+    if (status === 'home_forfeit') return '主队判负：本场记为 0:0，双方各得 1 分。';
+    if (status === 'away_forfeit') return '客队判负：本场记为 2:0，主队得 3 分、客队不得分。';
+    if (status === 'double_forfeit') return '双方判负：本场记为 0:0，双方均记负且不得分。';
+    return '';
 }
 
 function getScheduleStatusTone(status) {
@@ -421,7 +473,7 @@ function isMobileViewport() {
 }
 
 function showCompetitionSubtab(subtab) {
-    currentCompetitionSubtab = ['schedule', 'playerRankings', 'rating', 'suspensions'].includes(subtab) ? subtab : 'standings';
+    currentCompetitionSubtab = ['schedule', 'playerRankings', 'rating', 'suspensions', 'archives'].includes(subtab) ? subtab : 'standings';
     if (['playerRankings', 'suspensions'].includes(currentCompetitionSubtab) && !LEAGUE_COMPETITION_LEVELS.includes(currentCompetitionLevel)) {
         currentCompetitionLevel = '超级';
     }
@@ -435,6 +487,7 @@ function showCompetitionSubtab(subtab) {
         ['competitionSubtabPlayerRankings', 'playerRankings'],
         ['competitionSubtabRating', 'rating'],
         ['competitionSubtabSuspensions', 'suspensions'],
+        ['competitionSubtabArchives', 'archives'],
     ].forEach(([id, value]) => {
         const button = document.getElementById(id);
         if (!button) return;
@@ -448,13 +501,14 @@ function showCompetitionSubtab(subtab) {
     document.getElementById('competitionPlayerRankingsView')?.classList.toggle('active', currentCompetitionSubtab === 'playerRankings');
     document.getElementById('competitionRatingView')?.classList.toggle('active', currentCompetitionSubtab === 'rating');
     document.getElementById('competitionSuspensionsView')?.classList.toggle('active', currentCompetitionSubtab === 'suspensions');
-    const isRating = currentCompetitionSubtab === 'rating';
+    document.getElementById('competitionArchivesView')?.classList.toggle('active', currentCompetitionSubtab === 'archives');
+    const isStandalone = ['rating', 'archives'].includes(currentCompetitionSubtab);
     const selector = document.getElementById('competitionSelector');
     const statusHost = document.getElementById('competitionDataStatus');
     const workPanel = document.getElementById('competitionWorkPanel');
-    if (selector) selector.hidden = isRating;
-    if (statusHost) statusHost.hidden = isRating;
-    if (workPanel && isRating) workPanel.hidden = true;
+    if (selector) selector.hidden = isStandalone;
+    if (statusHost) statusHost.hidden = isStandalone;
+    if (workPanel && isStandalone) workPanel.hidden = true;
     syncCompetitionLevelTabs();
     syncCupPhaseTabs();
     renderCompetitionAdminActions();
@@ -884,7 +938,7 @@ function renderCompetitionWorkTaskPreview(tasks) {
 function renderCompetitionWorkPanel() {
     const container = document.getElementById('competitionWorkPanel');
     if (!container) return;
-    if (currentCompetitionSubtab === 'rating' || !hasLeagueCompetitionWorkAccess() || isCupCompetitionLevel()) {
+    if (['rating', 'archives'].includes(currentCompetitionSubtab) || !hasLeagueCompetitionWorkAccess() || isCupCompetitionLevel()) {
         container.hidden = true;
         container.innerHTML = '';
         return;
@@ -1205,6 +1259,10 @@ async function completeCompetitionRoundWork() {
 function renderCompetitionAdminActions() {
     const container = document.getElementById('competitionAdminActions');
     if (!container) return;
+    if (['rating', 'archives'].includes(currentCompetitionSubtab)) {
+        container.innerHTML = '';
+        return;
+    }
     const cupConfig = getCurrentCupConfig();
     if (!hasCompetitionWorkAccess()) {
         container.innerHTML = '';
@@ -1313,8 +1371,8 @@ function renderStandingPrediction(row, rows, level, options = {}) {
     const rail = getStandingPredictionRail(row, total);
     const tone = getStandingPredictionTone(row, level);
     const probabilityLabel = level === '超级'
-        ? `争冠 ${formatPredictionProbability(row.title_race_probability)} · 保级 ${formatPredictionProbability(row.relegation_probability)}`
-        : `升级 ${formatPredictionProbability(row.promotion_probability)} · 保级 ${formatPredictionProbability(row.relegation_probability)}`;
+        ? `争冠 ${formatPredictionProbability(row.title_race_probability)} · 降级 ${formatPredictionProbability(row.relegation_probability)}`
+        : `升级 ${formatPredictionProbability(row.promotion_probability)} · 降级 ${formatPredictionProbability(row.relegation_probability)}`;
     const title = `${row.prediction_label || '排名观察'}；最可能第 ${predicted} 名；90% 预测区间第 ${minimum}–${maximum} 名；${probabilityLabel}`;
     return `
         <span class="standing-prediction ${tone} ${options.mobile ? 'is-mobile' : ''}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">
@@ -1546,6 +1604,7 @@ function renderStandingsBoard() {
                         <span class="standings-zone-chip promotion">前五升级区</span>
                         <span class="standings-zone-chip relegation">后五降级区</span>
                     </div>
+                    <button class="btn btn-secondary standings-history-open-btn capture-exclude" type="button" onclick="openStandingsHistory(${htmlJsString(level)})">位次走势</button>
                     <button class="btn btn-secondary competition-excel-btn capture-exclude" type="button" onclick="exportStandingsExcel(${htmlJsString(level)})">Excel表格</button>
                     <button class="btn btn-secondary competition-image-btn capture-exclude" type="button" onclick="saveCompetitionImage('standings', ${htmlJsString(level)})">保存图片</button>
                 </div>
@@ -1558,6 +1617,483 @@ function renderStandingsBoard() {
     `).join('');
     renderCompetitionDataStatus();
 }
+
+function getStandingHistoryTeam(data, teamId) {
+    return (data?.teams || []).find(team => Number(team.team_id) === Number(teamId)) || null;
+}
+
+function getStandingHistoryRow(round, teamId) {
+    return (round?.rows || []).find(row => Number(row.team_id) === Number(teamId)) || null;
+}
+
+function getStandingHistoryTone(teamName) {
+    const palette = ['#7c5cff', '#2384d8', '#1d9a73', '#dc7b28', '#d65072', '#5f7398'];
+    const text = normalizeSearchText(teamName || '');
+    let value = 0;
+    for (const character of text) value = (value * 31 + character.charCodeAt(0)) >>> 0;
+    return palette[value % palette.length];
+}
+
+function getStandingHistoryInitials(teamName) {
+    return getScheduleTeamInitials(teamName || '').slice(0, 2) || '队';
+}
+
+function renderStandingHistoryCrest(team, className = 'standings-history-list-crest') {
+    const fallback = escapeHtml(getStandingHistoryInitials(team?.team_name));
+    return `<span class="${className}" style="--history-team-color:${getStandingHistoryTone(team?.team_name)}">${team?.logo_path ? `<img src="${escapeHtml(team.logo_path)}" alt="${escapeHtml(team.team_name)}队徽" loading="lazy" decoding="async" onerror="this.hidden=true">` : ''}<b>${fallback}</b></span>`;
+}
+
+function getStandingHistoryDimensions(host, data) {
+    const width = Math.max(300, Math.round(host?.clientWidth || 920));
+    const mobile = width < 620;
+    const rowGap = mobile ? 29 : 34;
+    const top = mobile ? 38 : 44;
+    const bottom = 38;
+    const left = mobile ? 36 : 48;
+    const right = mobile ? 18 : 28;
+    const teamCount = Math.max(1, (data?.teams || []).length);
+    return {width, height: top + bottom + ((teamCount - 1) * rowGap), top, bottom, left, right, rowGap, mobile};
+}
+
+function getStandingHistoryPoint(index, rank, dimensions, roundCount) {
+    const denominator = Math.max(1, roundCount - 1);
+    return {
+        x: dimensions.left + ((dimensions.width - dimensions.left - dimensions.right) * index / denominator),
+        y: dimensions.top + ((Math.max(1, Number(rank || 1)) - 1) * dimensions.rowGap),
+    };
+}
+
+function buildStandingHistoryPath(data, teamId, dimensions) {
+    const rounds = data?.rounds || [];
+    return rounds.map((round, index) => {
+        const row = getStandingHistoryRow(round, teamId);
+        const point = getStandingHistoryPoint(index, row?.rank || 1, dimensions, rounds.length);
+        return `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
+    }).join(' ');
+}
+
+function standingHistoryFocusIncludes(teamId, row) {
+    const mode = standingsHistoryState.focusMode;
+    const total = standingsHistoryState.data?.teams?.length || 0;
+    if (mode === 'all') return true;
+    if (mode === 'promotion') return Number(row?.rank || 0) <= 5;
+    if (mode === 'relegation') return Number(row?.rank || 0) > Math.max(0, total - 5);
+    return standingsHistoryState.selectedTeamIds.has(Number(teamId));
+}
+
+function getStandingHistoryFocusClass(teamId, row) {
+    if (standingsHistoryState.focusMode === 'all') return '';
+    return standingHistoryFocusIncludes(teamId, row) ? 'is-focused' : 'is-muted';
+}
+
+function renderStandingHistorySvg() {
+    const host = document.getElementById('standingsHistoryChart');
+    const data = standingsHistoryState.data;
+    if (!host || !data?.rounds?.length) return;
+    const dimensions = getStandingHistoryDimensions(host, data);
+    standingsHistoryState.dimensions = dimensions;
+    const rounds = data.rounds;
+    const currentRound = rounds[standingsHistoryState.index] || rounds[0];
+    const tickEvery = Math.max(1, Math.ceil(rounds.length / (dimensions.mobile ? 6 : 11)));
+    const teamCount = data.teams.length;
+    const promotionBottom = dimensions.top + (Math.min(5, teamCount) - 0.5) * dimensions.rowGap;
+    const relegationTop = dimensions.top + (Math.max(1, teamCount - 4) - 1.5) * dimensions.rowGap;
+    host.innerHTML = `
+        <svg class="standings-history-svg" viewBox="0 0 ${dimensions.width} ${dimensions.height}" role="img" aria-label="${escapeHtml(data.level)}积分榜逐轮位次走势">
+            <defs>
+                <clipPath id="standingsHistoryRevealClip"><rect id="standingsHistoryRevealRect" x="0" y="0" width="0" height="${dimensions.height}"></rect></clipPath>
+            </defs>
+            <rect class="standings-history-zone is-promotion" x="${dimensions.left}" y="${Math.max(0, dimensions.top - dimensions.rowGap * 0.5)}" width="${dimensions.width - dimensions.left - dimensions.right}" height="${Math.max(0, promotionBottom - dimensions.top + dimensions.rowGap * 0.5)}"></rect>
+            <rect class="standings-history-zone is-relegation" x="${dimensions.left}" y="${Math.max(0, relegationTop)}" width="${dimensions.width - dimensions.left - dimensions.right}" height="${Math.max(0, dimensions.height - dimensions.bottom - relegationTop + dimensions.rowGap * 0.5)}"></rect>
+            <g class="standings-history-grid">
+                ${Array.from({length: teamCount}, (_, index) => {
+                    const y = dimensions.top + index * dimensions.rowGap;
+                    return `<line x1="${dimensions.left}" y1="${y}" x2="${dimensions.width - dimensions.right}" y2="${y}"></line><text x="${dimensions.left - 12}" y="${y + 4}" text-anchor="middle">${index + 1}</text>`;
+                }).join('')}
+            </g>
+            <g class="standings-history-round-labels">
+                ${rounds.map((round, index) => {
+                    if (index !== 0 && index !== rounds.length - 1 && index % tickEvery !== 0) return '';
+                    const point = getStandingHistoryPoint(index, 1, dimensions, rounds.length);
+                    return `<text x="${point.x}" y="${dimensions.height - 10}" text-anchor="middle">${index === 0 ? '开赛' : `R${round.round_no}`}</text>`;
+                }).join('')}
+            </g>
+            <g class="standings-history-paths" clip-path="url(#standingsHistoryRevealClip)">
+                ${data.teams.map(team => {
+                    const row = getStandingHistoryRow(currentRound, team.team_id);
+                    return `<path data-history-path="${Number(team.team_id)}" class="standings-history-path ${getStandingHistoryFocusClass(team.team_id, row)}" style="--history-team-color:${getStandingHistoryTone(team.team_name)}" d="${buildStandingHistoryPath(data, team.team_id, dimensions)}"></path>`;
+                }).join('')}
+            </g>
+            <line id="standingsHistoryRoundCursor" class="standings-history-round-cursor" x1="0" y1="${dimensions.top - dimensions.rowGap * 0.55}" x2="0" y2="${dimensions.height - dimensions.bottom + dimensions.rowGap * 0.35}"></line>
+            <g class="standings-history-nodes">
+                ${data.teams.map(team => {
+                    const row = getStandingHistoryRow(currentRound, team.team_id);
+                    const point = getStandingHistoryPoint(standingsHistoryState.index, row?.rank || 1, dimensions, rounds.length);
+                    return `<g class="standings-history-node ${getStandingHistoryFocusClass(team.team_id, row)}" data-history-node="${Number(team.team_id)}" style="--history-team-color:${getStandingHistoryTone(team.team_name)};transform:translate3d(${point.x}px,${point.y}px,0)" role="button" tabindex="0" aria-label="关注${escapeHtml(team.team_name)}" onclick="toggleStandingHistoryTeam(${Number(team.team_id)})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleStandingHistoryTeam(${Number(team.team_id)})}">
+                        <circle class="standings-history-node-halo" r="17"></circle>
+                        <circle class="standings-history-node-base" r="14"></circle>
+                        <text class="standings-history-node-fallback" text-anchor="middle" y="3.5">${escapeHtml(getStandingHistoryInitials(team.team_name))}</text>
+                        ${team.logo_path ? `<image href="${escapeHtml(team.logo_path)}" x="-13" y="-13" width="26" height="26" preserveAspectRatio="xMidYMid meet"></image>` : ''}
+                    </g>`;
+                }).join('')}
+            </g>
+        </svg>
+    `;
+    updateStandingHistoryRound({animate: false});
+}
+
+function renderStandingHistoryLiveTable(round) {
+    const data = standingsHistoryState.data;
+    const list = document.getElementById('standingsHistoryLiveList');
+    if (!data || !list || !round) return;
+    list.innerHTML = [...(round.rows || [])].sort((a, b) => Number(a.rank) - Number(b.rank)).map(row => {
+        const team = getStandingHistoryTeam(data, row.team_id);
+        const focusClass = getStandingHistoryFocusClass(row.team_id, row);
+        const change = Number(row.rank_change || 0);
+        const changeLabel = change > 0 ? `↑${change}` : (change < 0 ? `↓${Math.abs(change)}` : '—');
+        return `
+            <button type="button" class="standings-history-live-row ${focusClass}" onclick="toggleStandingHistoryTeam(${Number(row.team_id)})">
+                <strong>${Number(row.rank)}</strong>
+                ${renderStandingHistoryCrest(team)}
+                <span><b>${escapeHtml(row.team_name)}</b><small>${Number(row.played)} 场 · 净胜球 ${Number(row.goal_difference) > 0 ? '+' : ''}${Number(row.goal_difference)}</small></span>
+                <em class="${change > 0 ? 'is-up' : (change < 0 ? 'is-down' : '')}">${changeLabel}</em>
+                <mark>${Number(row.points)}<small>分</small></mark>
+            </button>
+        `;
+    }).join('');
+}
+
+function updateStandingHistoryFocus() {
+    const data = standingsHistoryState.data;
+    const round = data?.rounds?.[standingsHistoryState.index];
+    if (!data || !round) return;
+    document.querySelectorAll('[data-history-focus]').forEach(button => {
+        const active = button.dataset.historyFocus === standingsHistoryState.focusMode;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    data.teams.forEach(team => {
+        const row = getStandingHistoryRow(round, team.team_id);
+        const focusClass = getStandingHistoryFocusClass(team.team_id, row);
+        const path = document.querySelector(`[data-history-path="${Number(team.team_id)}"]`);
+        const node = document.querySelector(`[data-history-node="${Number(team.team_id)}"]`);
+        path?.classList.toggle('is-muted', focusClass === 'is-muted');
+        path?.classList.toggle('is-focused', focusClass === 'is-focused');
+        node?.classList.toggle('is-muted', focusClass === 'is-muted');
+        node?.classList.toggle('is-focused', focusClass === 'is-focused');
+    });
+    renderStandingHistoryLiveTable(round);
+    const count = standingsHistoryState.focusMode === 'custom'
+        ? standingsHistoryState.selectedTeamIds.size
+        : (standingsHistoryState.focusMode === 'all' ? data.teams.length : Math.min(5, data.teams.length));
+    const summary = document.getElementById('standingsHistoryFocusSummary');
+    if (summary) summary.textContent = standingsHistoryState.focusMode === 'all' ? `显示全部 ${count} 队` : `重点显示 ${count} 队`;
+}
+
+function setStandingHistoryFocus(mode) {
+    standingsHistoryState.focusMode = ['all', 'promotion', 'relegation', 'custom'].includes(mode) ? mode : 'all';
+    updateStandingHistoryFocus();
+}
+
+function toggleStandingHistoryTeam(teamId) {
+    const id = Number(teamId);
+    standingsHistoryState.focusMode = 'custom';
+    if (standingsHistoryState.selectedTeamIds.has(id)) {
+        standingsHistoryState.selectedTeamIds.delete(id);
+    } else {
+        if (standingsHistoryState.selectedTeamIds.size >= 4) {
+            showUiToast('最多同时关注 4 支球队', 'warning');
+            return;
+        }
+        standingsHistoryState.selectedTeamIds.add(id);
+    }
+    if (!standingsHistoryState.selectedTeamIds.size) standingsHistoryState.focusMode = 'all';
+    updateStandingHistoryFocus();
+}
+
+function updateStandingHistoryRound(options = {}) {
+    const data = standingsHistoryState.data;
+    const rounds = data?.rounds || [];
+    if (!rounds.length) return;
+    standingsHistoryState.index = Math.max(0, Math.min(rounds.length - 1, Number(standingsHistoryState.index || 0)));
+    const round = rounds[standingsHistoryState.index];
+    const dimensions = standingsHistoryState.dimensions;
+    if (!dimensions) return;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const interval = 860 / standingsHistoryState.speed;
+    const motionMs = options.animate === false || reducedMotion ? 1 : Math.max(220, Math.min(520, interval * 0.7));
+    const modal = document.getElementById('standingsHistoryModal');
+    modal?.style.setProperty('--history-motion-ms', `${motionMs}ms`);
+    data.teams.forEach(team => {
+        const row = getStandingHistoryRow(round, team.team_id);
+        const point = getStandingHistoryPoint(standingsHistoryState.index, row?.rank || 1, dimensions, rounds.length);
+        const node = document.querySelector(`[data-history-node="${Number(team.team_id)}"]`);
+        if (node) node.style.transform = `translate3d(${point.x}px,${point.y}px,0)`;
+    });
+    const currentPoint = getStandingHistoryPoint(standingsHistoryState.index, 1, dimensions, rounds.length);
+    const reveal = document.getElementById('standingsHistoryRevealRect');
+    if (reveal) reveal.setAttribute('width', String(Math.max(0, currentPoint.x + 2)));
+    const cursor = document.getElementById('standingsHistoryRoundCursor');
+    if (cursor) {
+        cursor.setAttribute('x1', String(currentPoint.x));
+        cursor.setAttribute('x2', String(currentPoint.x));
+    }
+    const label = document.getElementById('standingsHistoryCurrentRound');
+    if (label) label.textContent = round.round_label;
+    const state = document.getElementById('standingsHistoryRoundState');
+    if (state) {
+        const opening = Number(round.round_no) === 0;
+        state.className = `standings-history-round-state ${opening || round.is_complete ? 'is-complete' : 'is-recording'}`;
+        state.textContent = opening ? '赛季起点' : (round.is_complete ? `${round.played_match_count}/${round.total_match_count} 场已完成` : `本轮录入中 · ${round.played_match_count}/${round.total_match_count} 场`);
+    }
+    const range = document.getElementById('standingsHistoryRange');
+    if (range) range.value = String(standingsHistoryState.index);
+    const previous = document.getElementById('standingsHistoryPrevious');
+    const next = document.getElementById('standingsHistoryNext');
+    if (previous) previous.disabled = standingsHistoryState.index <= 0;
+    if (next) next.disabled = standingsHistoryState.index >= rounds.length - 1;
+    updateStandingHistoryFocus();
+}
+
+function stopStandingHistoryPlayback() {
+    window.clearTimeout(standingsHistoryState.timer);
+    standingsHistoryState.timer = null;
+    standingsHistoryState.playing = false;
+    const button = document.getElementById('standingsHistoryPlay');
+    if (button) {
+        button.classList.remove('is-playing');
+        button.setAttribute('aria-label', '播放位次走势');
+        button.innerHTML = `${uiIconSvg('play')}<span>播放</span>`;
+    }
+}
+
+function scheduleStandingHistoryFrame() {
+    if (!standingsHistoryState.playing) return;
+    const rounds = standingsHistoryState.data?.rounds || [];
+    if (standingsHistoryState.index >= rounds.length - 1) {
+        stopStandingHistoryPlayback();
+        return;
+    }
+    const delay = 860 / standingsHistoryState.speed;
+    standingsHistoryState.timer = window.setTimeout(() => {
+        standingsHistoryState.index += 1;
+        updateStandingHistoryRound();
+        scheduleStandingHistoryFrame();
+    }, delay);
+}
+
+function toggleStandingHistoryPlayback() {
+    if (standingsHistoryState.playing) {
+        stopStandingHistoryPlayback();
+        return;
+    }
+    const rounds = standingsHistoryState.data?.rounds || [];
+    if (rounds.length <= 1) return;
+    if (standingsHistoryState.index >= rounds.length - 1) {
+        standingsHistoryState.index = 0;
+        updateStandingHistoryRound({animate: false});
+    }
+    standingsHistoryState.playing = true;
+    const button = document.getElementById('standingsHistoryPlay');
+    if (button) {
+        button.classList.add('is-playing');
+        button.setAttribute('aria-label', '暂停位次走势');
+        button.innerHTML = `${uiIconSvg('pause')}<span>暂停</span>`;
+    }
+    scheduleStandingHistoryFrame();
+}
+
+function stepStandingHistory(direction) {
+    stopStandingHistoryPlayback();
+    standingsHistoryState.index += Number(direction || 0);
+    updateStandingHistoryRound();
+}
+
+function seekStandingHistory(index) {
+    stopStandingHistoryPlayback();
+    standingsHistoryState.index = Number(index || 0);
+    updateStandingHistoryRound();
+}
+
+function setStandingHistorySpeed(speed) {
+    standingsHistoryState.speed = [1, 1.5, 2].includes(Number(speed)) ? Number(speed) : 1;
+    document.querySelectorAll('[data-history-speed]').forEach(button => {
+        const active = Number(button.dataset.historySpeed) === standingsHistoryState.speed;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    if (standingsHistoryState.playing) {
+        window.clearTimeout(standingsHistoryState.timer);
+        scheduleStandingHistoryFrame();
+    }
+}
+
+function renderStandingsHistoryModal(data) {
+    const modal = document.getElementById('standingsHistoryModal');
+    if (!modal) return;
+    const rounds = data.rounds || [];
+    const latestIndex = Math.max(0, rounds.length - 1);
+    standingsHistoryState.data = data;
+    standingsHistoryState.index = latestIndex;
+    standingsHistoryState.speed = 1;
+    standingsHistoryState.selectedTeamIds = new Set();
+    standingsHistoryState.focusMode = 'all';
+    modal.querySelector('.standings-history-modal')?.classList.remove('is-loading');
+    const body = modal.querySelector('.standings-history-modal-body');
+    if (!body) return;
+    if (rounds.length <= 1) {
+        body.innerHTML = `<div class="standings-history-empty">${renderUiState({tone: 'empty', title: '尚无位次变化', message: '录入第一轮比赛结果后，这里会生成队徽排名轨迹。', compact: true})}</div>`;
+        return;
+    }
+    body.innerHTML = `
+        <div class="standings-history-toolbar capture-exclude">
+            <div class="standings-history-focus-tabs" role="group" aria-label="走势关注范围">
+                <button type="button" data-history-focus="all" class="is-active" aria-pressed="true" onclick="setStandingHistoryFocus('all')">全部</button>
+                <button type="button" data-history-focus="promotion" aria-pressed="false" onclick="setStandingHistoryFocus('promotion')">争冠区</button>
+                <button type="button" data-history-focus="relegation" aria-pressed="false" onclick="setStandingHistoryFocus('relegation')">保级区</button>
+                <button type="button" data-history-focus="custom" aria-pressed="false" onclick="setStandingHistoryFocus('custom')">自选</button>
+            </div>
+            <span id="standingsHistoryFocusSummary">显示全部 ${data.teams.length} 队</span>
+            <button type="button" class="btn btn-secondary standings-history-save" onclick="saveStandingsHistoryImage()">保存图片</button>
+        </div>
+        <div class="standings-history-capture" data-export-view="standings-history-${escapeHtml(data.level)}">
+            <div class="standings-history-round-head">
+                <div><span>当前节点</span><strong id="standingsHistoryCurrentRound">${escapeHtml(rounds[latestIndex].round_label)}</strong></div>
+                <em id="standingsHistoryRoundState" class="standings-history-round-state"></em>
+            </div>
+            <div class="standings-history-stage">
+                <div class="standings-history-chart" id="standingsHistoryChart"></div>
+                <aside class="standings-history-live" aria-label="当前轮次排名">
+                    <header><span>LIVE TABLE</span><strong>当前排名</strong></header>
+                    <div id="standingsHistoryLiveList"></div>
+                </aside>
+            </div>
+        </div>
+        <div class="standings-history-controls capture-exclude">
+            <button type="button" id="standingsHistoryPrevious" onclick="stepStandingHistory(-1)" aria-label="上一轮">${uiIconSvg('arrow-left')}</button>
+            <button type="button" id="standingsHistoryPlay" class="standings-history-play" onclick="toggleStandingHistoryPlayback()" aria-label="播放位次走势">${uiIconSvg('play')}<span>播放</span></button>
+            <button type="button" id="standingsHistoryNext" onclick="stepStandingHistory(1)" aria-label="下一轮">${uiIconSvg('arrow-right')}</button>
+            <input id="standingsHistoryRange" type="range" min="0" max="${Math.max(0, rounds.length - 1)}" value="${latestIndex}" step="1" aria-label="选择轮次" oninput="seekStandingHistory(this.value)">
+            <div class="standings-history-speeds" role="group" aria-label="播放速度">
+                ${[1, 1.5, 2].map(speed => `<button type="button" data-history-speed="${speed}" class="${speed === 1 ? 'is-active' : ''}" aria-pressed="${speed === 1 ? 'true' : 'false'}" onclick="setStandingHistorySpeed(${speed})">${speed}×</button>`).join('')}
+            </div>
+        </div>
+    `;
+    requestAnimationFrame(() => {
+        renderStandingHistorySvg();
+        standingsHistoryState.resizeObserver?.disconnect();
+        if (typeof ResizeObserver === 'function') {
+            standingsHistoryState.resizeObserver = new ResizeObserver(() => renderStandingHistorySvg());
+            standingsHistoryState.resizeObserver.observe(document.getElementById('standingsHistoryChart'));
+        }
+    });
+}
+
+async function openStandingsHistory(level = currentCompetitionLevel) {
+    closeStandingsHistory();
+    standingsHistoryState.level = level;
+    standingsHistoryState.returnFocus = document.activeElement;
+    const host = document.createElement('div');
+    host.innerHTML = `
+        <div class="standings-history-modal-overlay" id="standingsHistoryModal" role="presentation" onclick="if(event.target===this)closeStandingsHistory()">
+            <section class="standings-history-modal is-loading" role="dialog" aria-modal="true" aria-labelledby="standingsHistoryTitle" tabindex="-1">
+                <header class="standings-history-modal-head">
+                    <div><span>RANKING JOURNEY</span><h3 id="standingsHistoryTitle">${escapeHtml(level)}位次走势</h3><p>队徽按轮次移动，轨迹与当前积分榜采用相同排名规则。</p></div>
+                    <button type="button" class="match-event-modal-close" onclick="closeStandingsHistory()" aria-label="关闭位次走势">${uiIconSvg('close')}</button>
+                </header>
+                <div class="standings-history-modal-body"><div class="standings-history-loading"><span></span><strong>正在生成逐轮排名轨迹</strong><small>从赛程比分实时累计，无需单独维护</small></div></div>
+            </section>
+        </div>
+    `;
+    document.body.appendChild(host.firstElementChild);
+    document.body.classList.add('standings-history-modal-open');
+    requestAnimationFrame(() => document.querySelector('.standings-history-modal')?.focus());
+    try {
+        const cached = standingsHistoryCache.get(level);
+        let data = cached && Date.now() - cached.loadedAt < 60000 ? cached.data : null;
+        if (!data) {
+            data = await fetchCompetitionJson(`/api/standings/history?level=${encodeURIComponent(level)}`);
+            standingsHistoryCache.set(level, {data, loadedAt: Date.now()});
+        }
+        if (!document.getElementById('standingsHistoryModal') || standingsHistoryState.level !== level) return;
+        renderStandingsHistoryModal(data);
+    } catch (error) {
+        console.error('Failed to load standings history:', error);
+        const body = document.querySelector('#standingsHistoryModal .standings-history-modal-body');
+        if (body) body.innerHTML = renderUiState({tone: 'danger', title: '位次走势加载失败', message: '积分榜本身不受影响，可以稍后重新打开。', actionLabel: '重新读取', actionOnclick: `openStandingsHistory(${htmlJsString(level)})`, compact: true});
+    }
+}
+
+function closeStandingsHistory() {
+    stopStandingHistoryPlayback();
+    standingsHistoryState.resizeObserver?.disconnect();
+    standingsHistoryState.resizeObserver = null;
+    document.getElementById('standingsHistoryModal')?.remove();
+    document.body.classList.remove('standings-history-modal-open');
+    const returnFocus = standingsHistoryState.returnFocus;
+    standingsHistoryState.returnFocus = null;
+    if (returnFocus?.isConnected) returnFocus.focus();
+}
+
+async function saveStandingsHistoryImage() {
+    const target = document.querySelector('.standings-history-capture');
+    if (!target || competitionImageExportBusy) return;
+    try {
+        await ensureHtmlToImage();
+        if (!window.htmlToImage?.toBlob) throw new Error('image-export-unavailable');
+        competitionImageExportBusy = true;
+        target.classList.add('is-exporting');
+        if (document.fonts?.ready) await document.fonts.ready;
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        renderStandingHistorySvg();
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        const blob = await window.htmlToImage.toBlob(target, {cacheBust: true, pixelRatio: 2});
+        if (!blob) throw new Error('capture-blob-empty');
+        downloadCompetitionBlob(blob, `HEIGO_${standingsHistoryState.level}_位次走势_R${standingsHistoryState.data?.rounds?.[standingsHistoryState.index]?.round_no || 0}.png`);
+        showUiToast('位次走势图已保存', 'success');
+    } catch (error) {
+        console.error('Failed to save standings history image:', error);
+        showModal('生成图片失败', '位次走势图暂时无法保存，请刷新后重试。');
+    } finally {
+        target?.classList.remove('is-exporting');
+        requestAnimationFrame(() => renderStandingHistorySvg());
+        competitionImageExportBusy = false;
+    }
+}
+
+function handleStandingsHistoryKeydown(event) {
+    const modal = document.getElementById('standingsHistoryModal');
+    if (!modal) return;
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        closeStandingsHistory();
+        return;
+    }
+    if (event.key === 'ArrowLeft' && !event.target?.matches?.('input')) {
+        event.preventDefault();
+        stepStandingHistory(-1);
+        return;
+    }
+    if (event.key === 'ArrowRight' && !event.target?.matches?.('input')) {
+        event.preventDefault();
+        stepStandingHistory(1);
+        return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(modal.querySelectorAll('button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])'));
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
+}
+
+document.addEventListener('keydown', handleStandingsHistoryKeydown);
 
 function renderCompetitionPrimaryBoard() {
     const standingsContainer = document.getElementById('standingsBoard');
@@ -2225,6 +2761,10 @@ function renderCupGroupStageBoard() {
     const container = document.getElementById('cupGroupStageBoard');
     const cupConfig = getCurrentCupConfig();
     if (!container || !cupConfig) return;
+    if (cupConfig.key === 'wumingjian_cup') {
+        renderWumingjianQualificationBoard();
+        return;
+    }
     const stage = getCurrentCupGroupStage();
     if (!cupConfig.groupCount) {
         container.innerHTML = `
@@ -2550,14 +3090,62 @@ function handleSuspensionPlayerKeydown(event) {
     closeSuspensionSuggestions();
 }
 
+function resetSuspensionEditorFields(teamId, mode = 'merge') {
+    const yellowInput = document.getElementById(`suspension-yellows-${teamId}`);
+    const redInput = document.getElementById(`suspension-red-${teamId}`);
+    const injuryInput = document.getElementById(`suspension-injury-${teamId}`);
+    const notesInput = document.getElementById(`suspension-notes-${teamId}`);
+    if (yellowInput) yellowInput.value = '0';
+    if (redInput) redInput.checked = false;
+    if (injuryInput) injuryInput.checked = false;
+    if (notesInput) notesInput.value = '';
+    suspensionRecordEntryModes.set(Number(teamId), mode);
+    suspensionRecordLastSavedSignatures.delete(Number(teamId));
+}
+
 function selectSuspensionSuggestion(button, teamId, playerUid) {
     const input = document.getElementById(`suspension-player-${teamId}`) || activeSuspensionSuggestionContext?.input;
     const team = findSuspensionTeam(teamId);
     const player = getTeamPlayersForSuspension(team).find(item => Number(item.uid || 0) === Number(playerUid));
     if (!input || !player) return;
+    const previousUid = Number(input.dataset.playerUid || 0);
+    const keepManualEdit = suspensionRecordEntryModes.get(Number(teamId)) === 'replace'
+        && previousUid === Number(player.uid || 0);
     input.value = player.name || '';
+    input.dataset.playerUid = String(Number(player.uid || 0));
     closeSuspensionSuggestions();
+    const existing = findLocalSuspensionRecordForPlayer(player, teamId);
+    if (existing && keepManualEdit) {
+        fillSuspensionEditor(teamId, player.uid);
+    } else {
+        resetSuspensionEditorFields(teamId, 'merge');
+    }
     input.dispatchEvent(new Event('change', {bubbles: true}));
+}
+
+function handleSuspensionPlayerInput(input, teamId) {
+    if (input?.dataset) delete input.dataset.playerUid;
+    resetSuspensionEditorFields(teamId, 'merge');
+    updateSuspensionSuggestions(input, teamId);
+    setSuspensionRecordSaveState(teamId, '', '选择球员后自动保存');
+}
+
+function handleSuspensionPlayerBlur(input, teamId) {
+    scheduleCloseSuspensionSuggestions(input);
+    if (!Number(input?.dataset?.playerUid || 0)) {
+        try {
+            const player = resolveSuspensionPlayer(teamId);
+            const existing = player ? findLocalSuspensionRecordForPlayer(player, teamId) : null;
+            if (player) input.dataset.playerUid = String(Number(player.uid || 0));
+            if (existing && suspensionRecordEntryModes.get(Number(teamId)) === 'replace') {
+                fillSuspensionEditor(teamId, player.uid);
+            }
+        } catch (error) {
+            setSuspensionRecordSaveState(teamId, 'error', error.message || '请从候选列表选择球员');
+            return;
+        }
+    }
+    queueSuspensionRecordSave(teamId, true);
 }
 
 function handleSuspensionSuggestionDocumentPointerDown(event) {
@@ -2611,20 +3199,20 @@ function renderSuspensionEditor(team) {
         <div class="suspension-editor capture-exclude">
             <div class="suspension-player-field">
                 <div class="suspension-player-input-row">
-                    <input id="suspension-player-${teamId}" class="suspension-player-input" type="text" placeholder="输入球员名或 UID" autocomplete="off" oninput="updateSuspensionSuggestions(this, ${teamId})" onfocus="updateSuspensionSuggestions(this, ${teamId}, true)" onblur="scheduleCloseSuspensionSuggestions(this)" onkeydown="handleSuspensionPlayerKeydown(event)">
+                    <input id="suspension-player-${teamId}" class="suspension-player-input" type="text" placeholder="输入球员名或 UID" autocomplete="off" aria-describedby="suspension-record-state-${teamId}" oninput="handleSuspensionPlayerInput(this, ${teamId})" onchange="queueSuspensionRecordSave(${teamId})" onfocus="updateSuspensionSuggestions(this, ${teamId}, true)" onblur="handleSuspensionPlayerBlur(this, ${teamId})" onkeydown="handleSuspensionPlayerKeydown(event)">
                     <button class="suspension-player-toggle" type="button" title="选择球员" aria-label="选择球员" onclick="toggleSuspensionSuggestions(this, ${teamId})">▾</button>
                 </div>
             </div>
-            <select id="suspension-yellows-${teamId}" aria-label="黄牌数">
+            <select id="suspension-yellows-${teamId}" aria-label="黄牌数" onchange="queueSuspensionRecordSave(${teamId}, true)">
                 <option value="0">0黄</option>
                 <option value="1">1黄</option>
                 <option value="2">2黄</option>
                 <option value="3">3黄停赛</option>
             </select>
-            <label class="suspension-check"><input id="suspension-red-${teamId}" type="checkbox">红牌</label>
-            <label class="suspension-check"><input id="suspension-injury-${teamId}" type="checkbox">红伤</label>
-            <input id="suspension-notes-${teamId}" type="text" placeholder="备注">
-            <button class="btn btn-primary" type="button" onclick="saveSuspensionRecord(${teamId})">保存记录</button>
+            <label class="suspension-check"><input id="suspension-red-${teamId}" type="checkbox" onchange="queueSuspensionRecordSave(${teamId}, true)">红牌</label>
+            <label class="suspension-check"><input id="suspension-injury-${teamId}" type="checkbox" onchange="queueSuspensionRecordSave(${teamId}, true)">红伤</label>
+            <input id="suspension-notes-${teamId}" type="text" placeholder="备注" oninput="queueSuspensionRecordSave(${teamId})" onblur="queueSuspensionRecordSave(${teamId}, true)">
+            <span class="ui-save-state suspension-record-save-state" id="suspension-record-state-${teamId}" aria-live="polite">选择球员后自动保存</span>
         </div>
     `;
 }
@@ -2634,8 +3222,8 @@ function renderSuspensionTeamActions(team) {
     const teamId = Number(team.team_id || 0);
     const isOpen = Number(activeSuspensionEditorTeamId || 0) === teamId;
     return `
-        <button class="suspension-maintain-btn capture-exclude" type="button" onclick="toggleSuspensionEditor(${teamId})">
-            ${isOpen ? '收起' : '维护'}
+        <button class="suspension-maintain-btn capture-exclude" type="button" onclick="toggleSuspensionEditor(${teamId})" aria-label="${isOpen ? '完成编辑' : '编辑'} ${escapeHtml(team.team_name)}伤停记录">
+            ${isOpen ? '完成' : '编辑'}
         </button>
     `;
 }
@@ -2685,9 +3273,9 @@ function formatSuspensionRoundProgress(roundNo, missingLabel = '伤停轮次待�
     if (roundNo === null || roundNo === undefined) return missingLabel;
     const numericRound = Number(roundNo);
     if (!Number.isInteger(numericRound) || numericRound < 0) return missingLabel;
-    if (numericRound === 0) return '已完成赛季初核对 · 默认用于第 1 轮';
-    if (numericRound >= 34) return `已核对完第 ${numericRound} 轮 · 赛季轮次已核对完成`;
-    return `已核对完第 ${numericRound} 轮 · 默认用于第 ${numericRound + 1} 轮`;
+    if (numericRound === 0) return '赛季初核对完成 · 适用于第 1 轮';
+    if (numericRound >= 34) return `核对至第 ${numericRound} 轮 · 赛季轮次已核对完成`;
+    return `核对至第 ${numericRound} 轮 · 适用于第 ${numericRound + 1} 轮`;
 }
 
 function renderSuspensionTeamNote(team) {
@@ -2695,15 +3283,20 @@ function renderSuspensionTeamNote(team) {
     const teamId = Number(team.team_id || 0);
     const note = getSuspensionTeamNote(teamId);
     const roundNo = getSuspensionTeamRound(teamId);
-    const displayText = `${formatSuspensionRoundProgress(roundNo, '轮次未标注')}${note ? ` · ${note}` : ''}`;
+    const progress = team?.progress || null;
+    const progressTitle = String(progress?.title || formatSuspensionRoundProgress(roundNo, '轮次未标注')).trim();
+    const progressDetail = String(progress?.detail || '').trim();
     const editing = canManageCurrentCompetitionSuspensions() && Number(activeSuspensionEditorTeamId || 0) === teamId;
     return `
-        <div class="suspension-team-note">
+        <div class="suspension-team-note is-${escapeHtml(progress?.state || 'unknown')}">
             <strong>更新进度</strong>
-            <span id="suspension-team-progress-display-${teamId}">${escapeHtml(displayText)}</span>
+            <div class="suspension-team-progress-copy">
+                <span id="suspension-team-progress-display-${teamId}">${escapeHtml(progressTitle)}${note ? ` · ${escapeHtml(note)}` : ''}</span>
+                ${progressDetail ? `<small>${escapeHtml(progressDetail)}</small>` : ''}
+            </div>
         </div>
         ${editing ? `<div class="suspension-team-note-editor capture-exclude">
-            <label class="suspension-round-field"><span>已核对完</span><input id="suspension-team-round-${teamId}" type="number" min="0" max="34" inputmode="numeric" value="${roundNo ?? ''}" placeholder="N" aria-label="已核对完成的轮次" oninput="queueSuspensionProgressSave('team', ${teamId})" onblur="queueSuspensionProgressSave('team', ${teamId}, true)"><small>填 N → 默认用于 N+1</small></label>
+            <label class="suspension-round-field"><span>核对至第</span><input id="suspension-team-round-${teamId}" type="number" min="0" max="34" inputmode="numeric" value="${roundNo ?? ''}" placeholder="轮次" aria-label="伤停核对至第几轮" oninput="queueSuspensionProgressSave('team', ${teamId})" onblur="queueSuspensionProgressSave('team', ${teamId}, true)"><small>轮 · 适用于下一轮</small></label>
             <input id="suspension-team-note-${teamId}" type="text" maxlength="160" value="${escapeHtml(note)}" placeholder="可选备注，例如赛后已核对" oninput="queueSuspensionProgressSave('team', ${teamId})" onblur="queueSuspensionProgressSave('team', ${teamId}, true)">
             <span class="ui-save-state" id="suspension-progress-state-team-${teamId}" aria-live="polite">自动保存</span>
         </div>` : ''}
@@ -2719,7 +3312,7 @@ function renderSuspensionUpdateNote(level) {
             <span class="suspension-update-note-text" id="suspension-level-progress-display-${escapeHtml(level)}">${escapeHtml(displayText)}</span>
             ${canManageCurrentCompetitionSuspensions() ? `
                 <div class="suspension-note-editor capture-exclude">
-                    <label class="suspension-round-field"><span>已核对完</span><input id="suspension-round-${escapeHtml(level)}" type="number" min="0" max="34" inputmode="numeric" value="${roundNo ?? ''}" placeholder="N" aria-label="已核对完成的轮次" oninput="queueSuspensionProgressSave('level', ${htmlJsString(level)})" onblur="queueSuspensionProgressSave('level', ${htmlJsString(level)}, true)"><small>填 N → 默认用于 N+1</small></label>
+                    <label class="suspension-round-field"><span>核对至第</span><input id="suspension-round-${escapeHtml(level)}" type="number" min="0" max="34" inputmode="numeric" value="${roundNo ?? ''}" placeholder="轮次" aria-label="伤停核对至第几轮" oninput="queueSuspensionProgressSave('level', ${htmlJsString(level)})" onblur="queueSuspensionProgressSave('level', ${htmlJsString(level)}, true)"><small>轮 · 适用于下一轮</small></label>
                     <input id="suspension-note-${escapeHtml(level)}" type="text" maxlength="160" value="${escapeHtml(note)}" placeholder="可选备注，例如全部球队已核对" oninput="queueSuspensionProgressSave('level', ${htmlJsString(level)})" onblur="queueSuspensionProgressSave('level', ${htmlJsString(level)}, true)">
                     <span class="ui-save-state" id="suspension-progress-state-level-${escapeHtml(level)}" aria-live="polite">自动保存</span>
                 </div>
@@ -2742,8 +3335,7 @@ function getSuspensionTeamSummary(team) {
 }
 
 function suspensionTeamNeedsAttention(team) {
-    const summary = getSuspensionTeamSummary(team);
-    if (team?.is_orphaned || summary.suspendedCount > 0) return true;
+    if (team?.is_orphaned) return true;
     const levelRound = getSuspensionUpdateRound(currentCompetitionLevel);
     const teamRound = getSuspensionTeamRound(team?.team_id);
     return levelRound !== null && (teamRound === null || teamRound < levelRound);
@@ -2782,7 +3374,7 @@ function renderSuspensionViewFilters(teams) {
 function renderSuspensionFilteredEmpty() {
     const title = currentSuspensionViewFilter === 'attention' ? '当前没有待处理球队' : '当前没有伤停记录';
     const message = currentSuspensionViewFilter === 'attention'
-        ? '停赛、历史异常和伤停核对轮次落后的球队会集中显示在这里。'
+        ? '历史异常以及伤停核对轮次缺失或落后的球队会集中显示在这里；正常停赛记录不会列入待处理。'
         : '当前级别没有黄牌关注或停赛记录，可切换到全部球队继续核对。';
     return `${renderUiState({tone: 'success', title, message, compact: true})}<button class="btn btn-secondary suspension-show-all-btn capture-exclude" type="button" onclick="setSuspensionViewFilter('all')">查看全部球队</button>`;
 }
@@ -2814,11 +3406,15 @@ function renderSuspensionsBoard() {
             <div class="suspension-team-grid">
                 ${visibleTeams.map(team => {
                     const teamId = Number(team.team_id || 0);
-                    const expanded = expandedMobileSuspensionTeams.has(teamId) || Number(activeSuspensionEditorTeamId || 0) === teamId;
+                    const summary = getSuspensionTeamSummary(team);
+                    const editing = Number(activeSuspensionEditorTeamId || 0) === teamId;
+                    const expanded = summary.hasContent || expandedMobileSuspensionTeams.has(teamId) || editing;
+                    const editable = canManageCurrentCompetitionSuspensions() && !team.is_orphaned;
                     const detailsId = `suspensionTeamDetails-${teamId}`;
-                    const {cautionCount, suspendedCount} = getSuspensionTeamSummary(team);
+                    const {cautionCount, suspendedCount} = summary;
                     return `
-                    <article class="suspension-team-card ${team.is_orphaned ? 'is-orphaned' : ''} ${expanded ? 'is-expanded' : ''}">
+                    <article class="suspension-team-card ${team.is_orphaned ? 'is-orphaned' : ''} ${expanded ? 'is-expanded' : ''} ${editable ? 'is-editable' : ''} ${editing ? 'is-editing' : ''}"
+                        ${editable ? `onclick="handleSuspensionTeamCardClick(event, ${teamId})"` : ''}>
                         <header class="suspension-team-head">
                             <div>
                                 <h3>${escapeHtml(team.team_name)}</h3>
@@ -2826,10 +3422,9 @@ function renderSuspensionsBoard() {
                             </div>
                             <div class="suspension-team-quick-stats"><span><strong>${cautionCount}</strong>黄牌关注</span><span class="${suspendedCount ? 'has-suspension' : ''}"><strong>${suspendedCount}</strong>停赛</span></div>
                             ${renderSuspensionTeamActions(team)}
-                            <button class="suspension-team-toggle" type="button" onclick="toggleMobileSuspensionTeam(${teamId})" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${detailsId}" aria-label="${expanded ? '收起' : '展开'} ${escapeHtml(team.team_name)}伤停详情">${uiIconSvg('chevron-down', 'ui-icon is-small')}</button>
                         </header>
-                        ${expanded ? `<div class="suspension-team-details" id="${detailsId}">
                         ${renderSuspensionTeamNote(team)}
+                        ${expanded ? `<div class="suspension-team-details" id="${detailsId}">
                         <div class="suspension-columns">
                             <section class="is-one-yellow">
                                 <h4>1张黄牌</h4>
@@ -2864,6 +3459,16 @@ function toggleMobileSuspensionTeam(teamId) {
     if (typeof syncAppHistory === 'function') syncAppHistory('replace');
 }
 
+function suspensionCardClickTargetIsInteractive(target) {
+    return Boolean(target?.closest?.('button, a, input, select, textarea, label'));
+}
+
+function handleSuspensionTeamCardClick(event, teamId) {
+    if (!canManageCurrentCompetitionSuspensions() || suspensionCardClickTargetIsInteractive(event?.target)) return;
+    if (Number(activeSuspensionEditorTeamId || 0) === Number(teamId)) return;
+    openSuspensionEditor(teamId);
+}
+
 async function ensureCompetitionPlayersLoaded() {
     if ((allPlayers || []).length) return true;
     try {
@@ -2882,8 +3487,12 @@ async function toggleSuspensionEditor(teamId) {
     const numericTeamId = Number(teamId);
     const opening = Number(activeSuspensionEditorTeamId || 0) !== numericTeamId;
     if (opening && !await ensureCompetitionPlayersLoaded()) return;
+    if (activeSuspensionEditorTeamId) queueSuspensionRecordSave(activeSuspensionEditorTeamId, true);
     activeSuspensionEditorTeamId = opening ? numericTeamId : null;
-    if (opening) expandedMobileSuspensionTeams.add(numericTeamId);
+    if (opening) {
+        expandedMobileSuspensionTeams.add(numericTeamId);
+        suspensionRecordEntryModes.set(numericTeamId, 'merge');
+    }
     renderSuspensionsBoard();
 }
 
@@ -3022,6 +3631,7 @@ async function openSuspensionEditor(teamId, playerUid = null) {
     if (!canManageCurrentCompetitionSuspensions()) return;
     if (!await ensureCompetitionPlayersLoaded()) return;
     activeSuspensionEditorTeamId = Number(teamId);
+    suspensionRecordEntryModes.set(Number(teamId), playerUid === null || playerUid === undefined ? 'merge' : 'replace');
     expandedMobileSuspensionTeams.add(Number(teamId));
     renderSuspensionsBoard();
     if (playerUid !== null && playerUid !== undefined) {
@@ -3035,9 +3645,15 @@ function findSuspensionTeam(teamId) {
 
 function resolveSuspensionPlayer(teamId) {
     const team = findSuspensionTeam(teamId);
-    const raw = String(document.getElementById(`suspension-player-${teamId}`)?.value || '').trim();
+    const input = document.getElementById(`suspension-player-${teamId}`);
+    const raw = String(input?.value || '').trim();
     if (!team || !raw) return null;
     const players = getTeamPlayersForSuspension(team);
+    const selectedUid = Number(input?.dataset?.playerUid || 0);
+    if (selectedUid > 0) {
+        const selected = players.find(player => Number(player.uid || 0) === selectedUid);
+        if (selected) return selected;
+    }
     const rawLower = raw.toLowerCase();
     const uidMatch = raw.match(/\d{4,}/);
     if (uidMatch) {
@@ -3059,78 +3675,288 @@ function resolveSuspensionPlayer(teamId) {
     return null;
 }
 
-async function saveSuspensionPayload(payload) {
-    if (!canManageCurrentCompetitionSuspensions()) return false;
+function setSuspensionRecordSaveState(teamId, state, message) {
+    const element = document.getElementById(`suspension-record-state-${Number(teamId)}`);
+    if (!element) return;
+    element.className = `ui-save-state suspension-record-save-state${state ? ` is-${state}` : ''}`;
+    element.textContent = message;
+}
+
+function getSuspensionRecordDraft(teamId) {
+    const numericTeamId = Number(teamId || 0);
+    let player = null;
+    try {
+        player = resolveSuspensionPlayer(numericTeamId);
+    } catch (error) {
+        return {error: error.message || '请从候选列表选择球员。'};
+    }
+    if (!player) return {error: '请先选择球员'};
+    const mergeMode = suspensionRecordEntryModes.get(numericTeamId) !== 'replace';
+    const mergeBaseYellowCards = Math.min(3, getLocalSuspensionRecordsForPlayer(player, numericTeamId)
+        .reduce((total, record) => total + Number(record.yellow_cards || 0), 0));
+    const payload = {
+        player_uid: Number(player.uid),
+        yellow_cards: Number(document.getElementById(`suspension-yellows-${numericTeamId}`)?.value || 0),
+        red_card_suspended: Boolean(document.getElementById(`suspension-red-${numericTeamId}`)?.checked),
+        red_injury_suspended: Boolean(document.getElementById(`suspension-injury-${numericTeamId}`)?.checked),
+        notes: String(document.getElementById(`suspension-notes-${numericTeamId}`)?.value || '').trim(),
+        merge_existing: mergeMode,
+        merge_base_yellow_cards: mergeMode ? mergeBaseYellowCards : null,
+    };
+    return {teamId: numericTeamId, player, payload, signature: JSON.stringify(payload)};
+}
+
+function findLocalSuspensionRecord(playerUid) {
+    const uid = Number(playerUid || 0);
+    for (const team of suspensionData.teams || []) {
+        for (const group of ['one_yellow', 'two_yellows', 'suspended']) {
+            const record = (team[group] || []).find(item => Number(item.player_uid || 0) === uid);
+            if (record) return record;
+        }
+    }
+    return null;
+}
+
+function normalizeSuspensionPlayerName(value) {
+    return String(value || '').trim().toLocaleLowerCase().replace(/\s+/g, ' ');
+}
+
+function findLocalSuspensionRecordForPlayer(player, teamId) {
+    return getLocalSuspensionRecordsForPlayer(player, teamId)[0] || null;
+}
+
+function getLocalSuspensionRecordsForPlayer(player, teamId) {
+    const team = findSuspensionTeam(teamId);
+    const normalizedName = normalizeSuspensionPlayerName(player?.name);
+    if (!team || !normalizedName) return [];
+    const records = [];
+    for (const group of ['one_yellow', 'two_yellows', 'suspended']) {
+        for (const record of team[group] || []) {
+            if (Number(record.player_uid || 0) === Number(player?.uid || 0)
+                || normalizeSuspensionPlayerName(record.player_name) === normalizedName) {
+                records.push(record);
+            }
+        }
+    }
+    return records;
+}
+
+function removeSuspensionRecordFromLocalData(playerUid) {
+    const uid = Number(playerUid || 0);
+    for (const team of suspensionData.teams || []) {
+        for (const group of ['one_yellow', 'two_yellows', 'suspended']) {
+            team[group] = (team[group] || []).filter(item => Number(item.player_uid || 0) !== uid);
+        }
+        team.notes = ['one_yellow', 'two_yellows', 'suspended']
+            .flatMap(group => team[group] || [])
+            .filter(item => String(item.notes || '').trim())
+            .map(item => `${item.player_name}: ${item.notes}`);
+    }
+}
+
+function applySuspensionRecordToLocalData(teamId, player, payload, savedRecord = null) {
+    const source = savedRecord || payload;
+    removeSuspensionRecordFromLocalData(source.player_uid);
+    const team = findSuspensionTeam(teamId);
+    const normalizedName = normalizeSuspensionPlayerName(source.player_name || player?.name);
+    if (team && normalizedName) {
+        for (const group of ['one_yellow', 'two_yellows', 'suspended']) {
+            team[group] = (team[group] || []).filter(item => normalizeSuspensionPlayerName(item.player_name) !== normalizedName);
+        }
+    }
+    const isEmpty = Number(source.yellow_cards || 0) <= 0
+        && !source.red_card_suspended
+        && !source.red_injury_suspended
+        && !String(source.notes || '').trim();
+    if (isEmpty) return;
+    if (!team) return;
+    const record = {
+        player_uid: Number(source.player_uid),
+        player_name: String(source.player_name || player?.name || ''),
+        team_id: Number(source.team_id || team.team_id || teamId),
+        team_name: String(source.team_name || team.team_name || ''),
+        level: String(source.level || team.level || currentCompetitionLevel),
+        yellow_cards: Number(source.yellow_cards || 0),
+        red_card_suspended: Boolean(source.red_card_suspended),
+        red_injury_suspended: Boolean(source.red_injury_suspended),
+        notes: String(source.notes || '').trim(),
+        updated_at: source.updated_at || new Date().toISOString(),
+    };
+    const group = record.yellow_cards >= 3 || record.red_card_suspended || record.red_injury_suspended
+        ? 'suspended'
+        : (record.yellow_cards === 2 ? 'two_yellows' : (record.yellow_cards === 1 ? 'one_yellow' : null));
+    if (group) team[group] = [...(team[group] || []), record]
+        .sort((a, b) => String(a.player_name || '').localeCompare(String(b.player_name || '')));
+    team.notes = ['one_yellow', 'two_yellows', 'suspended']
+        .flatMap(itemGroup => team[itemGroup] || [])
+        .filter(item => String(item.notes || '').trim())
+        .map(item => `${item.player_name}: ${item.notes}`);
+    if (!group && record.notes) team.notes.push(`${record.player_name}: ${record.notes}`);
+}
+
+function queueSuspensionRecordSave(teamId, immediate = false) {
+    if (!canManageCurrentCompetitionSuspensions()) return;
+    const numericTeamId = Number(teamId || 0);
+    const draft = getSuspensionRecordDraft(numericTeamId);
+    if (draft.error) {
+        setSuspensionRecordSaveState(numericTeamId, '', draft.error);
+        return;
+    }
+    const existingRecords = getLocalSuspensionRecordsForPlayer(draft.player, numericTeamId);
+    const existing = existingRecords[0] || null;
+    const existingYellowCards = Math.min(3, existingRecords
+        .reduce((total, record) => total + Number(record.yellow_cards || 0), 0));
+    const isEmpty = Number(draft.payload.yellow_cards || 0) <= 0
+        && !draft.payload.red_card_suspended
+        && !draft.payload.red_injury_suspended
+        && !draft.payload.notes;
+    if (isEmpty) {
+        const mergeMode = draft.payload.merge_existing;
+        setSuspensionRecordSaveState(
+            numericTeamId,
+            '',
+            existing && mergeMode
+                ? `已有 ${existingYellowCards} 张黄牌；填写本次新增数量后自动合并`
+                : (existing ? '如需清除，请使用记录旁的清除按钮' : '填写伤停信息后自动保存'),
+        );
+        return;
+    }
+    suspensionRecordDrafts.set(numericTeamId, draft);
+    if (suspensionRecordLastSavedSignatures.get(numericTeamId) === draft.signature) {
+        setSuspensionRecordSaveState(numericTeamId, 'saved', '已自动保存');
+        return;
+    }
+    const version = Number(suspensionRecordSaveVersions.get(numericTeamId) || 0) + 1;
+    suspensionRecordSaveVersions.set(numericTeamId, version);
+    const existingTimer = suspensionRecordSaveTimers.get(numericTeamId);
+    if (existingTimer) window.clearTimeout(existingTimer);
+    setSuspensionRecordSaveState(numericTeamId, 'saving', immediate ? '正在保存' : '等待保存');
+    if (immediate) {
+        suspensionRecordSaveTimers.delete(numericTeamId);
+        saveSuspensionRecord(numericTeamId, version);
+        return;
+    }
+    suspensionRecordSaveTimers.set(numericTeamId, window.setTimeout(() => {
+        suspensionRecordSaveTimers.delete(numericTeamId);
+        saveSuspensionRecord(numericTeamId, version);
+    }, 650));
+}
+
+async function saveSuspensionPayload(payload, options = {}) {
+    if (!canManageCurrentCompetitionSuspensions()) return {success: false};
     const result = await workJsonRequest('/api/admin/suspensions', {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload),
     });
-    if (!result) return false;
+    if (!result) return {success: false};
     const {response, data} = result;
     if (!response.ok || !data.success) {
-        showModal('保存失败', escapeHtml(data.detail || data.message || '保存伤停记录失败'));
-        return false;
+        if (!options.silent) showModal('保存失败', escapeHtml(data.detail || data.message || '保存伤停记录失败'));
+        return {success: false, message: data.detail || data.message || '保存失败'};
     }
-    invalidateCompetitionSections();
-    await loadCompetitionData({force: true});
-    await refreshCompetitionWorkSummary();
-    return true;
+    invalidateCompetitionSections(['suspensions']);
+    refreshCompetitionWorkSummary().catch(error => console.error('Suspension saved but work summary refresh failed:', error));
+    return {success: true, data};
 }
 
-async function saveSuspensionRecord(teamId) {
+async function saveSuspensionRecord(teamId, requestedVersion = null) {
     if (!canManageCurrentCompetitionSuspensions()) return;
-    let player = null;
+    const numericTeamId = Number(teamId || 0);
+    const latestVersion = Number(suspensionRecordSaveVersions.get(numericTeamId) || 0);
+    const version = requestedVersion === null ? latestVersion : Number(requestedVersion);
+    if (version !== latestVersion || suspensionRecordSaveInFlight.has(numericTeamId)) return;
+    const draft = suspensionRecordDrafts.get(numericTeamId);
+    if (!draft) return;
+    suspensionRecordSaveInFlight.add(numericTeamId);
+    setSuspensionRecordSaveState(numericTeamId, 'saving', '保存中');
     try {
-        player = resolveSuspensionPlayer(teamId);
+        let result;
+        try {
+            result = await saveSuspensionPayload(draft.payload, {silent: true});
+        } catch (error) {
+            console.warn('Suspension record autosave interrupted; retrying once:', error);
+            setSuspensionRecordSaveState(numericTeamId, 'saving', '网络波动，正在重试');
+            await new Promise(resolve => window.setTimeout(resolve, 900));
+            if (Number(suspensionRecordSaveVersions.get(numericTeamId) || 0) !== version) return;
+            result = await saveSuspensionPayload(draft.payload, {silent: true});
+        }
+        if (!result?.success) {
+            setSuspensionRecordSaveState(numericTeamId, 'error', result?.message || '保存失败');
+            return;
+        }
+        const savedRecord = result.data?.record || null;
+        applySuspensionRecordToLocalData(numericTeamId, draft.player, draft.payload, savedRecord);
+        if (savedRecord) fillSuspensionEditor(numericTeamId, savedRecord.player_uid, savedRecord);
+        else suspensionRecordLastSavedSignatures.set(numericTeamId, draft.signature);
+        if (Number(suspensionRecordSaveVersions.get(numericTeamId) || 0) === version) {
+            setSuspensionRecordSaveState(numericTeamId, 'saved', result.data?.merged ? result.data.message : '已自动保存');
+        }
     } catch (error) {
-        showModal('保存失败', escapeHtml(error.message || '请先从该球队中选择球员。'));
-        return;
+        console.error('Failed to autosave suspension record:', error);
+        setSuspensionRecordSaveState(numericTeamId, 'error', '网络异常，稍后修改将自动重试');
+    } finally {
+        suspensionRecordSaveInFlight.delete(numericTeamId);
+        const nextVersion = Number(suspensionRecordSaveVersions.get(numericTeamId) || 0);
+        if (nextVersion > version) {
+            const pendingTimer = suspensionRecordSaveTimers.get(numericTeamId);
+            if (pendingTimer) window.clearTimeout(pendingTimer);
+            suspensionRecordSaveTimers.delete(numericTeamId);
+            saveSuspensionRecord(numericTeamId, nextVersion);
+        }
     }
-    if (!player) {
-        showModal('保存失败', '请先从该球队中选择球员。');
-        return;
-    }
-    await saveSuspensionPayload({
-        player_uid: Number(player.uid),
-        yellow_cards: Number(document.getElementById(`suspension-yellows-${teamId}`)?.value || 0),
-        red_card_suspended: Boolean(document.getElementById(`suspension-red-${teamId}`)?.checked),
-        red_injury_suspended: Boolean(document.getElementById(`suspension-injury-${teamId}`)?.checked),
-        notes: String(document.getElementById(`suspension-notes-${teamId}`)?.value || '').trim(),
-    });
 }
 
-function fillSuspensionEditor(teamId, playerUid) {
+function fillSuspensionEditor(teamId, playerUid, recordOverride = null) {
     const team = findSuspensionTeam(teamId);
     const records = [...(team?.one_yellow || []), ...(team?.two_yellows || []), ...(team?.suspended || [])];
-    const record = records.find(item => Number(item.player_uid) === Number(playerUid));
+    const record = recordOverride || records.find(item => Number(item.player_uid) === Number(playerUid));
     if (!team || !record) return;
     const playerInput = document.getElementById(`suspension-player-${teamId}`);
     const yellowInput = document.getElementById(`suspension-yellows-${teamId}`);
     const redInput = document.getElementById(`suspension-red-${teamId}`);
     const injuryInput = document.getElementById(`suspension-injury-${teamId}`);
     const notesInput = document.getElementById(`suspension-notes-${teamId}`);
-    if (playerInput) playerInput.value = record.player_name;
+    if (playerInput) {
+        playerInput.value = record.player_name;
+        playerInput.dataset.playerUid = String(Number(record.player_uid || 0));
+    }
     if (yellowInput) yellowInput.value = String(Math.min(3, Number(record.yellow_cards || 0)));
     if (redInput) redInput.checked = Boolean(record.red_card_suspended);
     if (injuryInput) injuryInput.checked = Boolean(record.red_injury_suspended);
     if (notesInput) notesInput.value = record.notes || '';
+    suspensionRecordEntryModes.set(Number(teamId), 'replace');
+    const payload = {
+        player_uid: Number(record.player_uid),
+        yellow_cards: Math.min(3, Number(record.yellow_cards || 0)),
+        red_card_suspended: Boolean(record.red_card_suspended),
+        red_injury_suspended: Boolean(record.red_injury_suspended),
+        notes: String(record.notes || '').trim(),
+        merge_existing: false,
+        merge_base_yellow_cards: null,
+    };
+    suspensionRecordLastSavedSignatures.set(Number(teamId), JSON.stringify(payload));
+    setSuspensionRecordSaveState(teamId, 'saved', '已保存');
 }
 
 async function clearSuspensionRecord(playerUid) {
     if (!canManageCurrentCompetitionSuspensions()) return;
-    await saveSuspensionPayload({
+    const result = await saveSuspensionPayload({
         player_uid: Number(playerUid),
         yellow_cards: 0,
         red_card_suspended: false,
         red_injury_suspended: false,
         notes: '',
     });
+    if (!result.success) return;
+    removeSuspensionRecordFromLocalData(playerUid);
+    renderSuspensionsBoard();
 }
 
-function getTeamOptionsHtml(selectedId) {
+function getTeamOptionsHtml(selectedId, allowedIds = null) {
     const selected = Number(selectedId || 0);
     return '<option value="">待定</option>' + (teams || [])
+        .filter(team => !allowedIds || allowedIds.has(Number(team.id)))
         .map(team => `<option value="${team.id}" ${Number(team.id) === selected ? 'selected' : ''}>${escapeHtml(team.name)}${team.manager ? ` / ${escapeHtml(team.manager)}` : ''}</option>`)
         .join('');
 }
@@ -3143,6 +3969,9 @@ function formatCupScore(match) {
 }
 
 function findCupMatchById(matchId) {
+    const preliminaryMatch = (wumingjianQualificationData?.preliminary_matches || [])
+        .find(match => Number(match.id) === Number(matchId));
+    if (preliminaryMatch) return preliminaryMatch;
     for (const bracket of Object.values(cupBracketData || {})) {
         for (const stage of bracket?.stages || []) {
             const found = (stage.matches || []).find(match => Number(match.id) === Number(matchId));
@@ -3152,23 +3981,50 @@ function findCupMatchById(matchId) {
     return null;
 }
 
+function getWumingjianMatchTeamIds(match) {
+    if (!match || match.competition !== 'wumingjian_cup' || !wumingjianQualificationData) return null;
+    if (match.stage === 'qualifying_round') {
+        return new Set((wumingjianQualificationData.preliminary_eligible_teams || []).map(team => Number(team.team_id)));
+    }
+    if (match.stage === 'round_of_32' && Number(wumingjianQualificationData.played_match_count || 0) === 22) {
+        return new Set([
+            ...(wumingjianQualificationData.direct_qualifiers || []),
+            ...(wumingjianQualificationData.preliminary_winners || []),
+        ].map(team => Number(team.team_id)));
+    }
+    return new Set();
+}
+
 function isTwoLegCupStage(match) {
     if (!match) return false;
     if (match.competition === 'champions_cup' || match.competition === 'league_cup') return true;
     return match.competition === 'wumingjian_cup' && ['semi_final', 'final'].includes(match.stage);
 }
 
-function promptCupTieWinner(match) {
+function showCupTieDecision(match, payload) {
     const homeName = getCupTeamDisplayName(match?.home_team_name || '上方球队');
     const awayName = getCupTeamDisplayName(match?.away_team_name || '下方球队');
-    const reason = isTwoLegCupStage(match) ? '两回合总比分相同，请按客场进球更多选择晋级球队。' : '比分相同，请选择晋级球队。';
-    const answer = window.prompt(`${reason}\n输入 1：${homeName}\n输入 2：${awayName}`);
-    if (answer === null) return null;
-    const normalized = String(answer).trim();
-    if (normalized === '1') return Number(match.home_team_id);
-    if (normalized === '2') return Number(match.away_team_id);
-    showModal('保存失败', '请输入 1 或 2 选择晋级球队。');
-    return null;
+    showModal('确认总比分相同的晋级结果', `
+        <form class="cup-tie-decision" onsubmit="event.preventDefault(); confirmCupTieDecision(${Number(match.id)});">
+            <p>${isTwoLegCupStage(match) ? '网站只记录两回合总比分；首回合主场由双方自行协商。请选择实际晋级球队和决胜方式。' : '请选择实际晋级球队和决胜方式。'}</p>
+            <fieldset><legend>晋级球队</legend><label><input type="radio" name="cupTieWinner" value="${Number(match.home_team_id)}" checked>${escapeHtml(homeName)}</label><label><input type="radio" name="cupTieWinner" value="${Number(match.away_team_id)}">${escapeHtml(awayName)}</label></fieldset>
+            <label><span>晋级原因</span><select id="cupTieReason"><option value="away_goals">客场进球</option><option value="extra_time">加时赛</option><option value="penalties">点球大战</option><option value="other">其他</option></select></label>
+            <label><span>补充说明（可选）</span><input id="cupTieNote" type="text" maxlength="160" placeholder="例如：客场进球 2:1"></label>
+            <div><button class="btn btn-secondary" type="button" onclick="closeModal()">取消</button><button class="btn btn-primary" type="submit">确认并保存</button></div>
+        </form>`);
+    const form = document.querySelector('.cup-tie-decision');
+    if (form) form.dataset.payload = JSON.stringify(payload);
+}
+
+async function confirmCupTieDecision(matchId) {
+    const form = document.querySelector('.cup-tie-decision');
+    if (!form) return;
+    const payload = JSON.parse(form.dataset.payload || '{}');
+    payload.winner_team_id = Number(document.querySelector('input[name="cupTieWinner"]:checked')?.value || 0) || null;
+    payload.advancement_reason = document.getElementById('cupTieReason')?.value || 'away_goals';
+    payload.notes = document.getElementById('cupTieNote')?.value || null;
+    closeModal();
+    await submitCupMatchResult(matchId, payload);
 }
 
 function renderCupTeamLine(match, side) {
@@ -3184,8 +4040,11 @@ function renderCupTeamLine(match, side) {
             ? 'is-eliminated'
             : 'is-pending';
     const stateLabel = advancement === 'winner' ? '晋级' : advancement === 'eliminated' ? '淘汰' : '';
+    const showVenue = match.competition === 'wumingjian_cup' && match.stage === 'qualifying_round';
+    const venueLabel = side === 'home' ? '主场' : '客场';
     return `
-        <div class="cup-team-line ${stateClass}">
+        <div class="cup-team-line ${stateClass} ${showVenue ? 'has-venue-label' : ''}">
+            ${showVenue ? `<span class="cup-team-venue is-${side}">${venueLabel}</span>` : ''}
             <span class="cup-team-name" title="${escapeHtml(teamName)}">${escapeHtml(displayName)}</span>
             <span class="cup-team-result">
                 ${stateLabel ? `<span class="cup-team-state">${stateLabel}</span>` : ''}
@@ -3198,11 +4057,24 @@ function renderCupTeamLine(match, side) {
 function buildCupTeamEditor(match) {
     const cupConfig = getCurrentCupConfig();
     const firstStage = cupConfig ? cupBracketData[cupConfig.key]?.stages?.[0]?.key : '';
-    if (!canManageCurrentCompetitionSchedule() || match.stage !== firstStage) return '';
+    const isWumingjianManualStage = match.competition === 'wumingjian_cup' && ['qualifying_round', 'round_of_32'].includes(match.stage);
+    if (!canManageCurrentCompetitionSchedule() || (match.stage !== firstStage && !isWumingjianManualStage)) return '';
+    if (match.stage === 'qualifying_round' && !wumingjianQualificationData?.league_rounds_complete) return '';
+    const allowedIds = getWumingjianMatchTeamIds(match);
+    if (match.stage === 'round_of_32' && allowedIds && !allowedIds.size) return '';
+    const isQualifying = match.competition === 'wumingjian_cup' && match.stage === 'qualifying_round';
+    const teamFields = isQualifying
+        ? `
+            <label class="cup-team-venue-field"><span>主场球队</span><select id="cup-home-team-${match.id}" aria-label="主场球队">${getTeamOptionsHtml(match.home_team_id, allowedIds)}</select></label>
+            <label class="cup-team-venue-field"><span>客场球队</span><select id="cup-away-team-${match.id}" aria-label="客场球队">${getTeamOptionsHtml(match.away_team_id, allowedIds)}</select></label>
+        `
+        : `
+            <select id="cup-home-team-${match.id}" aria-label="主队">${getTeamOptionsHtml(match.home_team_id, allowedIds)}</select>
+            <select id="cup-away-team-${match.id}" aria-label="客队">${getTeamOptionsHtml(match.away_team_id, allowedIds)}</select>
+        `;
     return `
-        <div class="cup-editor cup-team-editor">
-            <select id="cup-home-team-${match.id}" aria-label="主队">${getTeamOptionsHtml(match.home_team_id)}</select>
-            <select id="cup-away-team-${match.id}" aria-label="客队">${getTeamOptionsHtml(match.away_team_id)}</select>
+        <div class="cup-editor cup-team-editor ${isQualifying ? 'is-venue-editor' : ''}">
+            ${teamFields}
             <button class="btn btn-secondary" type="button" onclick="saveCupMatchTeams(${match.id})">保存球队</button>
         </div>
     `;
@@ -3210,6 +4082,7 @@ function buildCupTeamEditor(match) {
 
 function buildCupResultEditor(match) {
     if (!canManageCurrentCompetitionSchedule()) return '';
+    if (match.competition === 'wumingjian_cup' && match.stage === 'qualifying_round' && !wumingjianQualificationData?.league_rounds_complete) return '';
     const homeScore = match.home_score ?? '';
     const awayScore = match.away_score ?? '';
     const status = match.status || 'scheduled';
@@ -3243,6 +4116,81 @@ function renderCupMatchCard(match) {
             ${buildCupTeamEditor(match)}
             ${buildCupResultEditor(match)}
         </article>
+    `;
+}
+
+function renderWumingjianQualificationTeam(team) {
+    return `
+        <div class="wumingjian-qualification-team">
+            <span class="wumingjian-qualification-rank">${Number(team.source_rank)}</span>
+            <span class="wumingjian-qualification-team-copy"><strong>${escapeHtml(team.team_name)}</strong><small>${escapeHtml(team.manager || '暂无教练信息')}</small></span>
+            <em>${escapeHtml(team.level)}第${Number(team.source_rank)}名</em>
+        </div>
+    `;
+}
+
+function renderWumingjianDirectGroup(level, teamsInLevel) {
+    return `
+        <section class="wumingjian-direct-group">
+            <header><span>${escapeHtml(level)}</span><strong>${teamsInLevel.length} 席</strong></header>
+            <div>${teamsInLevel.map(renderWumingjianQualificationTeam).join('')}</div>
+        </section>
+    `;
+}
+
+function renderWumingjianQualificationBoard() {
+    const container = document.getElementById('cupGroupStageBoard');
+    const qualification = wumingjianQualificationData;
+    if (!container) return;
+    if (!qualification) {
+        container.innerHTML = renderUiState({tone: 'danger', title: '预选赛读取失败', message: '请刷新页面后重新读取。', actionLabel: '重新读取', actionOnclick: "loadCompetitionData({force:true})", compact: true});
+        return;
+    }
+    const directByLevel = ['超级', '甲级', '乙级'].map(level => ({
+        level,
+        teams: (qualification.direct_qualifiers || []).filter(team => team.level === level),
+    }));
+    const matches = qualification.preliminary_matches || [];
+    const ready = Boolean(qualification.league_rounds_complete);
+    const locked = Boolean(qualification.qualification_locked);
+    const editable = canManageCurrentCompetitionSchedule() && ready;
+    container.innerHTML = `
+        <section class="wumingjian-qualification-shell cup-group-stage-shell wumingjian-cup">
+            <header class="wumingjian-qualification-hero surface-card">
+                <div class="wumingjian-qualification-hero-copy">
+                    <span>WUMINGJIAN CUP · QUALIFYING ROUND</span>
+                    <h2>无铭剑杯预选赛</h2>
+                    <p>联赛第15至16轮全部完赛后，超级前6名、甲级前2名、乙级前2名共10队直通32强；其余44队经抽签进行22场单场淘汰，主客场同样由抽签决定。</p>
+                </div>
+                <div class="wumingjian-qualification-state ${locked ? 'is-locked' : ready ? 'is-ready' : 'is-pending'}">
+                    <small>${locked ? '资格状态' : '联赛进度'}</small>
+                    <strong>${locked ? '名单已锁定' : ready ? '可以正式抽签' : '等待第15–16轮完赛'}</strong>
+                    <span>${locked ? '后续积分变化不影响本届资格' : ready ? '首次保存对阵时锁定名单' : '当前名单仅按实时积分榜暂列'}</span>
+                </div>
+            </header>
+            <div class="wumingjian-format-strip" aria-label="预选赛赛制流程">
+                <span><small>直通名额</small><strong>10</strong><em>超级6 · 甲级2 · 乙级2</em></span>
+                <i aria-hidden="true"></i>
+                <span><small>预选球队</small><strong>44</strong><em>抽签决定对手与主客场</em></span>
+                <i aria-hidden="true"></i>
+                <span><small>单场淘汰</small><strong>22</strong><em>胜者进入32强</em></span>
+                <i aria-hidden="true"></i>
+                <span><small>32强阵容</small><strong>${Number(qualification.round_of_32_pool_count || 0)}/32</strong><em>10支直通 + 22支胜者</em></span>
+            </div>
+            <section class="wumingjian-direct-board surface-card">
+                <header class="wumingjian-section-head"><div><span>DIRECT QUALIFIERS</span><h3>直通32强</h3></div><em>${locked ? '正式名单' : '当前暂列'} · ${qualification.direct_qualifiers?.length || 0}/10</em></header>
+                <div class="wumingjian-direct-grid">${directByLevel.map(group => renderWumingjianDirectGroup(group.level, group.teams)).join('')}</div>
+            </section>
+            <section class="wumingjian-preliminary-board">
+                <header class="wumingjian-section-head surface-card">
+                    <div><span>22 SINGLE-LEG TIES</span><h3>预选赛对阵</h3><p>每组为一场定胜负；平局时由工作人员选择最终晋级球队。</p></div>
+                    <div class="wumingjian-progress-pills"><span>已抽签 <strong>${Number(qualification.assigned_match_count || 0)}/22</strong></span><span>已完赛 <strong>${Number(qualification.played_match_count || 0)}/22</strong></span></div>
+                </header>
+                ${canManageCurrentCompetitionSchedule() && !ready ? '<div class="cup-group-edit-note surface-card">当前仅供查看暂定资格。第15至16轮全部完赛后，球队选择与保存控件会自动开放。</div>' : ''}
+                ${editable ? '<div class="cup-group-edit-note surface-card">按抽签结果逐场选择主队和客队；第一次保存会锁定本届资格名单，同一球队不能重复参赛。</div>' : ''}
+                <div class="wumingjian-preliminary-grid">${matches.map(renderCupMatchCard).join('')}</div>
+            </section>
+        </section>
     `;
 }
 
@@ -4045,7 +4993,7 @@ function renderMatchEventScoreEditor(match) {
             <p class="match-event-score-note" id="matchEventScoreNote">${status === 'scheduled'
                 ? '直接填写比分会自动切换为正常比赛；主动改回未赛会清空本场数据。'
                 : (isScheduleForfeitStatus(status)
-                    ? '判负会按规则锁定比分，保存后不记录进球、助攻和本场最佳。'
+                    ? getForfeitRuleNote(status)
                     : '比分、比赛判定和球员数据会一次提交。')}</p>
         </section>
     `;
@@ -4861,7 +5809,7 @@ function handleMatchStatusChange(matchId, options = {}) {
         note.textContent = isScheduled
             ? '直接填写比分会自动切换为正常比赛；主动改回未赛会清空本场数据。'
             : (score
-                ? '判负会按规则锁定比分，保存后不记录进球、助攻和本场最佳。'
+                ? getForfeitRuleNote(selectedStatus)
                 : '比分、比赛判定和球员数据会一次提交。');
     }
     setMatchEventMatrixAvailability(Boolean(score) || isScheduled);
@@ -5080,7 +6028,107 @@ function downloadCompetitionBlob(blob, fileName) {
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1200);
 }
 
-function buildCompetitionImageFileName(kind, level) {
+function getCompetitionImagePixelRatio(kind, target) {
+    const deviceRatio = Math.max(1, Number(window.devicePixelRatio || 1));
+    if (kind === 'rankings') return Math.max(1.5, Math.min(2, deviceRatio));
+    if (kind !== 'suspensions') return Math.max(2, Math.min(3, deviceRatio));
+    const cssWidth = Math.max(1, Number(target?.scrollWidth || target?.offsetWidth || 1));
+    const cssHeight = Math.max(1, Number(target?.scrollHeight || target?.offsetHeight || 1));
+    const preferredRatio = Math.max(1.25, Math.min(1.8, deviceRatio));
+    const areaLimitedRatio = Math.sqrt(SUSPENSION_IMAGE_TARGET_PIXELS / (cssWidth * cssHeight));
+    return Math.max(1, Math.min(preferredRatio, areaLimitedRatio));
+}
+
+function canvasToCompetitionBlob(canvas, type, quality) {
+    return new Promise(resolve => canvas.toBlob(resolve, type, quality));
+}
+
+async function decodeCompetitionImageBlob(blob) {
+    if (typeof window.createImageBitmap === 'function') {
+        const bitmap = await window.createImageBitmap(blob);
+        return {
+            source: bitmap,
+            width: bitmap.width,
+            height: bitmap.height,
+            release: () => bitmap.close?.(),
+        };
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+        const image = await new Promise((resolve, reject) => {
+            const element = new Image();
+            element.onload = () => resolve(element);
+            element.onerror = reject;
+            element.src = objectUrl;
+        });
+        return {
+            source: image,
+            width: image.naturalWidth || image.width,
+            height: image.naturalHeight || image.height,
+            release: () => {},
+        };
+    } finally {
+        URL.revokeObjectURL(objectUrl);
+    }
+}
+
+function getCompetitionImageBackground(target) {
+    const backgroundColor = window.getComputedStyle?.(target)?.backgroundColor;
+    if (backgroundColor && backgroundColor !== 'rgba(0, 0, 0, 0)' && backgroundColor !== 'transparent') {
+        return backgroundColor;
+    }
+    return document.body.classList.contains('light-mode') ? '#f5f5f8' : '#1a1b26';
+}
+
+async function compressSuspensionImageBlob(blob, backgroundColor) {
+    if (blob.size <= SUSPENSION_IMAGE_MAX_BYTES) {
+        return {blob, extension: 'png', compressed: false};
+    }
+    const decoded = await decodeCompetitionImageBlob(blob);
+    let scale = 1;
+    let smallestBlob = null;
+    try {
+        for (let attempt = 0; attempt < 9; attempt += 1) {
+            const width = Math.max(SUSPENSION_IMAGE_MIN_WIDTH, Math.round(decoded.width * scale));
+            const height = Math.max(1, Math.round(decoded.height * (width / decoded.width)));
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const context = canvas.getContext('2d', {alpha: false});
+            if (!context) throw new Error('capture-compression-context-missing');
+            context.fillStyle = backgroundColor || '#ffffff';
+            context.fillRect(0, 0, width, height);
+            context.imageSmoothingEnabled = true;
+            context.imageSmoothingQuality = 'high';
+            context.drawImage(decoded.source, 0, 0, width, height);
+
+            let smallestAtScale = null;
+            for (const quality of [0.9, 0.82, 0.74, 0.66, 0.58, 0.5]) {
+                const candidate = await canvasToCompetitionBlob(canvas, 'image/jpeg', quality);
+                if (!candidate) continue;
+                if (!smallestBlob || candidate.size < smallestBlob.size) smallestBlob = candidate;
+                if (!smallestAtScale || candidate.size < smallestAtScale.size) smallestAtScale = candidate;
+                if (candidate.size <= SUSPENSION_IMAGE_MAX_BYTES) {
+                    return {blob: candidate, extension: 'jpg', compressed: true};
+                }
+            }
+            if (width <= SUSPENSION_IMAGE_MIN_WIDTH || !smallestAtScale) break;
+            const requiredScale = Math.sqrt(SUSPENSION_IMAGE_MAX_BYTES / Math.max(1, smallestAtScale.size));
+            scale *= Math.min(0.86, Math.max(0.55, requiredScale * 0.92));
+            if (decoded.width * scale < SUSPENSION_IMAGE_MIN_WIDTH) {
+                scale = SUSPENSION_IMAGE_MIN_WIDTH / decoded.width;
+            }
+        }
+    } finally {
+        decoded.release();
+    }
+    if (smallestBlob && smallestBlob.size <= SUSPENSION_IMAGE_MAX_BYTES) {
+        return {blob: smallestBlob, extension: 'jpg', compressed: true};
+    }
+    throw new Error('suspension-image-still-too-large');
+}
+
+function buildCompetitionImageFileName(kind, level, extension = 'png') {
     const cleanLevel = String(level || currentCompetitionLevel || 'HEIGO').replace(/[\\/:*?"<>|\s]+/g, '_');
     const label = kind === 'suspensions' ? '伤停统计' : kind === 'rankings' ? '排位积分榜' : '积分榜';
     const date = new Date();
@@ -5089,7 +6137,8 @@ function buildCompetitionImageFileName(kind, level) {
         String(date.getMonth() + 1).padStart(2, '0'),
         String(date.getDate()).padStart(2, '0'),
     ].join('');
-    return kind === 'rankings' ? `HEIGO_${label}_${stamp}.png` : `HEIGO_${cleanLevel}_${label}_${stamp}.png`;
+    const safeExtension = extension === 'jpg' ? 'jpg' : 'png';
+    return kind === 'rankings' ? `HEIGO_${label}_${stamp}.${safeExtension}` : `HEIGO_${cleanLevel}_${label}_${stamp}.${safeExtension}`;
 }
 
 function buildRankingExcelFileName() {
@@ -5218,7 +6267,7 @@ function createSuspensionCapturePanel(level) {
                     const teamRound = getSuspensionTeamRound(team.team_id);
                     const teamNote = getSuspensionTeamNote(team.team_id);
                     return `<article class="suspension-capture-team">
-                        <header><div><h3>${escapeHtml(team.team_name)}</h3><span>${escapeHtml(team.manager || '主教练待定')}</span></div><em>${teamRound !== null ? (teamRound >= 34 ? '赛季核对完成' : `核对至 R${teamRound} · 用于 R${teamRound + 1}`) : '轮次待补'}</em></header>
+                        <header><div><h3>${escapeHtml(team.team_name)}</h3><span>${escapeHtml(team.manager || '主教练待定')}</span></div><em>${teamRound !== null ? (teamRound >= 34 ? '赛季核对完成' : `核对至第 ${teamRound} 轮 · 适用于第 ${teamRound + 1} 轮`) : '轮次待补'}</em></header>
                         ${teamNote ? `<p class="suspension-capture-team-note">${escapeHtml(teamNote)}</p>` : ''}
                         <div class="suspension-capture-sections">
                             ${renderSuspensionCaptureSection('1张黄牌', team.one_yellow, 'is-one-yellow')}
@@ -5269,16 +6318,25 @@ async function saveCompetitionImage(kind, level = currentCompetitionLevel) {
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const blob = await window.htmlToImage.toBlob(target, {
             cacheBust: true,
-            pixelRatio: kind === 'rankings'
-                ? Math.max(1.5, Math.min(2, window.devicePixelRatio || 1))
-                : Math.max(2, Math.min(3, window.devicePixelRatio || 1)),
+            pixelRatio: getCompetitionImagePixelRatio(kind, target),
             filter: node => !(node?.classList && node.classList.contains('capture-exclude')),
         });
         if (!blob) throw new Error('capture-blob-empty');
-        downloadCompetitionBlob(blob, buildCompetitionImageFileName(kind, level));
+        const optimized = kind === 'suspensions'
+            ? await compressSuspensionImageBlob(blob, getCompetitionImageBackground(target))
+            : {blob, extension: 'png', compressed: false};
+        downloadCompetitionBlob(optimized.blob, buildCompetitionImageFileName(kind, level, optimized.extension));
+        if (optimized.compressed && typeof showUiToast === 'function') {
+            showUiToast(`伤停图片已自动压缩至 ${(optimized.blob.size / 1024 / 1024).toFixed(2)} MB`, 'success');
+        }
     } catch (error) {
         console.error('Failed to export competition image:', error);
-        showModal('生成图片失败', '统计图片生成失败，请刷新页面后重试。');
+        showModal(
+            '生成图片失败',
+            error?.message === 'suspension-image-still-too-large'
+                ? '伤停图片内容过长，无法在保持可读性的同时压缩到 4MB 以下，请分级别保存或稍后重试。'
+                : '统计图片生成失败，请刷新页面后重试。',
+        );
     } finally {
         target.classList.remove('is-exporting');
         suspensionCapture?.host.remove();
@@ -5341,12 +6399,40 @@ function renderScheduleBoard() {
     renderCompetitionDataStatus();
 }
 
+function renderSeasonArchivesBoard() {
+    const container = document.getElementById('seasonArchivesBoard');
+    if (!container) return;
+    const rows = Array.isArray(seasonArchiveData) ? seasonArchiveData : [];
+    container.innerHTML = `
+        <section class="season-archives-public">
+            <header class="season-archives-public-head surface-card">
+                <div><span>HEIGO HISTORY</span><h2>历届赛季档案</h2><p>查看已封存赛季的三级联赛积分榜、球员榜、杯赛冠军和当届球队快照。</p></div>
+                <strong>${rows.length} 个档案版本</strong>
+            </header>
+            ${rows.length ? `<div class="season-archives-public-list">${rows.map(item => `<button class="season-archive-public-card" type="button" onclick="showPublicSeasonArchive(${Number(item.id)})"><span>${escapeHtml(item.season_key)} · REV ${Number(item.revision_no)}</span><strong>${escapeHtml(item.title)}</strong><small>${item.revision_reason ? `修订：${escapeHtml(item.revision_reason)}` : '正式封存版本'} · ${item.confirmed_at ? new Date(item.confirmed_at).toLocaleDateString('zh-CN') : ''}</small></button>`).join('')}</div>` : renderUiState({tone: 'empty', title: '暂无历届档案', message: '赛季结束并通过完整性检查后，工作人员会在这里发布档案。', compact: true})}
+        </section>`;
+}
+
+async function showPublicSeasonArchive(archiveId) {
+    try {
+        const data = await fetchCompetitionJson(`/api/season-archives/${archiveId}`);
+        const standings = data.snapshot?.standings || [];
+        const champions = data.snapshot?.cup_champions || {};
+        const championLabels = {champions_cup: '冠军杯', league_cup: '联盟杯', wumingjian_cup: '无铭剑杯'};
+        const levels = ['超级', '甲级', '乙级'];
+        showModal(data.title, `<div class="public-archive-modal"><div class="public-archive-champions">${Object.entries(champions).map(([key, item]) => `<div><span>${escapeHtml(championLabels[key] || key)}</span><strong>${escapeHtml(item?.team_name || '未产生')}</strong></div>`).join('')}</div><div class="public-archive-levels">${levels.map(level => `<section><h4>${escapeHtml(level)}最终排名</h4><ol>${standings.filter(row => row.level === level).sort((a,b) => Number(a.rank)-Number(b.rank)).map(row => `<li><strong>${escapeHtml(row.team_name)}</strong> <span>${Number(row.points || 0)}分</span></li>`).join('')}</ol></section>`).join('')}</div><p>该版本同时保存了完整球员榜、球队、主教和队徽快照；修订版本不会覆盖原档案。</p></div>`);
+    } catch (error) {
+        showModal('档案加载失败', '该赛季档案暂时无法读取，请稍后重试。');
+    }
+}
+
 const COMPETITION_SECTION_CONTAINERS = {
     standings: 'standingsBoard',
     schedule: 'scheduleBoard',
     playerRankings: 'playerRankingsBoard',
     rating: 'ratingBoard',
     suspensions: 'suspensionsBoard',
+    archives: 'seasonArchivesBoard',
 };
 
 const COMPETITION_SECTION_LABELS = {
@@ -5355,10 +6441,11 @@ const COMPETITION_SECTION_LABELS = {
     playerRankings: '球员榜',
     rating: '排位',
     suspensions: '伤停',
+    archives: '历届档案',
 };
 
 function getCompetitionSectionScope(section, level = currentCompetitionLevel) {
-    if (section === 'rating') return 'all';
+    if (['rating', 'archives'].includes(section)) return 'all';
     const cupConfig = CUP_COMPETITIONS[level];
     return cupConfig ? cupConfig.key : level;
 }
@@ -5372,6 +6459,7 @@ function applyCompetitionSectionPayload(section, payload) {
     if (section === 'schedule') {
         if (payload.schedule) scheduleData = payload.schedule;
         if (payload.cupKey) cupGroupStageData = {...cupGroupStageData, [payload.cupKey]: payload.groupStage || null};
+        if (payload.qualification) wumingjianQualificationData = payload.qualification;
         return;
     }
     if (section === 'playerRankings') {
@@ -5390,16 +6478,22 @@ function applyCompetitionSectionPayload(section, payload) {
         }, {});
         return;
     }
+    if (section === 'archives') {
+        seasonArchiveData = payload.archives || [];
+        return;
+    }
     if (payload.standings) standingsData = payload.standings;
     if (payload.cupKey) {
         cupBracketData = {...cupBracketData, [payload.cupKey]: payload.bracket};
         cupGroupStageData = {...cupGroupStageData, [payload.cupKey]: payload.groupStage || null};
+        if (payload.qualification) wumingjianQualificationData = payload.qualification;
     }
 }
 
 function invalidateCompetitionSections(sections = Object.keys(COMPETITION_SECTION_CONTAINERS)) {
     const targets = Array.isArray(sections) ? sections : [sections];
     targets.forEach(section => {
+        if (section === 'standings') standingsHistoryCache.clear();
         for (const key of [...competitionLoadedSections]) {
             if (key.startsWith(`${section}:`)) competitionLoadedSections.delete(key);
         }
@@ -5419,6 +6513,7 @@ function renderCompetitionSection(section) {
     else if (section === 'playerRankings') renderPlayerRankingsBoard();
     else if (section === 'rating') renderRankingBoard();
     else if (section === 'suspensions') renderSuspensionsBoard();
+    else if (section === 'archives') renderSeasonArchivesBoard();
     else renderCompetitionPrimaryBoard();
     renderCompetitionDataStatus();
 }
@@ -5480,6 +6575,13 @@ async function requestCompetitionSection(section, level = currentCompetitionLeve
     const cupConfig = CUP_COMPETITIONS[level] || null;
     if (section === 'schedule') {
         if (cupConfig) {
+            if (cupConfig.key === 'wumingjian_cup') {
+                return {
+                    cupKey: cupConfig.key,
+                    groupStage: null,
+                    qualification: await fetchCompetitionJson('/api/cups/wumingjian_cup/qualification'),
+                };
+            }
             const groupStage = cupConfig.groupCount
                 ? await fetchCompetitionJson(`/api/cups/${cupConfig.key}/groups`, {optional: true})
                 : null;
@@ -5500,14 +6602,20 @@ async function requestCompetitionSection(section, level = currentCompetitionLeve
         ]);
         return {suspensions, siteNotes};
     }
+    if (section === 'archives') {
+        return {archives: await fetchCompetitionJson('/api/season-archives')};
+    }
     if (cupConfig) {
-        const [bracket, groupStage] = await Promise.all([
+        const [bracket, groupStage, qualification] = await Promise.all([
             fetchCompetitionJson(`/api/cups/${cupConfig.key}/bracket`),
             cupConfig.groupCount
                 ? fetchCompetitionJson(`/api/cups/${cupConfig.key}/groups`, {optional: true})
                 : Promise.resolve(null),
+            cupConfig.key === 'wumingjian_cup'
+                ? fetchCompetitionJson('/api/cups/wumingjian_cup/qualification')
+                : Promise.resolve(null),
         ]);
-        return {cupKey: cupConfig.key, bracket, groupStage};
+        return {cupKey: cupConfig.key, bracket, groupStage, qualification};
     }
     return {standings: await fetchCompetitionJson(`/api/standings?level=${encodeURIComponent(level)}`)};
 }
@@ -5949,11 +7057,13 @@ async function saveCupMatchResult(matchId) {
         status,
     };
     if (status === 'played' && homeScore !== null && awayScore !== null && homeScore === awayScore) {
-        const winnerTeamId = promptCupTieWinner(match);
-        if (!winnerTeamId) return;
-        payload.winner_team_id = winnerTeamId;
-        payload.notes = isTwoLegCupStage(match) ? '总比分相同，按客场进球规则晋级' : '比分相同，手动选择晋级球队';
+        showCupTieDecision(match, payload);
+        return;
     }
+    await submitCupMatchResult(matchId, payload);
+}
+
+async function submitCupMatchResult(matchId, payload) {
     const result = await workJsonRequest(`/api/admin/cups/matches/${matchId}/result`, {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},

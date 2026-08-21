@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 from database import Base
 from models import Player, Team
 from services.player_power_ranking_service import (
+    TEAM_POWER_SUMMARY_CACHE_TTL_SECONDS,
     PowerCalibration,
     calculate_heigo_metrics,
     eligible_growth_steps,
@@ -55,6 +56,9 @@ class PlayerPowerRankingServiceTests(unittest.TestCase):
         heigo_power, top_percent = calculate_heigo_metrics(70.0, calibration)
         self.assertEqual(heigo_power, 66.86)
         self.assertEqual(top_percent, 40.0)
+
+    def test_team_power_summary_cache_avoids_frequent_full_league_rebuilds(self):
+        self.assertEqual(TEAM_POWER_SUMMARY_CACHE_TTL_SECONDS, 600)
 
     def test_growth_threshold_boundaries(self):
         expected = {

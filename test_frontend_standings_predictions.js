@@ -11,6 +11,8 @@ assert.match(competition, /predicted_rank_max/, 'standings should expose the upp
 assert.match(competition, />预测排名<\/th>/, 'desktop standings should include a prediction column');
 assert.match(competition, /mobile-standing-prediction-row/, 'mobile expanded standings should include the prediction lane');
 assert.match(competition, /prediction_summaries/, 'standings should explain the current simulation phase');
+assert.match(competition, /降级 \$\{formatPredictionProbability\(row\.relegation_probability\)\}/, 'relegation probability must be labeled as relegation rather than survival');
+assert.doesNotMatch(competition, /保级 \$\{formatPredictionProbability\(row\.relegation_probability\)\}/, 'relegation probability must not be mislabeled as survival');
 assert.match(competition, /1,200 次赛季模拟|toLocaleString\('zh-CN'\)/, 'the simulation scale should be visible to users');
 assert.match(competitionCss, /\.standing-prediction-rail/, 'the prediction interval should use a compact rank rail');
 assert.match(competitionCss, /\.standings-prediction-summary/, 'prediction methodology should use a compact contextual summary');

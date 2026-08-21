@@ -47,7 +47,7 @@ TACTICAL_SLOT_ROLES = {
     "def_rc": ("DC", "CB", "DR"), "def_r": ("DR", "RWB", "WBR"), "gk": ("GK",),
 }
 POWER_CALIBRATION_CACHE_TTL_SECONDS = 300
-TEAM_POWER_SUMMARY_CACHE_TTL_SECONDS = 120
+TEAM_POWER_SUMMARY_CACHE_TTL_SECONDS = 600
 _POWER_CACHE_LOCK = Lock()
 _POWER_CALIBRATION_CACHE: dict[tuple[int, str], tuple[float, PowerCalibration]] = {}
 _TEAM_POWER_SUMMARY_CACHE: dict[tuple[int, str], tuple[float, TeamPowerSummariesResponse]] = {}

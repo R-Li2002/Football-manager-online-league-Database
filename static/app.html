@@ -55,6 +55,7 @@
             <button class="nav-tab" data-tab="competition" onclick="showTab('competition', this)"><span class="nav-tab-icon nav-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M5 19v-8h3v8M10.5 19V5h3v14M16 19v-6h3v6M4 19.5h16"/></svg></span><span>数据统计</span></button>
             <button class="nav-tab" data-tab="coaches" onclick="showTab('coaches', this)"><span class="nav-tab-icon coach-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.5-4 2.7-6 6.5-6s6 2 6.5 6"/></svg></span><span>教练主页</span></button>
             <button class="nav-tab" data-tab="database" onclick="showTab('database', this)"><span class="nav-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4.5 4.5"/></svg></span><span>球员库</span></button>
+            <button class="nav-tab hidden-tab" id="drawsTab" data-tab="draws" onclick="showTab('draws', this)"><span class="nav-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M5 5h4l6 14h4M19 5h-4L9 19H5"/><path d="m16 3 3 2-3 2M16 17l3 2-3 2"/></svg></span><span>抽签</span></button>
             <button class="nav-tab hidden-tab" id="adminTab" data-tab="admin" onclick="showTab('admin', this)"><span class="nav-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h10M18 7h2M4 12h2M10 12h10M4 17h7M15 17h5"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="17" r="2"/></svg></span><span>联赛工作台</span></button>
         </div>
 
@@ -89,6 +90,10 @@
             <button class="mobile-more-menu-item" type="button" data-mobile-tab="coaches" onclick="showTab('coaches')">
                 <span aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.5-4 2.7-6 6.5-6s6 2 6.5 6"/></svg></span>
                 <span>教练主页</span>
+            </button>
+            <button class="mobile-more-menu-item hidden-tab" id="mobileDrawsTab" type="button" data-mobile-tab="draws" onclick="showTab('draws')">
+                <span aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M5 5h4l6 14h4M19 5h-4L9 19H5"/><path d="m16 3 3 2-3 2M16 17l3 2-3 2"/></svg></span>
+                <span>抽签</span>
             </button>
             <button class="mobile-more-menu-item hidden-tab" id="mobileAdminTab" type="button" data-mobile-tab="admin" onclick="showTab('admin')">
                 <span aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h10M18 7h2M4 12h2M10 12h10M4 17h7M15 17h5"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="17" r="2"/></svg></span>
@@ -503,6 +508,7 @@
                     <button class="database-subtab" id="competitionSubtabPlayerRankings" type="button" onclick="showCompetitionSubtab('playerRankings')" role="tab" aria-selected="false" aria-controls="competitionPlayerRankingsView"><span class="competition-subtab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5h8v4a4 4 0 0 1-8 0V5ZM8 7H5v1a4 4 0 0 0 4 4M16 7h3v1a4 4 0 0 1-4 4M12 13v4M8 20h8M9 17h6"/></svg></span><span>球员榜</span></button>
                     <button class="database-subtab" id="competitionSubtabRating" type="button" onclick="showCompetitionSubtab('rating')" role="tab" aria-selected="false" aria-controls="competitionRatingView"><span class="competition-subtab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 18h14M7 15V9h3v6M11 15V5h3v10M15 15v-3h3v3"/><path d="m5 7 4-3 3 2 6-4"/></svg></span><span>排位</span></button>
                     <button class="database-subtab" id="competitionSubtabSuspensions" type="button" onclick="showCompetitionSubtab('suspensions')" role="tab" aria-selected="false" aria-controls="competitionSuspensionsView"><span class="competition-subtab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM12 9v6M9 12h6"/></svg></span><span>伤停</span></button>
+                    <button class="database-subtab" id="competitionSubtabArchives" type="button" onclick="showCompetitionSubtab('archives')" role="tab" aria-selected="false" aria-controls="competitionArchivesView"><span class="competition-subtab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg></span><span>历届档案</span></button>
                 </div>
                 <div class="competition-actions competition-actions-inline" id="competitionAdminActions"></div>
                 <section class="competition-work-panel" id="competitionWorkPanel" hidden></section>
@@ -574,7 +580,27 @@
                 <div class="list-view" id="competitionSuspensionsView">
                     <div id="suspensionsBoard"><div class="loading">加载中...</div></div>
                 </div>
+
+                <div class="list-view" id="competitionArchivesView">
+                    <div id="seasonArchivesBoard"><div class="loading">加载中...</div></div>
+                </div>
             </div>
+        </div>
+
+        <div id="draws" class="tab-content">
+            <section class="draw-page-shell">
+                <div class="draw-page-hero surface-card">
+                    <div><span class="panel-kicker">Draw Control</span><h2>抽签控制台</h2><p>杯赛分档、淘汰赛配对与赛季乐透集中在这里完成；点击瞬间的闪烁候选决定结果，候选池哈希和抽取顺序全程留存。</p></div>
+                    <button class="btn btn-secondary" type="button" onclick="loadWorkspaceDraws({force:true})">刷新任务</button>
+                </div>
+                <div class="draw-workspace-grid">
+                    <aside class="draw-session-rail surface-card">
+                        <div class="draw-panel-head"><div><span>DRAW SESSIONS</span><strong>抽签任务</strong></div><button class="btn btn-primary" type="button" onclick="showCreateDrawDialog()">新建</button></div>
+                        <div id="drawSessionList"><div class="loading">加载抽签任务...</div></div>
+                    </aside>
+                    <section class="draw-session-stage surface-card" id="drawSessionStage"><div class="draw-empty-state"><strong>选择一场抽签</strong><span>或新建杯赛、16强、无铭剑杯及赛季乐透任务。</span></div></section>
+                </div>
+            </section>
         </div>
 
         <div id="admin" class="tab-content">
@@ -612,7 +638,8 @@
                             <button class="workspace-nav-item" type="button" data-workspace-capability="candidate_lists.write" onclick="openWorkspaceTask('database', 'candidates')">候选名单</button>
                             <button class="workspace-nav-item" type="button" data-workspace-imports data-workspace-view="imports" onclick="showWorkspaceView('imports')">数据导入</button>
                             <button class="workspace-nav-item" type="button" data-workspace-admin-only data-workspace-view="promotions" onclick="showWorkspaceView('promotions')">主页宣传</button>
-                            <button class="workspace-nav-item" type="button" data-workspace-admin-only data-workspace-view="dailyReports" onclick="showWorkspaceView('dailyReports')">每日日报</button>
+                            <button class="workspace-nav-item" type="button" data-workspace-capability="daily_reports.write" data-workspace-view="dailyReports" onclick="showWorkspaceView('dailyReports')">每日日报</button>
+                            <button class="workspace-nav-item" type="button" data-workspace-capability="archives.write" data-workspace-view="archives" onclick="showWorkspaceView('archives')">赛季档案</button>
                             <button class="workspace-nav-item" type="button" data-workspace-admin-only data-workspace-view="logos" onclick="showWorkspaceView('logos')">队徽匹配</button>
                             <button class="workspace-nav-item" type="button" data-workspace-admin-only onclick="showWorkspaceView('accounts')">人员与权限</button>
                             <button class="workspace-nav-item" type="button" data-workspace-admin-only onclick="showWorkspaceView('operations')">数据与系统</button>
@@ -714,6 +741,18 @@
                                     <div id="workspaceDailyTemplatesList"><div class="loading">加载日报话术...</div></div>
                                 </aside>
                             </div>
+                        </section>
+
+                        <section class="workspace-view" id="workspaceArchivesView">
+                            <div class="workspace-page-head">
+                                <div><span class="panel-kicker">Season Archive</span><h2>赛季档案</h2><p>赛季结束后封存积分榜、球员榜、杯赛冠军及球队快照；修订版不会覆盖既有历史。</p></div>
+                                <button class="btn btn-secondary" type="button" onclick="loadSeasonArchives({force:true})">刷新档案</button>
+                            </div>
+                            <div class="season-archive-toolbar surface-card">
+                                <div><strong>确认后公开归档</strong><span>系统先生成草稿并检查完整性；存在缺项时不会直接封存。</span></div>
+                                <button class="btn btn-primary" type="button" onclick="showCreateSeasonArchiveDialog()">生成赛季档案</button>
+                            </div>
+                            <div id="seasonArchiveList"><div class="loading">加载历届档案...</div></div>
                         </section>
 
                         <section class="workspace-view" id="workspaceLogosView">
@@ -1063,9 +1102,32 @@
                 <span class="footer-visit-divider" aria-hidden="true">·</span>
                 今日访问 <span id="footerTodayVisits">--</span>
             </div>
+            <div class="footer-compliance">
+                <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">京ICP备2026013218号-2</a>
+                <span class="footer-compliance-separator" aria-hidden="true">·</span>
+                <a class="footer-public-security-link" href="https://beian.mps.gov.cn/#/query/webSearch?code=11010802049695" target="_blank" rel="noopener noreferrer">
+                    <img class="footer-public-security-icon" src="/static/images/beian-mps.png" alt="" aria-hidden="true" width="18" height="20">
+                    <span>京公网安备11010802049695号</span>
+                </a>
+            </div>
         </footer>
     </div>
     
+    <div class="match-preview-modal" id="matchPreviewModal" aria-hidden="true" hidden>
+        <button class="match-preview-backdrop" type="button" onclick="closeMatchPreview()" aria-label="关闭比赛前瞻"></button>
+        <section class="match-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="matchPreviewTitle" aria-describedby="matchPreviewDescription" tabindex="-1">
+            <header class="match-preview-modal-head">
+                <div>
+                    <span class="panel-kicker">Match Intelligence</span>
+                    <h2 id="matchPreviewTitle">比赛前瞻</h2>
+                    <p id="matchPreviewDescription">综合双方状态、阵容战力、伤停时效与赛事形势</p>
+                </div>
+                <button class="match-preview-close" type="button" onclick="closeMatchPreview()" aria-label="关闭比赛前瞻"><svg class="ui-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
+            </header>
+            <div id="matchPreviewRoot" class="match-preview-root" aria-live="polite"></div>
+        </section>
+    </div>
+
     <div class="modal" id="resultModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true">
         <div class="modal-content" tabindex="-1">
             <div class="modal-header">

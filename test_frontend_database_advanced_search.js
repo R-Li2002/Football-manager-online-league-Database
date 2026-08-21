@@ -7,6 +7,7 @@ const workspaceRoot = __dirname;
 const coreCode = fs.readFileSync(path.join(workspaceRoot, 'static/js/app.core.js'), 'utf8');
 const databaseCode = fs.readFileSync(path.join(workspaceRoot, 'static/js/app.database.js'), 'utf8');
 const databaseSearchCode = fs.readFileSync(path.join(workspaceRoot, 'static/js/database.search.js'), 'utf8');
+const databaseCss = fs.readFileSync(path.join(workspaceRoot, 'static/css/pages/database.css'), 'utf8');
 
 function createClassList(initialClasses = []) {
     const classes = new Set(initialClasses);
@@ -192,7 +193,7 @@ async function assertAdvancedTriggerReflectsActiveCount() {
     assert.equal(elements.get('dbAdvancedSearchCount').textContent, '3');
 }
 
-async function assertPositionCycleFollowsConfiguredSteps() {
+async function assertPositionClickCyclesWithoutPanelRerender() {
     context.clearAdvancedDatabaseFilters({});
     context.cycleAdvancedPositionFilter('ST');
     assert.equal(context.currentDbAdvancedFilters.positions.ST, 10);
@@ -204,10 +205,27 @@ async function assertPositionCycleFollowsConfiguredSteps() {
     assert.equal('ST' in context.currentDbAdvancedFilters.positions, false);
 }
 
-async function assertPositionMapHidesInlineScoreBadge() {
+async function assertPositionMapUsesDirectTouchFriendlyCycle() {
     context.applyAdvancedDatabaseFiltersState({positions: {ST: 15, AMC: 18}}, {renderPanel: true});
     context.renderDatabaseAdvancedSearchPanel();
-    assert.equal(elements.get('dbAdvancedSearchPanel').innerHTML.includes('advanced-search-position-state'), false);
+    const markup = elements.get('dbAdvancedSearchPanel').innerHTML;
+    assert.equal((databaseSearchCode.match(/function buildAdvancedSearchPositionMap/g) || []).length, 1);
+    assert.equal(markup.includes('database-position-score-options'), false);
+    assert.ok(markup.includes("onclick=\"cycleAdvancedPositionFilter('ST')\""));
+    assert.ok(markup.includes('advanced-search-position-state'));
+    assert.ok(markup.includes('15+'));
+    assert.equal(markup.includes('pitch-marker-tooltip'), false);
+    assert.ok(markup.includes('不限 → ≥10 → ≥15 → ≥18 → 不限'));
+    assert.ok(markup.includes('多个位置需要同时满足'));
+    assert.ok(markup.includes('database-advanced-base-panel'));
+    assert.ok(markup.includes('database-advanced-base-column'));
+    assert.ok(markup.includes('database-advanced-position-column'));
+    assert.ok(markup.includes('left:50%;top:8%'));
+    assert.ok(markup.includes('left:50%;top:25%'));
+    assert.match(
+        databaseCss,
+        /button\.advanced-search-position-marker:not\(:disabled\):active\s*\{[^}]*transform:\s*translate\(-50%,\s*-50%\)\s*scale\(0\.98\)/s,
+    );
 }
 
 async function assertAdvancedSearchSupportsBlankKeyword() {
@@ -354,10 +372,43 @@ function assertMobileSearchCardPrioritizesPowerMetrics() {
     assert.doesNotMatch(markup, /mobile-db-metric-strip/);
 }
 
+function assertCandidateAddedAtIsVisibleAndSortable() {
+    context.setDatabaseSearchScope({
+        type: 'candidate_list',
+        id: 9,
+        name: '测试名单',
+        dataVersion: '2630',
+        players: [
+            {uid: 1, added_at: '2026-08-12T03:00:00'},
+            {uid: 2, added_at: '2026-08-13T03:22:00'},
+        ],
+    });
+    const players = [
+        {uid: 1, name: 'Older Player', data_version: '2630', position: 'MC', ca: 140, pa: 160, added_at: '2026-08-12T03:00:00'},
+        {uid: 2, name: 'Newer Player', data_version: '2630', position: 'ST', ca: 150, pa: 170, added_at: '2026-08-13T03:22:00'},
+    ];
+    context.currentDbSort = {field: 'added_at', order: 'desc', type: 'date'};
+    context.currentDbPlayers = players;
+    context.renderDbPlayers(players);
+    const markup = elements.get('dbPlayersTable').innerHTML;
+    assert.match(markup, /加入时间/);
+    assert.match(markup, /2026-08-13 11:22/);
+    assert.ok(markup.indexOf('Newer Player') < markup.indexOf('Older Player'));
+    assert.match(markup, /value="added_at_desc"[^>]*selected[^>]*>最新加入/);
+    context.currentDbSort = {field: 'added_at', order: 'asc', type: 'date'};
+    const ascending = context.getSortedDbPlayers(players);
+    assert.equal(ascending.map(player => player.uid).join(','), '1,2');
+    context.candidateAdminPlayerSort = {field: 'added_at', order: 'desc'};
+    const adminHeader = context.buildCandidateAdminSortButton('added_at', '加入时间');
+    assert.match(adminHeader, /candidate-admin-sort[\s\S]*?sortable-label[\s\S]*?sort-indicator is-active[\s\S]*?↓/);
+    context.resetDatabaseSearchScope();
+    context.currentDbSort = {field: '', order: '', type: 'number'};
+}
+
 (async () => {
     await assertAdvancedTriggerReflectsActiveCount();
-    await assertPositionCycleFollowsConfiguredSteps();
-    await assertPositionMapHidesInlineScoreBadge();
+    await assertPositionClickCyclesWithoutPanelRerender();
+    await assertPositionMapUsesDirectTouchFriendlyCycle();
     await assertAdvancedSearchSupportsBlankKeyword();
     await assertBaseProfileAndSeaFiltersReachAdvancedSearch();
     await assertWeightedPowerRangeReachesAdvancedSearch();
@@ -366,6 +417,7 @@ function assertMobileSearchCardPrioritizesPowerMetrics() {
     await assertVersionSwitchRerunsAdvancedSearch();
     await assertClearAdvancedFiltersResetsState();
     assertMobileSearchCardPrioritizesPowerMetrics();
+    assertCandidateAddedAtIsVisibleAndSortable();
 })().catch(error => {
     console.error(error);
     process.exit(1);

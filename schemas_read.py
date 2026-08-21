@@ -136,6 +136,9 @@ class AuthStatusResponse(BaseModel):
     can_manage_rankings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
+    can_manage_daily_reports: bool = False
+    can_manage_draws: bool = False
+    can_manage_archives: bool = False
 
 
 class WorkspaceIdentityResponse(BaseModel):
@@ -534,6 +537,111 @@ class CupBracketResponse(BaseModel):
     stages: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class WumingjianQualificationTeamResponse(BaseModel):
+    team_id: int
+    team_name: str
+    manager: Optional[str] = None
+    level: str
+    source_rank: int
+    qualification_type: Literal["direct", "preliminary"]
+
+
+class WumingjianQualificationResponse(BaseModel):
+    competition: Literal["wumingjian_cup"] = "wumingjian_cup"
+    title: str = "无铭剑杯预选赛"
+    activation_rounds: list[int] = Field(default_factory=lambda: [15, 16])
+    league_rounds_complete: bool = False
+    qualification_locked: bool = False
+    direct_qualifiers: list[WumingjianQualificationTeamResponse] = Field(default_factory=list)
+    preliminary_eligible_teams: list[WumingjianQualificationTeamResponse] = Field(default_factory=list)
+    preliminary_matches: list[CupMatchResponse] = Field(default_factory=list)
+    preliminary_winners: list[WumingjianQualificationTeamResponse] = Field(default_factory=list)
+    assigned_match_count: int = 0
+    played_match_count: int = 0
+    round_of_32_pool_count: int = 0
+
+
+class DrawPoolEntryResponse(BaseModel):
+    id: int
+    entity_key: str
+    entity_type: Literal["team", "player"]
+    team_id: Optional[int] = None
+    player_uid: Optional[int] = None
+    entity_name: str
+    team_name: Optional[str] = None
+    level: Optional[str] = None
+    source_rank: Optional[int] = None
+    pot_no: Optional[int] = None
+    seed_status: Optional[str] = None
+    self_save_count: int = 0
+    weight: float = 1.0
+    final_value: Optional[float] = None
+    slot_type: Optional[str] = None
+    is_active: bool = True
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DrawPickResponse(BaseModel):
+    id: int
+    sequence_no: int
+    entry: DrawPoolEntryResponse
+    paired_entry: Optional[DrawPoolEntryResponse] = None
+    target_group: Optional[str] = None
+    target_slot: Optional[int] = None
+    random_value: Optional[str] = None
+    status: str = "active"
+    reason: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class DrawSessionSummaryResponse(BaseModel):
+    id: int
+    name: str
+    draw_type: str
+    competition: Optional[str] = None
+    season_label: Optional[str] = None
+    status: str
+    random_seed: str
+    pool_hash: Optional[str] = None
+    entry_count: int = 0
+    active_entry_count: int = 0
+    pick_count: int = 0
+    candidate_list_id: Optional[int] = None
+    created_by: Optional[str] = None
+    updated_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    locked_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    published_at: Optional[datetime] = None
+
+
+class DrawSessionDetailResponse(DrawSessionSummaryResponse):
+    config: dict[str, Any] = Field(default_factory=dict)
+    result: dict[str, Any] = Field(default_factory=dict)
+    entries: list[DrawPoolEntryResponse] = Field(default_factory=list)
+    picks: list[DrawPickResponse] = Field(default_factory=list)
+
+
+class SeasonArchiveSummaryResponse(BaseModel):
+    id: int
+    season_key: str
+    title: str
+    revision_no: int
+    parent_archive_id: Optional[int] = None
+    status: str
+    revision_reason: Optional[str] = None
+    created_by: Optional[str] = None
+    confirmed_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+    confirmed_at: Optional[datetime] = None
+
+
+class SeasonArchiveDetailResponse(SeasonArchiveSummaryResponse):
+    snapshot: dict[str, Any] = Field(default_factory=dict)
+    validation: dict[str, Any] = Field(default_factory=dict)
+
+
 class CupGroupSlotResponse(BaseModel):
     slot_no: int
     team_id: Optional[int] = None
@@ -583,6 +691,7 @@ class CupQualifiedTeamResponse(BaseModel):
     points: int = 0
     goal_difference: int = 0
     goals_for: int = 0
+    wins: int = 0
 
 
 class CupGroupResponse(BaseModel):
@@ -714,6 +823,47 @@ class StandingsResponse(BaseModel):
     levels: list[str] = Field(default_factory=list)
     rows: list[StandingRowResponse] = Field(default_factory=list)
     prediction_summaries: list[StandingsPredictionSummaryResponse] = Field(default_factory=list)
+
+
+class StandingHistoryTeamResponse(BaseModel):
+    team_id: int
+    team_name: str
+    manager: Optional[str] = None
+    logo_path: Optional[str] = None
+
+
+class StandingHistoryRowResponse(BaseModel):
+    team_id: int
+    team_name: str
+    rank: int
+    previous_rank: int
+    rank_change: int = 0
+    played: int = 0
+    wins: int = 0
+    draws: int = 0
+    losses: int = 0
+    goals_for: int = 0
+    goals_against: int = 0
+    goal_difference: int = 0
+    points: int = 0
+
+
+class StandingHistoryRoundResponse(BaseModel):
+    round_no: int
+    round_label: str
+    is_complete: bool = False
+    played_match_count: int = 0
+    total_match_count: int = 0
+    rows: list[StandingHistoryRowResponse] = Field(default_factory=list)
+
+
+class StandingsHistoryResponse(BaseModel):
+    level: str
+    total_rounds: int = 0
+    latest_recorded_round: int = 0
+    latest_complete_round: int = 0
+    teams: list[StandingHistoryTeamResponse] = Field(default_factory=list)
+    rounds: list[StandingHistoryRoundResponse] = Field(default_factory=list)
 
 
 class PlayerRankingRowResponse(BaseModel):
@@ -1072,6 +1222,9 @@ class CoachAccountPublicResponse(BaseModel):
     can_manage_rankings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
+    can_manage_daily_reports: bool = False
+    can_manage_draws: bool = False
+    can_manage_archives: bool = False
 
 
 class CoachAccountAdminResponse(BaseModel):
@@ -1085,6 +1238,9 @@ class CoachAccountAdminResponse(BaseModel):
     can_manage_rankings: bool = False
     can_manage_suspensions: bool = False
     can_manage_candidate_lists: bool = False
+    can_manage_daily_reports: bool = False
+    can_manage_draws: bool = False
+    can_manage_archives: bool = False
     last_login_at: Optional[datetime] = None
 
 
@@ -1192,10 +1348,125 @@ class TeamCenterResponse(BaseModel):
     standings: StandingsResponse
     matches: ScheduleResponse
     suspensions: SuspensionsResponse
+    player_rankings: PlayerRankingsResponse
     power: PlayerPowerRankingResponse
     lineup: TeamLineupResponse
     team_power_summaries: TeamPowerSummariesResponse
     cup_outlook: TeamCupOutlookResponse
+
+
+class MatchPreviewPlayerResponse(BaseModel):
+    player_uid: Optional[int] = None
+    player_name: str
+    position: str = ""
+    goals: int = 0
+    assists: int = 0
+    mvps: int = 0
+    appearances: int = 0
+    heigo_power: Optional[float] = None
+    roles: list[str] = Field(default_factory=list)
+    is_unavailable: bool = False
+    absence_label: str = ""
+
+
+class MatchPreviewAvailabilityResponse(BaseModel):
+    state: Literal["current", "ahead", "stale", "gap", "unknown"] = "unknown"
+    title: str = "伤停轮次待确认"
+    detail: str = "暂时无法判断数据时效"
+    reliable: bool = False
+    checked_round: Optional[int] = None
+    applies_from_round: Optional[int] = None
+    missing_count: int = 0
+    missing_players: list[MatchPreviewPlayerResponse] = Field(default_factory=list)
+
+
+class MatchPreviewTeamResponse(BaseModel):
+    team_id: int
+    team_name: str
+    manager: Optional[str] = None
+    level: str
+    logo_path: Optional[str] = None
+    rank: Optional[int] = None
+    points: int = 0
+    played: int = 0
+    goal_difference: int = 0
+    predicted_rank: Optional[int] = None
+    predicted_rank_min: Optional[int] = None
+    predicted_rank_max: Optional[int] = None
+    champion_probability: float = 0.0
+    title_race_probability: float = 0.0
+    promotion_probability: float = 0.0
+    relegation_probability: float = 0.0
+    recent_form: list[Literal["W", "D", "L"]] = Field(default_factory=list)
+    recent_points: int = 0
+    recent_goals_for: int = 0
+    recent_goals_against: int = 0
+    venue_label: str = ""
+    venue_played: int = 0
+    venue_points: int = 0
+    venue_wins: int = 0
+    venue_draws: int = 0
+    venue_losses: int = 0
+    roster_power: Optional[float] = None
+    lineup_power: Optional[float] = None
+    lineup_rank: Optional[int] = None
+    lineup_player_count: int = 0
+    formation: str = "4-3-3"
+    lineup_saved: bool = False
+    leaders: list[MatchPreviewPlayerResponse] = Field(default_factory=list)
+    availability: MatchPreviewAvailabilityResponse = Field(default_factory=MatchPreviewAvailabilityResponse)
+    competition_rank: Optional[int] = None
+    competition_points: Optional[int] = None
+    competition_context: str = ""
+
+
+class MatchPreviewFixtureResponse(BaseModel):
+    fixture_type: Literal["league", "cup"]
+    match_id: int
+    competition: str
+    competition_title: str
+    phase: Literal["league", "group", "knockout", "qualifying"]
+    stage: str = ""
+    round_no: Optional[int] = None
+    round_label: str
+    neutral_venue: bool = False
+    home_team_id: int
+    home_team_name: str
+    away_team_id: int
+    away_team_name: str
+
+
+class MatchPreviewPredictionResponse(BaseModel):
+    home_win_probability: float = 0.0
+    draw_probability: float = 0.0
+    away_win_probability: float = 0.0
+    advantage_side: Literal["home", "away", "even"] = "even"
+    advantage_label: str = "势均力敌"
+    confidence: float = 0.0
+    confidence_label: Literal["低", "中等", "高"] = "低"
+    reasons: list[str] = Field(default_factory=list)
+    note: str = "模型结果仅供赛前参考"
+
+
+class MatchPreviewHeadToHeadResponse(BaseModel):
+    fixture_type: Literal["league", "cup"]
+    competition_title: str
+    round_label: str
+    home_team_name: str
+    away_team_name: str
+    home_score: int
+    away_score: int
+
+
+class MatchPreviewResponse(BaseModel):
+    fixture: MatchPreviewFixtureResponse
+    home: MatchPreviewTeamResponse
+    away: MatchPreviewTeamResponse
+    prediction: MatchPreviewPredictionResponse
+    stakes_label: str = "常规比赛"
+    stakes_detail: str = ""
+    head_to_head: list[MatchPreviewHeadToHeadResponse] = Field(default_factory=list)
+    generated_at: datetime
 
 
 class PlayerPowerCalibrationResponse(BaseModel):

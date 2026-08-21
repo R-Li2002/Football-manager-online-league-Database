@@ -2,6 +2,22 @@ var fetchWithTimeout = globalThis.fetchWithTimeout || ((...args) => globalThis.f
 
 const ADVANCED_DB_SEARCH_LIMIT = 200;
 const ADVANCED_POSITION_SCORE_STEPS = [10, 15, 18];
+const ADVANCED_POSITION_Y_BY_LABEL = {
+    ST: 8,
+    AML: 25,
+    AMC: 25,
+    AMR: 25,
+    ML: 42,
+    MC: 42,
+    MR: 42,
+    WBL: 59,
+    DM: 59,
+    WBR: 59,
+    DL: 76,
+    DC: 76,
+    DR: 76,
+    GK: 92,
+};
 var currentAdvancedSearchTab = 'base';
 var databaseSearchRequestSequence = 0;
 const ADVANCED_DB_BASE_FIELDS = [
@@ -99,7 +115,7 @@ var candidateAdminListFilter = 'all';
 var candidateAdminListQuery = '';
 var candidateAdminPlayerQuery = '';
 var candidateAdminPlayerStatus = 'all';
-var candidateAdminPlayerSort = {field: 'uid', order: 'asc'};
+var candidateAdminPlayerSort = {field: 'added_at', order: 'desc'};
 var candidateAdminSelectedUids = new Set();
 var candidateAdminPlayersCache = {
     listId: null,
@@ -301,6 +317,42 @@ function dedupeDatabasePlayers(players) {
     return result;
 }
 
+function parseCandidateAddedAtTimestamp(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return 0;
+    const isoValue = raw.includes('T') ? raw : raw.replace(' ', 'T');
+    const zonedValue = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(isoValue) ? isoValue : `${isoValue}Z`;
+    const timestamp = Date.parse(zonedValue);
+    return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function formatCandidateAddedAt(value, options = {}) {
+    const timestamp = parseCandidateAddedAtTimestamp(value);
+    if (!timestamp) return '时间待补';
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+    }).formatToParts(new Date(timestamp)).map(part => [part.type, part.value]));
+    const datePart = options.compact
+        ? `${parts.month}-${parts.day}`
+        : `${parts.year}-${parts.month}-${parts.day}`;
+    return `${datePart} ${parts.hour}:${parts.minute}`;
+}
+
+function mergeCandidateScopePlayerMetadata(players) {
+    if (databaseSearchScope.type !== 'candidate_list') return players;
+    const metadataByUid = new Map((databaseSearchScope.players || []).map(player => [Number(player.uid), player]));
+    return (players || []).map(player => {
+        const metadata = metadataByUid.get(Number(player.uid));
+        return metadata?.added_at && !player.added_at ? {...player, added_at: metadata.added_at} : player;
+    });
+}
+
 async function applyDatabaseBatchScope(rawValue, options = {}) {
     const raw = String(rawValue || '');
     const version = options.version || getCurrentAttributeVersion();
@@ -500,16 +552,18 @@ function buildAdvancedSearchRequestPayload(query, options = {}) {
     return payload;
 }
 
+function getAdvancedPositionMarkerClass(score) {
+    if (!score) return 'pitch-rating-gray';
+    return getPitchMarkerTone(score);
+}
+
 function getAdvancedPositionNextScore(position) {
     const filters = ensureCurrentDbAdvancedFilters();
     const currentScore = Number(filters.positions?.[position]) || 0;
     const currentIndex = ADVANCED_POSITION_SCORE_STEPS.indexOf(currentScore);
-    return currentIndex === -1 ? ADVANCED_POSITION_SCORE_STEPS[0] : (ADVANCED_POSITION_SCORE_STEPS[currentIndex + 1] || 0);
-}
-
-function getAdvancedPositionMarkerClass(score) {
-    if (!score) return 'pitch-rating-gray';
-    return getPitchMarkerTone(score);
+    return currentIndex === -1
+        ? ADVANCED_POSITION_SCORE_STEPS[0]
+        : (ADVANCED_POSITION_SCORE_STEPS[currentIndex + 1] || 0);
 }
 
 function buildAdvancedSearchPositionMap() {
@@ -518,28 +572,33 @@ function buildAdvancedSearchPositionMap() {
         const score = Number(filters.positions?.[marker.label]) || 0;
         const markerClass = getAdvancedPositionMarkerClass(score);
         const selectedClass = score ? 'is-selected' : '';
-        const tooltipClasses = getPitchTooltipClasses(marker);
         const stateText = score ? `要求 ≥ ${score}` : '未要求';
+        const markerY = ADVANCED_POSITION_Y_BY_LABEL[marker.label] ?? marker.y;
         return `
             <button
                 class="pitch-marker advanced-search-position-marker ${markerClass} ${selectedClass}"
-                style="left:${marker.x}%;top:${marker.y}%;background:none;border:none;padding:0;"
+                style="left:${marker.x}%;top:${markerY}%;background:none;border:none;padding:0;"
                 type="button"
+                data-advanced-position="${marker.label}"
                 onclick="cycleAdvancedPositionFilter('${marker.label}')"
                 aria-pressed="${score ? 'true' : 'false'}"
                 aria-label="${marker.label} ${stateText}"
             >
                 <span class="pitch-marker-core">${marker.label}</span>
-                <span class="advanced-search-position-state">${score || '·'}</span>
-                <span class="pitch-marker-tooltip ${tooltipClasses}">${marker.label} · ${stateText}</span>
+                <span class="advanced-search-position-state">${score ? `${score}+` : '不限'}</span>
             </button>
         `;
     }).join('');
 
     return `
-        <div class="position-map-card database-position-filter-card">
-            <h4>位置熟练度图</h4>
-            <p class="database-advanced-helper">点击球场位置循环切换为 <strong>≥10</strong>、<strong>≥15</strong>、<strong>≥18</strong> 或关闭。多位置按“任一位置满足”处理。</p>
+        <div class="position-map-card database-position-filter-card" id="dbAdvancedPositionFilterCard">
+            <div class="database-position-filter-toolbar">
+                <div class="database-position-filter-copy">
+                    <h4>位置熟练度图</h4>
+                    <span>直接点击位置调整要求</span>
+                </div>
+            </div>
+            <p class="database-advanced-helper">每次点击直接切换：不限 → ≥10 → ≥15 → ≥18 → 不限。多个位置需要同时满足。</p>
             <div class="pitch-board">
                 <div class="pitch-field">
                     <span class="pitch-half-line"></span>
@@ -599,49 +658,6 @@ function buildDatabaseBatchScopePanel() {
     `;
 }
 
-function buildAdvancedSearchPositionMap() {
-    const filters = ensureCurrentDbAdvancedFilters();
-    const markers = POSITION_MARKERS.map(marker => {
-        const score = Number(filters.positions?.[marker.label]) || 0;
-        const markerClass = getAdvancedPositionMarkerClass(score);
-        const selectedClass = score ? 'is-selected' : '';
-        const tooltipClasses = getPitchTooltipClasses(marker);
-        const stateText = score ? `>= ${score}` : '未启用';
-        return `
-            <button
-                class="pitch-marker advanced-search-position-marker ${markerClass} ${selectedClass}"
-                style="left:${marker.x}%;top:${marker.y}%;background:none;border:none;padding:0;"
-                type="button"
-                onclick="cycleAdvancedPositionFilter('${marker.label}')"
-                aria-pressed="${score ? 'true' : 'false'}"
-                aria-label="${marker.label} ${stateText}"
-            >
-                <span class="pitch-marker-core">${marker.label}</span>
-                <span class="pitch-marker-tooltip ${tooltipClasses}">${marker.label} · ${stateText}</span>
-            </button>
-        `;
-    }).join('');
-
-    return `
-        <div class="position-map-card database-position-filter-card">
-            <h4>位置熟练度图</h4>
-            <p class="database-advanced-helper">点击球场位置循环切换为 <strong>>=10</strong>、<strong>>=15</strong>、<strong>>=18</strong> 或关闭。多位置会按“同时满足”处理。</p>
-            <div class="pitch-board">
-                <div class="pitch-field">
-                    <span class="pitch-half-line"></span>
-                    <span class="pitch-center-circle"></span>
-                    <span class="pitch-center-spot"></span>
-                    <span class="pitch-top-box"></span>
-                    <span class="pitch-bottom-box"></span>
-                    <span class="pitch-top-goal-box"></span>
-                    <span class="pitch-bottom-goal-box"></span>
-                    ${markers}
-                </div>
-            </div>
-        </div>
-    `;
-}
-
 function renderDatabaseAdvancedSearchPanel() {
     ensureCurrentDbAdvancedFilters();
     const panel = document.getElementById('dbAdvancedSearchPanel');
@@ -678,20 +694,20 @@ function renderDatabaseAdvancedSearchPanel() {
         ? buildDatabaseBatchScopePanel()
         : currentAdvancedSearchTab === 'base'
         ? `
-            <section class="database-advanced-tab-panel">
-                <div class="database-advanced-section-head">
-                    <h4>基础区间</h4>
-                    <span>基础资料、加权战力、双脚能力与名单状态</span>
+            <section class="database-advanced-tab-panel database-advanced-base-panel">
+                <div class="database-advanced-base-column">
+                    <div class="database-advanced-section-head">
+                        <h4>基础区间</h4>
+                        <span>基础资料、加权战力、双脚能力与名单状态</span>
+                    </div>
+                    <div class="database-advanced-field-grid database-advanced-field-grid-base">
+                        ${baseFieldsMarkup}
+                        ${seaStatusMarkup}
+                    </div>
                 </div>
-                <div class="database-advanced-field-grid database-advanced-field-grid-base">
-                    ${baseFieldsMarkup}
-                    ${seaStatusMarkup}
+                <div class="database-advanced-position-column">
+                    ${buildAdvancedSearchPositionMap()}
                 </div>
-                <div class="database-advanced-section-head">
-                    <h4>位置熟练度</h4>
-                    <span>点击球场位置增加搜索要求</span>
-                </div>
-                ${buildAdvancedSearchPositionMap()}
             </section>
         `
         : `
@@ -717,8 +733,8 @@ function renderDatabaseAdvancedSearchPanel() {
                 <button class="database-advanced-close" type="button" onclick="toggleAdvancedSearchPanel(false)" aria-label="关闭高级搜索">${uiIconSvg('close')}</button>
             </div>
             <div class="database-advanced-summary-row">
-                <span class="query-chip ${countActiveAdvancedFilters() ? '' : 'is-muted'}">已启用 <strong>${countActiveAdvancedFilters()}</strong> 个高级条件</span>
-                ${Object.keys(filters.positions || {}).length ? `<span class="query-chip">位置 <strong>${Object.keys(filters.positions).join(' / ')}</strong></span>` : ''}
+                <span class="query-chip ${countActiveAdvancedFilters() ? '' : 'is-muted'}" id="dbAdvancedActiveFilterChip">已启用 <strong>${countActiveAdvancedFilters()}</strong> 个高级条件</span>
+                <span class="query-chip" id="dbAdvancedPositionFilterChip" ${Object.keys(filters.positions || {}).length ? '' : 'hidden'}>位置 <strong>${Object.keys(filters.positions || {}).join(' / ')}</strong></span>
             </div>
             <div class="database-advanced-tabs" role="tablist" aria-label="高级搜索条件分类">
                 ${tabButtons}
@@ -797,9 +813,43 @@ function updateAdvancedAttributeRange(field, boundary, value) {
     renderAdvancedSearchTriggerState();
 }
 
+function renderAdvancedSearchSummaryState() {
+    const filters = ensureCurrentDbAdvancedFilters();
+    const activeCount = countActiveAdvancedFilters();
+    const activeChip = document.getElementById('dbAdvancedActiveFilterChip');
+    const positionChip = document.getElementById('dbAdvancedPositionFilterChip');
+    if (activeChip) {
+        activeChip.classList.toggle('is-muted', activeCount <= 0);
+        activeChip.innerHTML = `已启用 <strong>${activeCount}</strong> 个高级条件`;
+    }
+    if (positionChip) {
+        const positions = Object.keys(filters.positions || {});
+        positionChip.hidden = positions.length <= 0;
+        positionChip.innerHTML = `位置 <strong>${positions.join(' / ')}</strong>`;
+    }
+}
+
+function updateAdvancedPositionFilterControls() {
+    if (typeof document.querySelectorAll !== 'function') return;
+    const filters = ensureCurrentDbAdvancedFilters();
+    document.querySelectorAll('[data-advanced-position]').forEach(button => {
+        const position = String(button.dataset.advancedPosition || '').trim().toUpperCase();
+        const score = Number(filters.positions?.[position]) || 0;
+        const stateText = score ? `要求 ≥ ${score}` : '未要求';
+        button.classList.remove('pitch-rating-gray', 'pitch-rating-red', 'pitch-rating-yellow', 'pitch-rating-green', 'is-selected');
+        button.classList.add(getAdvancedPositionMarkerClass(score));
+        button.classList.toggle('is-selected', score > 0);
+        button.setAttribute('aria-pressed', score ? 'true' : 'false');
+        button.setAttribute('aria-label', `${position} ${stateText}`);
+        const stateNode = button.querySelector('.advanced-search-position-state');
+        if (stateNode) stateNode.textContent = score ? `${score}+` : '不限';
+    });
+}
+
 function cycleAdvancedPositionFilter(position) {
     ensureCurrentDbAdvancedFilters();
     const normalizedPosition = String(position || '').trim().toUpperCase();
+    if (!POSITION_MARKERS.some(marker => marker.label === normalizedPosition)) return;
     const nextScore = getAdvancedPositionNextScore(normalizedPosition);
     if (nextScore) {
         currentDbAdvancedFilters.positions[normalizedPosition] = nextScore;
@@ -807,7 +857,8 @@ function cycleAdvancedPositionFilter(position) {
         delete currentDbAdvancedFilters.positions[normalizedPosition];
     }
     renderAdvancedSearchTriggerState();
-    renderDatabaseAdvancedSearchPanel();
+    renderAdvancedSearchSummaryState();
+    updateAdvancedPositionFilterControls();
 }
 
 function applyAdvancedDatabaseFiltersState(state, options = {}) {
@@ -986,7 +1037,7 @@ async function searchDatabase(nameOverride = null, options = {}) {
             }
             if (!isLatestRequest()) return;
         }
-        currentDbPlayers = scopedResult?.items || filterDatabaseBatchPlayersLocally(name);
+        currentDbPlayers = mergeCandidateScopePlayerMetadata(scopedResult?.items || filterDatabaseBatchPlayersLocally(name));
         setCurrentDbSearchMeta({
             mode: hasActiveAdvancedFilters() ? 'advanced' : 'basic',
             query: name,
@@ -1084,6 +1135,9 @@ function clearDatabaseSearchScopeAndSearch() {
         setDatabaseBatchRawValue('');
         databaseBatchScope = {raw: '', tokens: [], players: [], unmatched: [], version: getCurrentAttributeVersion()};
     }
+    if (databaseSearchScope.type === 'candidate_list' && currentDbSort?.field === 'added_at') {
+        currentDbSort = {field: '', order: '', type: 'number'};
+    }
     resetDatabaseSearchScope();
     renderAdvancedSearchTriggerState();
     renderDatabaseAdvancedSearchPanel();
@@ -1104,7 +1158,7 @@ function clearAdvancedFiltersFromResults() {
 }
 
 function getCandidateListTypeLabel(type) {
-    const labels = {transfer: '转会', recommendation: '推荐', review: '复核', custom: '自定义'};
+    const labels = {transfer: '转会', recommendation: '推荐', review: '复核', custom: '自定义', lottery: '乐透抽取'};
     return labels[type] || '自定义';
 }
 
@@ -1695,6 +1749,9 @@ async function enterCandidateListScope(listId, options = {}) {
         players,
         missingUids,
     });
+    if (!options.preserveSort) {
+        currentDbSort = {field: 'added_at', order: 'desc', type: 'date'};
+    }
     currentCandidateListId = Number(listId);
     document.getElementById('dbPlayerSearch').value = query;
     currentDatabaseSubtab = 'search';
@@ -1764,7 +1821,7 @@ function buildCandidateListFormMarkup(item = null) {
                 <label>名单名称<input id="candidateListNameInput" type="text" value="${escapeHtml(item?.name || '')}" placeholder="例如：86届中期强制转会名单"></label>
                 <label>类型
                     <select id="candidateListTypeInput">
-                        ${['transfer', 'recommendation', 'review', 'custom'].map(type => `<option value="${type}" ${item?.type === type ? 'selected' : ''}>${escapeHtml(getCandidateListTypeLabel(type))}</option>`).join('')}
+                        ${['transfer', 'recommendation', 'review', 'custom', 'lottery'].map(type => `<option value="${type}" ${item?.type === type ? 'selected' : ''}>${escapeHtml(getCandidateListTypeLabel(type))}</option>`).join('')}
                     </select>
                 </label>
                 <label>数据版本<input id="candidateListVersionInput" type="text" value="${escapeHtml(item?.base_data_version || getCurrentAttributeVersion() || '')}" placeholder="默认当前版本"></label>
@@ -2033,7 +2090,7 @@ async function loadCandidateAdminPlayers(listId) {
         candidateAdminSelectedUids = new Set();
         candidateAdminPlayerQuery = '';
         candidateAdminPlayerStatus = 'all';
-        candidateAdminPlayerSort = {field: 'uid', order: 'asc'};
+        candidateAdminPlayerSort = {field: 'added_at', order: 'desc'};
     }
     candidateAdminPlayersCache = {
         listId: targetListId,
@@ -2093,12 +2150,13 @@ function sortCandidateAdminPlayers(field) {
     if (candidateAdminPlayerSort.field === field) {
         candidateAdminPlayerSort.order = candidateAdminPlayerSort.order === 'asc' ? 'desc' : 'asc';
     } else {
-        candidateAdminPlayerSort = {field, order: ['ca', 'pa'].includes(field) ? 'desc' : 'asc'};
+        candidateAdminPlayerSort = {field, order: ['ca', 'pa', 'added_at'].includes(field) ? 'desc' : 'asc'};
     }
     renderCandidateAdminPlayerTable();
 }
 
 function getCandidateAdminPlayerSortValue(player, field) {
+    if (field === 'added_at') return parseCandidateAddedAtTimestamp(player?.added_at);
     if (['uid', 'ca', 'pa'].includes(field)) {
         const value = Number(player?.[field]);
         return Number.isFinite(value) ? value : -Infinity;
@@ -2129,8 +2187,8 @@ function getFilteredCandidateAdminPlayers() {
 
 function buildCandidateAdminSortButton(field, label) {
     const isActive = candidateAdminPlayerSort.field === field;
-    const arrow = isActive ? (candidateAdminPlayerSort.order === 'asc' ? '↑' : '↓') : '';
-    return `<button class="candidate-admin-sort ${isActive ? 'active' : ''}" type="button" onclick="sortCandidateAdminPlayers('${field}')">${escapeHtml(label)} ${arrow}</button>`;
+    const arrow = isActive ? (candidateAdminPlayerSort.order === 'asc' ? '↑' : '↓') : '↕';
+    return `<button class="candidate-admin-sort" type="button" onclick="sortCandidateAdminPlayers('${field}')"><span class="sortable-label">${escapeHtml(label)}</span><span class="sort-indicator ${isActive ? 'is-active' : ''}">${arrow}</span></button>`;
 }
 
 function renderCandidateAdminPlayerTable() {
@@ -2157,6 +2215,7 @@ function renderCandidateAdminPlayerTable() {
                     <th class="numeric-cell">${buildCandidateAdminSortButton('ca', 'CA')}</th>
                     <th class="numeric-cell">${buildCandidateAdminSortButton('pa', 'PA')}</th>
                     <th>${buildCandidateAdminSortButton('club', '俱乐部')}</th>
+                    <th>${buildCandidateAdminSortButton('added_at', '加入时间')}</th>
                     <th>状态</th>
                     <th>操作</th>
                 </tr>
@@ -2177,6 +2236,7 @@ function renderCandidateAdminPlayerTable() {
                             <td class="numeric-cell">${escapeHtml(player.ca ?? '-')}</td>
                             <td class="numeric-cell">${escapeHtml(player.pa ?? '-')}</td>
                             <td>${escapeHtml(player.heigo_club || player.club || '-')}</td>
+                            <td class="candidate-added-at-cell" title="北京时间">${escapeHtml(formatCandidateAddedAt(player.added_at))}</td>
                             <td>${status}</td>
                             <td><button class="btn btn-danger btn-small" type="button" onclick="confirmRemoveCandidatePlayer(${Number(candidateAdminPlayersCache.listId)}, ${uid})">移除</button></td>
                         </tr>
@@ -2696,6 +2756,10 @@ function renderMobileDbResultToolbar(players) {
                     <option value="heigo_power_desc" ${sortedValue === 'heigo_power_desc' ? 'selected' : ''}>HEIGO战力高到低</option>
                     <option value="age_asc" ${sortedValue === 'age_asc' ? 'selected' : ''}>年龄小到大</option>
                     <option value="name_asc" ${sortedValue === 'name_asc' ? 'selected' : ''}>姓名 A-Z</option>
+                    ${databaseSearchScope.type === 'candidate_list' ? `
+                        <option value="added_at_desc" ${sortedValue === 'added_at_desc' ? 'selected' : ''}>最新加入</option>
+                        <option value="added_at_asc" ${sortedValue === 'added_at_asc' ? 'selected' : ''}>最早加入</option>
+                    ` : ''}
                 </select>
             </label>
             <span class="mobile-db-view-pill">卡片</span>
@@ -2718,6 +2782,7 @@ function renderMobileDbPlayerCard(player) {
     const versionArg = htmlJsString(version);
     const uid = Number(player.uid || 0);
     const club = player.heigo_club || player.club || '-';
+    const candidateAddedAt = databaseSearchScope.type === 'candidate_list' ? formatCandidateAddedAt(player.added_at, {compact: true}) : '';
     const power = getMobileDbPowerMetrics(player);
     const powerMarkup = power ? `
         <div class="mobile-db-power-panel ${power.tone}" aria-label="加权战力值 ${power.weightedPower.toFixed(2)}，HEIGO战力 ${power.heigoPower.toFixed(2)}，前 ${getTopPercentLabel(power.topPercent)}%">
@@ -2747,6 +2812,7 @@ function renderMobileDbPlayerCard(player) {
                 <span title="${escapeHtml(club)}">${escapeHtml(club)}</span>
                 <span title="${escapeHtml(player.nationality || '-')}">${escapeHtml(formatCompactNationality(player.nationality, {maxLength: 18}))}</span>
             </div>
+            ${candidateAddedAt ? `<div class="mobile-db-candidate-added-at"><span>加入时间</span><strong>${escapeHtml(candidateAddedAt)}</strong></div>` : ''}
             ${powerMarkup}
             <div class="mobile-db-card-actions">
                 <button class="mobile-db-card-action is-primary" type="button" onclick="showPlayerDetail(${uid}, {returnTab: 'database', returnSubtab: 'search', version: ${versionArg}})">详情</button>
@@ -2777,6 +2843,7 @@ function renderDbPlayers(players) {
     }
     const sortedPlayers = getSortedDbPlayers(players);
     const showCandidateAction = hasActiveCandidateList();
+    const showCandidateAddedAt = databaseSearchScope.type === 'candidate_list';
     const html = `
         <table class="db-players-table">
             <thead>
@@ -2789,6 +2856,7 @@ function renderDbPlayers(players) {
                     ${buildDbHeader('国籍', 'nationality')}
                     ${buildDbHeader('HEIGO俱乐部', 'heigo_club')}
                     ${buildDbHeader('现实俱乐部', 'club')}
+                    ${showCandidateAddedAt ? buildDbHeader('加入时间', 'added_at') : ''}
                     ${showCandidateAction ? '<th>候选名单</th>' : ''}
                 </tr>
             </thead>
@@ -2803,6 +2871,7 @@ function renderDbPlayers(players) {
                         <td title="${escapeHtml(p.nationality || '-')}">${escapeHtml(formatCompactNationality(p.nationality, {maxLength: 16}))}</td>
                         <td class="${p.heigo_club !== '大海' ? 'heigo-club' : ''}">${escapeHtml(p.heigo_club || '-')}</td>
                         <td class="real-club">${escapeHtml(p.club || '-')}</td>
+                        ${showCandidateAddedAt ? `<td class="candidate-added-at-cell" title="北京时间">${escapeHtml(formatCandidateAddedAt(p.added_at))}</td>` : ''}
                         ${showCandidateAction ? buildCandidateResultActionCell(p) : ''}
                     </tr>
                 `).join('')}

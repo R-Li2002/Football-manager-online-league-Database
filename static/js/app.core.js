@@ -17,6 +17,9 @@ var canManageCupStandings = false;
 var canManageRankings = false;
 var canManageSuspensions = false;
 var canManageCandidateLists = false;
+var canManageDailyReports = false;
+var canManageDraws = false;
+var canManageArchives = false;
 var adminEntryUnlocked = false;
 var isDarkMode = false;
 const ADMIN_ENTRY_QUERY = 'heigomanage';
@@ -150,6 +153,9 @@ Object.defineProperties(window.AppState, {
     canManageRankings: {enumerable: true, get: () => canManageRankings, set: value => { canManageRankings = value; }},
     canManageSuspensions: {enumerable: true, get: () => canManageSuspensions, set: value => { canManageSuspensions = value; }},
     canManageCandidateLists: {enumerable: true, get: () => canManageCandidateLists, set: value => { canManageCandidateLists = value; }},
+    canManageDailyReports: {enumerable: true, get: () => canManageDailyReports, set: value => { canManageDailyReports = value; }},
+    canManageDraws: {enumerable: true, get: () => canManageDraws, set: value => { canManageDraws = value; }},
+    canManageArchives: {enumerable: true, get: () => canManageArchives, set: value => { canManageArchives = value; }},
     adminEntryUnlocked: {enumerable: true, get: () => adminEntryUnlocked, set: value => { adminEntryUnlocked = value; }},
     isDarkMode: {enumerable: true, get: () => isDarkMode, set: value => { isDarkMode = value; }},
     currentDetailPlayer: {enumerable: true, get: () => currentDetailPlayer, set: value => { currentDetailPlayer = value; }},
@@ -220,6 +226,8 @@ function uiIconSvg(name, className = 'ui-icon') {
         return: '<path d="m9 7-5 5 5 5M5 12h9a5 5 0 0 1 5 5v2"/>',
         check: '<path d="M5 12.5 9.2 16.5 19 6.5"/>',
         minus: '<path d="M5 12h14"/>',
+        play: '<path d="m9 7 8 5-8 5Z"/>',
+        pause: '<path d="M9 7v10M15 7v10"/>',
         'chevron-down': '<path d="m7 10 5 5 5-5"/>',
         home: '<path d="m4 10 8-6 8 6v9H9v-6h6v6"/>',
         user: '<circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.5-4 2.7-6 6.5-6s6 2 6.5 6"/>',
@@ -308,6 +316,9 @@ async function workJsonRequest(url, options = {}) {
         canManageRankings = false;
         canManageSuspensions = false;
         canManageCandidateLists = false;
+        canManageDailyReports = false;
+        canManageDraws = false;
+        canManageArchives = false;
         workspaceSessionState = {authenticated: false, identity: null};
         if (currentCoachAccount?.authenticated) currentCoachAccount = {authenticated: false};
         if (typeof renderGlobalCoachAccount === 'function') renderGlobalCoachAccount();

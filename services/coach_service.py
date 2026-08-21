@@ -409,6 +409,9 @@ def _coach_account_work_permissions(account: CoachAccount | None) -> dict[str, b
         "can_manage_rankings": bool(getattr(account, "can_manage_rankings", 0)) if account else False,
         "can_manage_suspensions": bool(getattr(account, "can_manage_suspensions", 0)) if account else False,
         "can_manage_candidate_lists": bool(getattr(account, "can_manage_candidate_lists", 0)) if account else False,
+        "can_manage_daily_reports": bool(getattr(account, "can_manage_daily_reports", 0)) if account else False,
+        "can_manage_draws": bool(getattr(account, "can_manage_draws", 0)) if account else False,
+        "can_manage_archives": bool(getattr(account, "can_manage_archives", 0)) if account else False,
     }
 
 
@@ -465,6 +468,9 @@ def upsert_coach_account(
     account.can_manage_rankings = 1 if request.can_manage_rankings else 0
     account.can_manage_suspensions = 1 if request.can_manage_suspensions else 0
     account.can_manage_candidate_lists = 1 if request.can_manage_candidate_lists else 0
+    account.can_manage_daily_reports = 1 if request.can_manage_daily_reports else 0
+    account.can_manage_draws = 1 if request.can_manage_draws else 0
+    account.can_manage_archives = 1 if request.can_manage_archives else 0
     account.updated_at = now
     db.query(CoachSession).filter(CoachSession.coach_uid == coach_uid).delete()
     db.commit()
