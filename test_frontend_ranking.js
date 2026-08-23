@@ -4,6 +4,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const code = fs.readFileSync(path.join(__dirname, 'static/js/app.competition.js'), 'utf8');
+const competitionCss = fs.readFileSync(path.join(__dirname, 'static/css/pages/competition.css'), 'utf8');
 const ratingBoard = {innerHTML: ''};
 const context = {
     console,
@@ -43,6 +44,8 @@ assert.match(ratingBoard.innerHTML, /统计截止到排位贴/);
 assert.match(ratingBoard.innerHTML, /第 128 楼/);
 assert.match(ratingBoard.innerHTML, /id="rankingCutoffFloor"/);
 assert.match(ratingBoard.innerHTML, /ranking-board-copy[\s\S]*排位积分榜[\s\S]*ranking-cutoff-row[\s\S]*ranking-board-meta/);
+assert.match(competitionCss, /\.ranking-board-head\s*\{[^}]*text-align:\s*left;/s);
+assert.match(competitionCss, /\.ranking-board-copy\s*\{[^}]*text-align:\s*left;/s);
 assert.match(ratingBoard.innerHTML, /Alpha FC/);
 assert.match(ratingBoard.innerHTML, /<small>超级<\/small>/);
 assert.match(ratingBoard.innerHTML, /mobile-ranking-list/);

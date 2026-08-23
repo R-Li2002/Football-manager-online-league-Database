@@ -6421,10 +6421,12 @@ body:not(.light-mode) #competitionLevelWumingjianCup {
     padding: 22px 24px 18px;
     border-bottom: 1px solid var(--border-color);
     background: linear-gradient(110deg, color-mix(in srgb, var(--accent-primary) 9%, var(--surface-strong)), var(--surface-strong) 58%);
+    text-align: left;
 }
 
 .ranking-board-copy {
     min-width: 0;
+    text-align: left;
 }
 
 .ranking-board-head h2 {

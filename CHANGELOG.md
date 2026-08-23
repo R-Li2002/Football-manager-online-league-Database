@@ -4,6 +4,12 @@ All notable changes to HEIGO are documented here.
 
 ## [Unreleased]
 
+## [0.4.190] - 2026-08-23
+
+### Fixed
+
+- 修正全局 `header` 居中规则覆盖排位积分榜标题的问题，明确将 `HEIGO RATING DESK`、排位积分榜标题及规则说明左对齐，并增加样式回归检查。
+
 ## [0.4.189] - 2026-08-23
 
 ### Fixed
