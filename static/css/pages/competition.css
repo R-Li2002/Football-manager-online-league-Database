@@ -6414,17 +6414,17 @@ body:not(.light-mode) #competitionLevelWumingjianCup {
 }
 
 .ranking-board-head {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
     gap: 22px;
     padding: 22px 24px 18px;
     border-bottom: 1px solid var(--border-color);
     background: linear-gradient(110deg, color-mix(in srgb, var(--accent-primary) 9%, var(--surface-strong)), var(--surface-strong) 58%);
 }
 
-.ranking-board-head > div:first-child {
-    flex: 1 1 420px;
+.ranking-board-copy {
+    min-width: 0;
 }
 
 .ranking-board-head h2 {
@@ -6476,11 +6476,13 @@ body:not(.light-mode) #competitionLevelWumingjianCup {
 .ranking-rule-strip strong { color: var(--text-primary); font-size: .88rem; font-variant-numeric: tabular-nums; }
 
 .ranking-cutoff-row {
-    flex: 1 0 100%;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 14px;
+    max-width: 620px;
+    margin-top: 13px;
     padding-top: 13px;
     border-top: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
 }

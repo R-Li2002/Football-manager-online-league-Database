@@ -622,7 +622,12 @@ function renderRankingBoard() {
         <section class="ranking-desk ${canManageRankingMatches() ? 'is-manager' : ''}">
             <div class="ranking-leaderboard-panel exportable-panel" data-export-view="rankings-HEIGO">
                 <header class="ranking-board-head">
-                    <div><span class="panel-kicker">HEIGO RATING DESK</span><h2>排位积分榜</h2><p>胜者取得败者赛前基础分的 10%；每完成一场，总分另加 ${formatRankingPoints(rankingData.appearance_bonus)}。</p></div>
+                    <div class="ranking-board-copy">
+                        <span class="panel-kicker">HEIGO RATING DESK</span>
+                        <h2>排位积分榜</h2>
+                        <p>胜者取得败者赛前基础分的 10%；每完成一场，总分另加 ${formatRankingPoints(rankingData.appearance_bonus)}。</p>
+                        ${renderRankingCutoff()}
+                    </div>
                     <div class="ranking-board-meta">
                         <div class="ranking-export-actions capture-exclude">
                             <button class="btn btn-secondary competition-excel-btn" type="button" onclick="exportRankingExcel()">Excel表格</button>
@@ -630,7 +635,6 @@ function renderRankingBoard() {
                         </div>
                         <div class="ranking-rule-strip" aria-label="排位规则"><span><small>初始基础分</small><strong>${formatRankingPoints(rankingData.initial_points)}</strong></span><span><small>胜负转移</small><strong>${Number(rankingData.transfer_rate || 0) * 100}%</strong></span><span><small>每场奖励</small><strong>+${formatRankingPoints(rankingData.appearance_bonus)}</strong></span></div>
                     </div>
-                    ${renderRankingCutoff()}
                 </header>
                 <div class="ranking-table-wrap">
                     <table class="ranking-table">

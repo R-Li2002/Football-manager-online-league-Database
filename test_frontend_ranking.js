@@ -42,6 +42,7 @@ assert.match(ratingBoard.innerHTML, /总分/);
 assert.match(ratingBoard.innerHTML, /统计截止到排位贴/);
 assert.match(ratingBoard.innerHTML, /第 128 楼/);
 assert.match(ratingBoard.innerHTML, /id="rankingCutoffFloor"/);
+assert.match(ratingBoard.innerHTML, /ranking-board-copy[\s\S]*排位积分榜[\s\S]*ranking-cutoff-row[\s\S]*ranking-board-meta/);
 assert.match(ratingBoard.innerHTML, /Alpha FC/);
 assert.match(ratingBoard.innerHTML, /<small>超级<\/small>/);
 assert.match(ratingBoard.innerHTML, /mobile-ranking-list/);

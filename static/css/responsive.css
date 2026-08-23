@@ -7384,7 +7384,7 @@ body.player-detail-scroll-snap #playerDetailContent {
     .ranking-desk { grid-template-columns: 1fr; gap: 12px; }
     .ranking-results-panel { position: static; }
     .ranking-desk.is-manager .ranking-results-panel { order: -1; }
-    .ranking-board-head { display: grid; padding: 17px 16px 14px; }
+    .ranking-board-head { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 17px 16px 14px; }
     .ranking-rule-strip { min-width: 0; width: 100%; }
     .ranking-cutoff-row { display: grid; gap: 9px; padding-top: 12px; }
     .ranking-cutoff-row p { justify-content: space-between; white-space: normal; }
