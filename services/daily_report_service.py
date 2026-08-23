@@ -477,6 +477,8 @@ def _suspension_label(row: PlayerSuspensionRecord) -> str:
         parts.append("红牌停赛")
     if bool(row.red_injury_suspended):
         parts.append("红伤停赛")
+    if bool(row.yellow_card_suspended) or bool(row.red_card_suspended) or bool(row.red_injury_suspended):
+        parts.append(f"停赛{max(1, int(row.suspension_matches or 1))}场")
     if row.notes:
         parts.append(str(row.notes).strip())
     return "、".join(parts) or "状态已更新"

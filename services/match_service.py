@@ -867,8 +867,15 @@ def update_match_result(
     if not match:
         raise HTTPException(status_code=404, detail="比赛不存在")
 
+    from services import suspension_service
+    was_completed = bool(
+        match.status in PLAYED_MATCH_STATUSES
+        and match.home_score is not None
+        and match.away_score is not None
+    )
     _apply_match_result_update(match, request)
     _replace_match_player_events(db, match, request)
+    suspension_service.sync_suspension_serving_for_match(db, match, was_completed=was_completed)
     db.commit()
 
     score_text = "-" if match.home_score is None or match.away_score is None else f"{match.home_score}-{match.away_score}"
@@ -887,6 +894,7 @@ def batch_update_match_results(
     if not request.matches:
         raise HTTPException(status_code=400, detail="没有需要保存的比赛")
 
+    from services import suspension_service
     seen_ids: set[int] = set()
     updated = 0
     for item in request.matches:
@@ -896,6 +904,11 @@ def batch_update_match_results(
         match = get_match_by_id(db, item.match_id)
         if not match:
             raise HTTPException(status_code=404, detail=f"比赛不存在：{item.match_id}")
+        was_completed = bool(
+            match.status in PLAYED_MATCH_STATUSES
+            and match.home_score is not None
+            and match.away_score is not None
+        )
         _apply_match_result_update(
             match,
             MatchUpdateRequest(
@@ -913,6 +926,7 @@ def batch_update_match_results(
             notes=item.notes,
             events=item.events,
         ))
+        suspension_service.sync_suspension_serving_for_match(db, match, was_completed=was_completed)
         updated += 1
 
     db.commit()

@@ -183,6 +183,10 @@ def _absence_label(player) -> str:
         parts.append("红牌停赛")
     if player.red_injury_suspended:
         parts.append("红伤停赛")
+    if player.yellow_card_suspended or player.red_card_suspended or player.red_injury_suspended:
+        total = max(1, int(player.suspension_matches or 1))
+        remaining = max(0, int(player.suspension_remaining_matches or total))
+        parts.append(f"停赛共{total}场" + (f"、剩余{remaining}场" if remaining < total else ""))
     if player.notes:
         parts.append(str(player.notes).strip())
     return "、".join(parts) or "停赛"
@@ -194,9 +198,18 @@ def _availability(db: Session, team: Team, fixture: dict[str, Any]) -> MatchPrev
     if not item:
         return MatchPreviewAvailabilityResponse()
     progress = item.progress
+    suspended_rows = list(item.suspended)
+    if fixture["fixture_type"] == "league":
+        suspended_rows = [
+            row
+            for row in suspended_rows
+            if int(fixture["match_id"]) in {int(match_id) for match_id in row.suspension_affected_match_ids}
+        ]
     reliable = bool(progress and progress.state in {"current", "ahead"} and progress.suspension_checked_round is not None)
     if reliable and fixture["fixture_type"] == "league":
         reliable = bool(
+            suspended_rows
+            or
             int(progress.next_match_id or 0) == int(fixture["match_id"])
             or int(progress.applies_from_round or 0) == int(fixture.get("round_no") or 0)
             or (
@@ -216,7 +229,7 @@ def _availability(db: Session, team: Team, fixture: dict[str, Any]) -> MatchPrev
             is_unavailable=True,
             absence_label=_absence_label(row),
         )
-        for row in item.suspended
+        for row in suspended_rows
     ]
     return MatchPreviewAvailabilityResponse(
         state=progress.state if progress else "unknown",

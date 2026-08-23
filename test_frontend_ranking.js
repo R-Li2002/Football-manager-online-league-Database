@@ -24,6 +24,7 @@ context.rankingData = {
     initial_points: 1000,
     appearance_bonus: 20,
     transfer_rate: 0.1,
+    cutoff_floor: 128,
     total_matches: 1,
     rows: [{rank: 1, team_id: 1, team_name: 'Alpha FC', level: '超级', logo_path: '', base_points: 1100, total_points: 1120, matches: 1, wins: 1, draws: 0, losses: 0}],
     matches: [{id: 8, home_team_name: 'Alpha FC', away_team_name: 'Beta FC', result: 'home'}],
@@ -38,6 +39,9 @@ assert.match(code, /fetchWithTimeout\('\/api\/export\/rankings\.xlsx'\)/);
 assert.match(code, /saveCompetitionImage\('rankings', 'HEIGO'\)/);
 assert.match(ratingBoard.innerHTML, /基础分/);
 assert.match(ratingBoard.innerHTML, /总分/);
+assert.match(ratingBoard.innerHTML, /统计截止到排位贴/);
+assert.match(ratingBoard.innerHTML, /第 128 楼/);
+assert.match(ratingBoard.innerHTML, /id="rankingCutoffFloor"/);
 assert.match(ratingBoard.innerHTML, /Alpha FC/);
 assert.match(ratingBoard.innerHTML, /<small>超级<\/small>/);
 assert.match(ratingBoard.innerHTML, /mobile-ranking-list/);
@@ -55,3 +59,5 @@ context.renderRankingBoard();
 assert.match(ratingBoard.innerHTML, /拥有“排位统计”权限/);
 assert.doesNotMatch(ratingBoard.innerHTML, /ranking-desk is-manager/);
 assert.doesNotMatch(ratingBoard.innerHTML, /deleteRankingMatch\(8\)/);
+assert.match(ratingBoard.innerHTML, /第 128 楼/);
+assert.doesNotMatch(ratingBoard.innerHTML, /id="rankingCutoffFloor"/);

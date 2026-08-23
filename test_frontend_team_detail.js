@@ -4,6 +4,7 @@ const fs = require('fs');
 const app = fs.readFileSync('static/app.js', 'utf8');
 const html = fs.readFileSync('static/app.html', 'utf8');
 const css = [
+    fs.readFileSync('static/app.css', 'utf8'),
     fs.readFileSync('static/css/pages/team.css', 'utf8'),
     fs.readFileSync('static/css/responsive.css', 'utf8'),
 ].join('\n');
@@ -67,6 +68,9 @@ assert(team.includes("match.status === 'postponed'"), 'explicitly postponed fixt
 assert(team.includes('gapRounds.has(teamDetailSafeNumber(match.round_no))'), 'recorded-result gaps should remain visible even below the progress floor');
 assert(team.includes("status.state === 'ahead'"), 'ahead-of-results suspension updates should have a distinct status');
 assert(team.includes('team-discipline-progress'), 'team center should display result, suspension, and applicable rounds together');
+assert(team.includes('function teamDetailSuspensionLabel(item)'), 'team center should summarize total, remaining, and affected suspension rounds');
+assert(team.includes('suspension_remaining_matches'), 'team center should read the server-calculated remaining suspension count');
+assert(team.includes('team-lineup-suspension-alert'), 'team center should warn when the next lineup contains unavailable players');
 assert(team.includes("'赛果连续至'"), 'a result gap should distinguish continuous progress from the highest recorded round');
 assert(team.includes('第 ${teamDetailSafeNumber'), 'team-center progress should spell out round numbers in Chinese');
 assert(!team.includes('>R${'), 'team-center progress should not expose abbreviated R2/R3 labels');
@@ -74,6 +78,9 @@ assert(team.includes('伤停轮次未匹配，阵容状态仍需确认'), 'stale
 assert(team.includes("fetchJsonOrThrow('/api/teams/power-summaries')"), 'level-wide team power summaries should be loaded');
 assert(team.includes('renderRosterFormationPreview({teamName: team.name'), 'team center should render an eleven-player pitch preview');
 assert(players.includes('...Object.keys(picks)'), 'saved free-position lineup slots should remain visible in the team preview');
+assert(players.includes('const availablePlayers = players.filter(player => !player.is_unavailable)'), 'automatic lineups should exclude suspended players');
+assert(players.includes('formation-player-card tone-${getRosterPlayerCardTone(player, slot)}${isSelected ? \' is-selected\' : \'\'}${isUnavailable ? \' is-unavailable\' : \'\'}'), 'suspended lineup cards should have a visible unavailable state');
+assert(players.includes('停赛球员不能进入下场阵容'), 'the lineup editor should block suspended players before saving');
 assert(team.includes('function openTeamLineupEditor()'), 'team lineup editor should be available');
 assert(team.includes('function teamDetailGroupMatchSeries('), 'consecutive rounds against one opponent should be grouped');
 assert(team.includes("onclick=\"openMatchPreview('league'"), 'unplayed league cards should open match intelligence directly');
@@ -163,6 +170,8 @@ assert(css.includes('.team-discipline-freshness.is-stale'), 'stale suspension co
 assert(css.includes('.team-discipline-freshness.is-ahead'), 'suspension progress ahead of recorded results should have a dedicated sync style');
 assert(css.includes('.team-discipline-freshness.is-gap'), 'result gaps should have a dedicated warning style');
 assert(css.includes('.team-discipline-progress'), 'the three-part round progress strip should have dedicated styling');
+assert(css.includes('.team-discipline-player'), 'remaining suspension matches should have a dedicated team-center row style');
+assert(css.includes('.formation-player-card.is-unavailable'), 'suspended lineup players should have a dedicated pitch-card treatment');
 assert(css.includes('.team-power-heigo small'), 'HEIGO percentile should have a dedicated label style');
 assert(css.includes('.team-performance-grid'), 'team performance should split power core and player leaders on desktop');
 assert(css.includes('.team-player-leader-tabs'), 'team player leader metrics should use a dedicated segmented control');

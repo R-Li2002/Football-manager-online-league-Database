@@ -60,6 +60,7 @@ from schemas_write import (
     MatchUpdateRequest,
     PlayerUpdateRequest,
     RejuvenateRequest,
+    RankingCutoffUpdateRequest,
     RankingMatchCreateRequest,
     ScheduleImportResponse,
     SiteNoteUpdateRequest,
@@ -205,6 +206,14 @@ def build_admin_write_router(
         operator: str = Depends(verify_ranking_manager),
     ):
         return ranking_service.delete_ranking_match(db, operator, match_id, write_to_log)
+
+    @router.patch("/api/admin/rankings/cutoff", response_model=RankingsResponse)
+    def update_ranking_cutoff(
+        request: RankingCutoffUpdateRequest,
+        db: Session = Depends(get_db),
+        operator: str = Depends(verify_ranking_manager),
+    ):
+        return ranking_service.update_ranking_cutoff(db, operator, request, write_to_log)
 
     def require_level_responsibility(db: Session, operator: str, level: str, responsibility_type: str) -> None:
         if level in competition_work_service.LEAGUE_LEVELS and not competition_work_service.operator_can_manage_level(

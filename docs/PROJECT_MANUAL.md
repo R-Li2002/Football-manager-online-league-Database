@@ -1282,6 +1282,13 @@ HEIGOOA/
 - 移动横向标签通过共享溢出检测显示右侧横滑箭头，滚动到末端后自动淡出；页面底部为固定导航保留额外安全空间。
 - 主页宣传图片使用懒加载和低请求优先级，球队目录的离屏联赛组使用 `content-visibility` 延迟渲染；日常验证继续优先运行静态检查、接口/服务测试和单一浏览器关键路径。
 
+## 补充：伤停停赛场次执行（2026-08）
+
+- `player_suspension_records.suspension_matches` 保存本次停赛总场次，默认 1；`player_suspension_served_matches` 以“停赛记录 + 联赛比赛”唯一键保存已经实际执行的比赛。停赛执行以球队接下来完成的有效三级联赛比赛为准，不把取消比赛计入执行场次。
+- 联赛赛果从未完成状态变为 `played / home_forfeit / away_forfeit / double_forfeit` 时，`services.match_service` 调用 `services.suspension_service.sync_suspension_serving_for_match` 为双方仍在停赛期内的球员各消耗一场。已赛改回未赛、延期或取消时删除该场执行记录，因此剩余场次会自动恢复；重复修改同一场已赛比分不会重复扣减。
+- 伤停公开响应同时返回停赛总场次、已执行场次、剩余场次、受影响比赛 ID 和轮次。执行完毕的记录保留底层审计关联，但不再进入公开停赛名单；若赛果撤回则可自动重新生效。
+- 球队中心显示“停赛共 N 场 / 剩余 N 场 / 影响第 N 轮”，比赛前瞻只在当前比赛属于受影响比赛时标记球员缺席。下一场阵容的系统推荐会跳过停赛球员，编辑器标出不可用状态，服务端保存接口也会拒绝包含当前停赛球员的阵容，避免仅靠浏览器提示被绕过。
+
 ## 补充：每日日报与群聊播报（2026-08）
 
 - 日报由 `services/daily_report_service.py` 统一生成，公开入口为 `GET /api/daily-report?report_date=YYYY-MM-DD`；首页仪表盘复用同一服务，不在前端重复拼接文案。

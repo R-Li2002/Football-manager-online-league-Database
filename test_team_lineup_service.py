@@ -7,9 +7,9 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from database import Base
-from models import Player, Team
-from schemas_write import TeamLineupUpdateRequest
-from services import team_lineup_service
+from models import Match, Player, Team
+from schemas_write import SuspensionRecordUpdateRequest, TeamLineupUpdateRequest
+from services import suspension_service, team_lineup_service
 
 
 class TeamLineupServiceTests(unittest.TestCase):
@@ -91,6 +91,46 @@ class TeamLineupServiceTests(unittest.TestCase):
                 TeamLineupUpdateRequest(formation="4-3-3", picks={"gk": self.other_player.uid}),
             )
         self.assertEqual(context.exception.status_code, 400)
+
+    @patch("services.team_lineup_service._resolve_editor", return_value=(True, "coach:alpha"))
+    def test_lineup_rejects_player_still_serving_a_suspension(self, _resolve_editor):
+        extra_players = [
+            Player(uid=uid, name=f"Starter {uid}", team_id=self.team.id, team_name=self.team.name, position="M C", ca=140, pa=160, wage=0)
+            for uid in range(102, 112)
+        ]
+        self.db.add_all(extra_players)
+        self.db.add(
+            Match(
+                level="超级",
+                round_no=1,
+                home_team_id=self.team.id,
+                home_team_name=self.team.name,
+                away_team_id=self.other_team.id,
+                away_team_name=self.other_team.name,
+                status="scheduled",
+            )
+        )
+        self.db.commit()
+        suspension_service.update_suspension_record(
+            self.db,
+            "editor",
+            SuspensionRecordUpdateRequest(player_uid=self.player.uid, yellow_cards=3, suspension_matches=2),
+            lambda *_args: None,
+        )
+        slots = ["fw_l", "fw_c", "fw_r", "am_wl", "am_l", "am_c", "am_r", "am_wr", "mc_l", "dm_c", "gk"]
+
+        with self.assertRaises(HTTPException) as context:
+            team_lineup_service.save_team_lineup(
+                self.db,
+                self.team.id,
+                TeamLineupUpdateRequest(
+                    formation="4-3-3",
+                    picks={slot: uid for slot, uid in zip(slots, range(101, 112))},
+                ),
+            )
+
+        self.assertIn("当前停赛球员", context.exception.detail)
+        self.assertIn("Starter", context.exception.detail)
 
 
 if __name__ == "__main__":

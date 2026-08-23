@@ -924,6 +924,7 @@ class RankingsResponse(BaseModel):
     initial_points: float = 1000.0
     appearance_bonus: float = 20.0
     transfer_rate: float = 0.1
+    cutoff_floor: Optional[int] = None
     total_matches: int = 0
     rows: list[RankingStandingRowResponse] = Field(default_factory=list)
     matches: list[RankingMatchResponse] = Field(default_factory=list)
@@ -939,6 +940,12 @@ class SuspensionPlayerResponse(BaseModel):
     yellow_card_suspended: bool = False
     red_card_suspended: bool = False
     red_injury_suspended: bool = False
+    suspension_matches: int = 1
+    suspension_active: bool = False
+    suspension_served_matches: int = 0
+    suspension_remaining_matches: int = 0
+    suspension_affected_match_ids: list[int] = Field(default_factory=list)
+    suspension_affected_rounds: list[int] = Field(default_factory=list)
     notes: Optional[str] = None
     updated_at: Optional[datetime] = None
 

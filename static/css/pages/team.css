@@ -2478,6 +2478,31 @@ body.match-preview-open {
     white-space: nowrap;
 }
 
+.team-discipline-row.is-danger p {
+    display: grid;
+    gap: 5px;
+    overflow: visible;
+    white-space: normal;
+}
+
+.team-discipline-player {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 7px;
+}
+
+.team-discipline-player b {
+    color: var(--text-primary);
+    font-size: .74rem;
+}
+
+.team-discipline-player small {
+    color: #ff8c8c;
+    font-size: .64rem;
+    line-height: 1.35;
+}
+
 .team-discipline-row.is-danger strong {
     color: #ff6b6b;
 }
@@ -3147,6 +3172,31 @@ body:not(.light-mode) .team-roster-card-stats .is-positive strong {
 
 .team-lineup-panel {
     overflow: hidden;
+}
+
+.team-lineup-suspension-alert {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0 14px 12px;
+    padding: 9px 11px;
+    border: 1px solid color-mix(in srgb, var(--state-danger) 32%, var(--border-color));
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--state-danger) 9%, var(--surface-muted));
+    color: var(--text-secondary);
+    font-size: .68rem;
+    line-height: 1.45;
+}
+
+.team-lineup-suspension-alert span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.team-lineup-suspension-alert strong {
+    flex: 0 0 auto;
+    color: var(--state-danger);
 }
 
 .team-lineup-action,

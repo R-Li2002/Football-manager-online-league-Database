@@ -504,12 +504,13 @@ function autoPickRosterFormation(teamName, formation = rosterFormationState.form
 function buildAutoRosterFormationPicks(players, formation = '4-3-3') {
     const keys = ROSTER_FORMATION_SLOT_KEYS[formation] || ROSTER_FORMATION_SLOT_KEYS['4-3-3'];
     const slots = keys.map(key => ROSTER_TACTICAL_SLOTS.find(slot => slot.key === key)).filter(Boolean);
+    const availablePlayers = players.filter(player => !player.is_unavailable);
     const used = new Set();
     const picks = {};
     for (const slot of slots) {
-        let candidate = players.find(player => !used.has(Number(player.uid)) && rosterPlayerMatchesSlot(player, slot));
+        let candidate = availablePlayers.find(player => !used.has(Number(player.uid)) && rosterPlayerMatchesSlot(player, slot));
         if (!candidate) {
-            candidate = players.find(player => !used.has(Number(player.uid)));
+            candidate = availablePlayers.find(player => !used.has(Number(player.uid)));
         }
         if (candidate) {
             picks[slot.key] = Number(candidate.uid);
@@ -575,14 +576,15 @@ function buildRosterFormationCard(player, options = {}) {
     const isSelected = selectedMove
         && selectedMove.type === source
         && String(selectedMove.value) === String(sourceValue);
-    const cardClass = `formation-player-card tone-${getRosterPlayerCardTone(player, slot)}${isSelected ? ' is-selected' : ''}`;
+    const isUnavailable = Boolean(player.is_unavailable);
+    const cardClass = `formation-player-card tone-${getRosterPlayerCardTone(player, slot)}${isSelected ? ' is-selected' : ''}${isUnavailable ? ' is-unavailable' : ''}`;
     const role = getRosterPlayerCardRole(player, slot);
-    const interactive = options.interactive !== false;
+    const interactive = options.interactive !== false && !(isUnavailable && source === 'bench');
     const hasHeigoPower = player.heigo_power !== null && player.heigo_power !== undefined && player.heigo_power !== '';
     const heigoPower = hasHeigoPower ? Number(player.heigo_power) : Number.NaN;
     const interactionAttrs = interactive
-        ? `draggable="true" data-source="${escapeHtml(source)}" data-source-value="${escapeHtml(sourceValue)}" onclick="handleRosterFormationCardTap(event, ${htmlJsString(source)}, ${htmlJsString(sourceValue)})" ondragstart="handleRosterFormationDragStart(event, ${htmlJsString(source)}, ${htmlJsString(sourceValue)})" ondragend="handleRosterFormationDragEnd(event)" title="拖拽或点击更换球员"`
-        : 'draggable="false"';
+        ? `draggable="true" data-source="${escapeHtml(source)}" data-source-value="${escapeHtml(sourceValue)}" onclick="handleRosterFormationCardTap(event, ${htmlJsString(source)}, ${htmlJsString(sourceValue)})" ondragstart="handleRosterFormationDragStart(event, ${htmlJsString(source)}, ${htmlJsString(sourceValue)})" ondragend="handleRosterFormationDragEnd(event)" title="${isUnavailable ? '该球员当前停赛，可移出首发但不能重新选入' : '拖拽或点击更换球员'}"`
+        : `draggable="false" title="${escapeHtml(player.suspension_label || '该球员当前停赛，不能选入下场阵容')}"`;
     return `
         <div class="${cardClass}${interactive ? '' : ' is-static'}" ${interactionAttrs}>
             <span class="formation-shirt-icon" aria-hidden="true"></span>
@@ -590,6 +592,7 @@ function buildRosterFormationCard(player, options = {}) {
             <strong data-short-name="${escapeHtml(getRosterPlayerShortName(player.name))}">${escapeHtml(player.name || '-')}</strong>
             <span class="formation-card-meta">${escapeHtml(player.position || '-')}</span>
             <span class="formation-card-power">HEIGO ${Number.isFinite(heigoPower) ? heigoPower.toFixed(2) : '--'}</span>
+            ${isUnavailable ? `<span class="formation-card-availability">停赛 · ${escapeHtml(player.suspension_label || '当前不可用')}</span>` : ''}
         </div>
     `;
 }
@@ -636,6 +639,13 @@ function swapRosterFormationSlots(sourceSlotKey, targetSlotKey) {
 function moveRosterBenchPlayerToSlot(playerUid, targetSlotKey) {
     if (!playerUid || !targetSlotKey) return;
     const normalizedUid = Number(playerUid);
+    const player = getRosterTeamPlayers(rosterFormationState.teamName).find(item => Number(item.uid) === normalizedUid);
+    if (player?.is_unavailable) {
+        rosterFormationState.saveMessage = `${player.name} 当前停赛，不能进入下场阵容`;
+        rosterFormationState.saveState = 'warning';
+        refreshRosterFormationModal();
+        return;
+    }
     for (const [slotKey, uid] of Object.entries(rosterFormationState.picks || {})) {
         if (Number(uid) === normalizedUid) {
             delete rosterFormationState.picks[slotKey];
@@ -785,8 +795,8 @@ function buildFormationPlayerOptions(players, selectedUid, slot) {
         '<option value="">空位</option>',
         ...sorted.map(player => {
             const uid = Number(player.uid);
-            const disabled = usedByOtherSlots.has(uid) ? ' disabled' : '';
-            const label = `${player.name} · ${player.position || '-'} · CA ${player.ca || '-'}`;
+            const disabled = usedByOtherSlots.has(uid) || player.is_unavailable ? ' disabled' : '';
+            const label = `${player.name} · ${player.position || '-'} · CA ${player.ca || '-'}${player.is_unavailable ? ' · 停赛' : ''}`;
             return `<option value="${uid}"${uid === selected ? ' selected' : ''}${disabled}>${escapeHtml(label)}</option>`;
         }),
     ].join('');
@@ -798,6 +808,7 @@ function renderRosterFormationModal() {
     const players = getRosterTeamPlayers(teamName);
     const slots = getRosterBoardSlots();
     const benchPlayers = getRosterBenchPlayers();
+    const unavailablePlayers = players.filter(player => player.is_unavailable);
     const canEdit = canEditRosterFormation(team);
     const formationOptions = Object.keys(ROSTER_FORMATIONS)
         .map(key => `<option value="${escapeHtml(key)}"${key === rosterFormationState.formation ? ' selected' : ''}>${escapeHtml(key)}</option>`)
@@ -825,6 +836,7 @@ function renderRosterFormationModal() {
                 ${rosterFormationState.saveMessage ? `<span class="formation-save-message is-${escapeHtml(rosterFormationState.saveState || 'idle')}" role="${rosterFormationState.saveState === 'error' ? 'alert' : 'status'}" aria-live="${rosterFormationState.saveState === 'error' ? 'assertive' : 'polite'}">${escapeHtml(rosterFormationState.saveMessage)}</span>` : ''}
             </div>
             ${canEdit ? '' : '<div class="formation-readonly-note capture-exclude">当前为公开预览；只有本队主教练或完整管理员可以调整并保存阵容。</div>'}
+            ${unavailablePlayers.length ? `<div class="formation-suspension-note capture-exclude"><strong>下场停赛球员不可选</strong><span>${unavailablePlayers.map(player => `${escapeHtml(player.name)}（${escapeHtml(player.suspension_label || '当前不可用')}）`).join('、')}</span></div>` : ''}
             <section id="rosterFormationCapture" class="formation-capture surface-card" data-team-name="${escapeHtml(teamName)}" onclick="clearRosterFormationSelection()">
                 <div class="formation-capture-head">
                     <div>
@@ -913,6 +925,14 @@ async function saveRosterFormation() {
     const pickedUids = Object.values(rosterFormationState.picks || {}).map(uid => Number(uid)).filter(Boolean);
     if (pickedUids.length !== 11 || new Set(pickedUids).size !== 11) {
         rosterFormationState.saveMessage = '请先在场上安排恰好 11 名不同球员';
+        rosterFormationState.saveState = 'warning';
+        refreshRosterFormationModal();
+        return;
+    }
+    const unavailablePicked = getRosterTeamPlayers(rosterFormationState.teamName)
+        .filter(player => player.is_unavailable && pickedUids.includes(Number(player.uid)));
+    if (unavailablePicked.length) {
+        rosterFormationState.saveMessage = `停赛球员不能进入下场阵容：${unavailablePicked.map(player => player.name).join('、')}`;
         rosterFormationState.saveState = 'warning';
         refreshRosterFormationModal();
         return;

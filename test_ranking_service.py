@@ -5,8 +5,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import RankingMatch, RankingSeed, Team
-from schemas_write import RankingMatchCreateRequest
+from models import RankingMatch, RankingSeed, SiteNote, Team
+from schemas_write import RankingCutoffUpdateRequest, RankingMatchCreateRequest
 from services import ranking_service
 
 
@@ -101,6 +101,32 @@ class RankingServiceTests(unittest.TestCase):
         self.assertEqual(self.row(payload, "Alpha FC").base_points, 900)
         self.assertEqual(self.row(payload, "Beta FC").base_points, 1100)
         self.assertEqual(payload.total_matches, 1)
+
+    def test_cutoff_floor_can_be_saved_and_cleared(self):
+        logs = []
+
+        payload = ranking_service.update_ranking_cutoff(
+            self.db,
+            "operator",
+            RankingCutoffUpdateRequest(cutoff_floor=128),
+            lambda *args: logs.append(args),
+        )
+
+        self.assertEqual(payload.cutoff_floor, 128)
+        note = self.db.query(SiteNote).filter(SiteNote.key == ranking_service.RANKING_CUTOFF_NOTE_KEY).one()
+        self.assertEqual(note.text, "128")
+        self.assertEqual(note.updated_by, "operator")
+        self.assertEqual(logs[-1][0], "排位统计截止楼层更新")
+
+        payload = ranking_service.update_ranking_cutoff(
+            self.db,
+            "operator",
+            RankingCutoffUpdateRequest(cutoff_floor=None),
+            lambda *_args: None,
+        )
+
+        self.assertIsNone(payload.cutoff_floor)
+        self.assertEqual(note.text, "")
 
 
 if __name__ == "__main__":

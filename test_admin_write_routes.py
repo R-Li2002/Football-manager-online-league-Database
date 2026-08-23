@@ -100,6 +100,31 @@ class AdminWriteRoutesTest(unittest.TestCase):
         self.assertIn(archive_guard, archive_dependencies)
         self.assertNotIn(draw_guard, archive_dependencies)
 
+    def test_ranking_cutoff_route_uses_ranking_permission(self):
+        ranking_guard = lambda: "ranking-operator"
+        router = build_admin_write_router(
+            lambda: self.db,
+            lambda: "HEIGO01",
+            lambda: "HEIGO01",
+            lambda: "HEIGO01",
+            lambda: "HEIGO01",
+            ranking_guard,
+            lambda: "HEIGO01",
+            lambda: "HEIGO01",
+            lambda *_args, **_kwargs: None,
+            lambda *_args, **_kwargs: None,
+            lambda *_args: None,
+        )
+
+        route = next(
+            route
+            for route in router.routes
+            if route.path == "/api/admin/rankings/cutoff" and "PATCH" in route.methods
+        )
+        dependencies = {dependency.call for dependency in route.dependant.dependencies}
+
+        self.assertIn(ranking_guard, dependencies)
+
 
 if __name__ == "__main__":
     unittest.main()

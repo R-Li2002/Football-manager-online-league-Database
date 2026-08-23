@@ -159,6 +159,10 @@ class RankingMatchCreateRequest(BaseModel):
     result: Literal["home", "draw", "away"]
 
 
+class RankingCutoffUpdateRequest(BaseModel):
+    cutoff_floor: Optional[int] = Field(default=None, ge=1, le=1000000)
+
+
 class CupMatchTeamsUpdateRequest(BaseModel):
     home_team_id: Optional[int] = None
     away_team_id: Optional[int] = None
@@ -189,6 +193,7 @@ class SuspensionRecordUpdateRequest(BaseModel):
     yellow_card_suspended: bool = False
     red_card_suspended: bool = False
     red_injury_suspended: bool = False
+    suspension_matches: int = Field(default=1, ge=1, le=99)
     notes: Optional[str] = None
     merge_existing: bool = False
     merge_base_yellow_cards: Optional[int] = None

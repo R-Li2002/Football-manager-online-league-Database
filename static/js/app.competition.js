@@ -6,7 +6,7 @@ var currentCupPhase = 'knockout';
 var standingsData = {levels: [], rows: []};
 var scheduleData = {levels: [], rounds: [], matches: []};
 var playerRankingData = {levels: [], rows: []};
-var rankingData = {initial_points: 1000, appearance_bonus: 20, transfer_rate: 0.1, total_matches: 0, rows: [], matches: []};
+var rankingData = {initial_points: 1000, appearance_bonus: 20, transfer_rate: 0.1, cutoff_floor: null, total_matches: 0, rows: [], matches: []};
 var suspensionData = {levels: [], teams: []};
 var seasonArchiveData = [];
 var siteNotesData = {};
@@ -79,6 +79,7 @@ var currentCompetitionWorkTargetMatchId = null;
 var competitionAssignableAccounts = [];
 var competitionWorkPanelExpanded = false;
 var rankingMatchMutationBusy = false;
+var rankingCutoffMutationBusy = false;
 const SUSPENSION_IMAGE_MAX_BYTES = (4 * 1024 * 1024) - (64 * 1024);
 const SUSPENSION_IMAGE_TARGET_PIXELS = 6500000;
 const SUSPENSION_IMAGE_MIN_WIDTH = 640;
@@ -593,6 +594,22 @@ function renderRankingMatches() {
     `).join('')}</div>`;
 }
 
+function renderRankingCutoff() {
+    const cutoff = Number(rankingData.cutoff_floor || 0);
+    return `
+        <div class="ranking-cutoff-row">
+            <p>统计截止到排位贴<strong>${cutoff > 0 ? `第 ${cutoff} 楼` : '尚未填写'}</strong></p>
+            ${canManageRankingMatches() ? `
+                <label class="ranking-cutoff-editor capture-exclude">
+                    <span>截止楼层</span>
+                    <input id="rankingCutoffFloor" type="number" min="1" max="1000000" step="1" inputmode="numeric" value="${cutoff || ''}" placeholder="例如 128" onchange="saveRankingCutoff()">
+                    <em id="rankingCutoffSaveState">修改后自动保存</em>
+                </label>
+            ` : ''}
+        </div>
+    `;
+}
+
 function renderRankingBoard() {
     const container = document.getElementById('ratingBoard');
     if (!container) return;
@@ -613,6 +630,7 @@ function renderRankingBoard() {
                         </div>
                         <div class="ranking-rule-strip" aria-label="排位规则"><span><small>初始基础分</small><strong>${formatRankingPoints(rankingData.initial_points)}</strong></span><span><small>胜负转移</small><strong>${Number(rankingData.transfer_rate || 0) * 100}%</strong></span><span><small>每场奖励</small><strong>+${formatRankingPoints(rankingData.appearance_bonus)}</strong></span></div>
                     </div>
+                    ${renderRankingCutoff()}
                 </header>
                 <div class="ranking-table-wrap">
                     <table class="ranking-table">
@@ -637,6 +655,38 @@ function renderRankingBoard() {
             </aside>
         </section>
     `;
+}
+
+async function saveRankingCutoff() {
+    if (!canManageRankingMatches() || rankingCutoffMutationBusy) return;
+    const input = document.getElementById('rankingCutoffFloor');
+    const state = document.getElementById('rankingCutoffSaveState');
+    const raw = String(input?.value || '').trim();
+    const cutoffFloor = raw === '' ? null : Number(raw);
+    if (cutoffFloor !== null && (!Number.isInteger(cutoffFloor) || cutoffFloor < 1 || cutoffFloor > 1000000)) {
+        if (state) state.textContent = '请填写有效楼层';
+        input?.focus();
+        return;
+    }
+    rankingCutoffMutationBusy = true;
+    if (input) input.disabled = true;
+    if (state) state.textContent = '保存中';
+    try {
+        const result = await workJsonRequest('/api/admin/rankings/cutoff', {
+            method: 'PATCH', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({cutoff_floor: cutoffFloor}),
+        });
+        if (!result) return;
+        if (!result.response.ok) {
+            if (state) state.textContent = result.data.detail || '保存失败';
+            return;
+        }
+        rankingData = result.data;
+        renderRankingBoard();
+    } finally {
+        rankingCutoffMutationBusy = false;
+        if (input?.isConnected) input.disabled = false;
+    }
 }
 
 async function saveRankingMatch() {
@@ -3095,11 +3145,13 @@ function resetSuspensionEditorFields(teamId, mode = 'merge') {
     const yellowSuspendedInput = document.getElementById(`suspension-yellow-suspended-${teamId}`);
     const redInput = document.getElementById(`suspension-red-${teamId}`);
     const injuryInput = document.getElementById(`suspension-injury-${teamId}`);
+    const matchesInput = document.getElementById(`suspension-matches-${teamId}`);
     const notesInput = document.getElementById(`suspension-notes-${teamId}`);
     if (yellowInput) yellowInput.value = '0';
     if (yellowSuspendedInput) yellowSuspendedInput.checked = false;
     if (redInput) redInput.checked = false;
     if (injuryInput) injuryInput.checked = false;
+    if (matchesInput) matchesInput.value = '1';
     if (notesInput) notesInput.value = '';
     suspensionRecordEntryModes.set(Number(teamId), mode);
     suspensionRecordLastSavedSignatures.delete(Number(teamId));
@@ -3167,6 +3219,12 @@ function getSuspensionRecordLabel(record) {
     if (yellows > 0) labels.push(`额外${yellows}黄`);
     if (record.red_card_suspended) labels.push('红牌');
     if (record.red_injury_suspended) labels.push('红伤');
+    if (record.yellow_card_suspended || record.red_card_suspended || record.red_injury_suspended) {
+        const total = Math.max(1, Number(record.suspension_matches || 1));
+        const remaining = Math.max(0, Number(record.suspension_remaining_matches ?? total));
+        const rounds = [...new Set((record.suspension_affected_rounds || []).map(Number).filter(Number.isInteger))];
+        labels.push(`停赛共${total}场${remaining < total ? `，剩余${remaining}场` : ''}${rounds.length ? `，影响${rounds.map(roundNo => `第${roundNo}轮`).join('、')}` : ''}`);
+    }
     return labels.join(' / ') || '记录';
 }
 
@@ -3215,6 +3273,7 @@ function renderSuspensionEditor(team) {
             <label class="suspension-check"><input id="suspension-yellow-suspended-${teamId}" type="checkbox" onchange="queueSuspensionRecordSave(${teamId}, true)">3黄停赛</label>
             <label class="suspension-check"><input id="suspension-red-${teamId}" type="checkbox" onchange="queueSuspensionRecordSave(${teamId}, true)">红牌</label>
             <label class="suspension-check"><input id="suspension-injury-${teamId}" type="checkbox" onchange="queueSuspensionRecordSave(${teamId}, true)">红伤</label>
+            <label class="suspension-matches-field"><span>停赛场次</span><input id="suspension-matches-${teamId}" type="number" min="1" max="99" step="1" inputmode="numeric" value="1" onchange="queueSuspensionRecordSave(${teamId}, true)" onblur="queueSuspensionRecordSave(${teamId}, true)"></label>
             <input id="suspension-notes-${teamId}" type="text" placeholder="备注" oninput="queueSuspensionRecordSave(${teamId})" onblur="queueSuspensionRecordSave(${teamId}, true)">
             <span class="ui-save-state suspension-record-save-state" id="suspension-record-state-${teamId}" aria-live="polite">选择球员后自动保存</span>
         </div>
@@ -3699,12 +3758,17 @@ function getSuspensionRecordDraft(teamId) {
     const mergeBaseYellowCards = getLocalSuspensionRecordsForPlayer(player, numericTeamId)
         .reduce((total, record) => total + Number(record.yellow_cards || 0), 0);
     const yellowCards = Number(document.getElementById(`suspension-yellows-${numericTeamId}`)?.value || 0);
+    const suspensionMatches = Number(document.getElementById(`suspension-matches-${numericTeamId}`)?.value || 1);
+    if (!Number.isInteger(suspensionMatches) || suspensionMatches < 1 || suspensionMatches > 99) {
+        return {error: '停赛场次只能填写 1 到 99'};
+    }
     const payload = {
         player_uid: Number(player.uid),
         yellow_cards: yellowCards,
         yellow_card_suspended: Boolean(document.getElementById(`suspension-yellow-suspended-${numericTeamId}`)?.checked),
         red_card_suspended: Boolean(document.getElementById(`suspension-red-${numericTeamId}`)?.checked),
         red_injury_suspended: Boolean(document.getElementById(`suspension-injury-${numericTeamId}`)?.checked),
+        suspension_matches: suspensionMatches,
         notes: String(document.getElementById(`suspension-notes-${numericTeamId}`)?.value || '').trim(),
         merge_existing: mergeMode,
         merge_base_yellow_cards: mergeMode ? mergeBaseYellowCards : null,
@@ -3791,6 +3855,12 @@ function applySuspensionRecordToLocalData(teamId, player, payload, savedRecord =
         yellow_card_suspended: Boolean(source.yellow_card_suspended),
         red_card_suspended: Boolean(source.red_card_suspended),
         red_injury_suspended: Boolean(source.red_injury_suspended),
+        suspension_matches: Math.max(1, Number(source.suspension_matches || 1)),
+        suspension_active: Boolean(source.suspension_active ?? (source.yellow_card_suspended || source.red_card_suspended || source.red_injury_suspended)),
+        suspension_served_matches: Math.max(0, Number(source.suspension_served_matches || 0)),
+        suspension_remaining_matches: Math.max(0, Number(source.suspension_remaining_matches ?? source.suspension_matches ?? 1)),
+        suspension_affected_match_ids: Array.isArray(source.suspension_affected_match_ids) ? source.suspension_affected_match_ids.map(Number) : [],
+        suspension_affected_rounds: Array.isArray(source.suspension_affected_rounds) ? source.suspension_affected_rounds.map(Number) : [],
         notes: String(source.notes || '').trim(),
         updated_at: source.updated_at || new Date().toISOString(),
     };
@@ -3931,6 +4001,7 @@ function fillSuspensionEditor(teamId, playerUid, recordOverride = null) {
     const yellowSuspendedInput = document.getElementById(`suspension-yellow-suspended-${teamId}`);
     const redInput = document.getElementById(`suspension-red-${teamId}`);
     const injuryInput = document.getElementById(`suspension-injury-${teamId}`);
+    const matchesInput = document.getElementById(`suspension-matches-${teamId}`);
     const notesInput = document.getElementById(`suspension-notes-${teamId}`);
     if (playerInput) {
         playerInput.value = record.player_name;
@@ -3940,6 +4011,7 @@ function fillSuspensionEditor(teamId, playerUid, recordOverride = null) {
     if (yellowSuspendedInput) yellowSuspendedInput.checked = Boolean(record.yellow_card_suspended);
     if (redInput) redInput.checked = Boolean(record.red_card_suspended);
     if (injuryInput) injuryInput.checked = Boolean(record.red_injury_suspended);
+    if (matchesInput) matchesInput.value = String(Math.max(1, Number(record.suspension_matches || 1)));
     if (notesInput) notesInput.value = record.notes || '';
     suspensionRecordEntryModes.set(Number(teamId), 'replace');
     const payload = {
@@ -3948,6 +4020,7 @@ function fillSuspensionEditor(teamId, playerUid, recordOverride = null) {
         yellow_card_suspended: Boolean(record.yellow_card_suspended),
         red_card_suspended: Boolean(record.red_card_suspended),
         red_injury_suspended: Boolean(record.red_injury_suspended),
+        suspension_matches: Math.max(1, Number(record.suspension_matches || 1)),
         notes: String(record.notes || '').trim(),
         merge_existing: false,
         merge_base_yellow_cards: null,
@@ -3964,6 +4037,7 @@ async function clearSuspensionRecord(playerUid) {
         yellow_card_suspended: false,
         red_card_suspended: false,
         red_injury_suspended: false,
+        suspension_matches: 1,
         notes: '',
     });
     if (!result.success) return;

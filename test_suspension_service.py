@@ -3,13 +3,14 @@ from io import BytesIO
 
 from fastapi import HTTPException
 from openpyxl import load_workbook
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import Match, Player, PlayerSuspensionRecord, Team
-from schemas_write import SiteNoteUpdateRequest, SuspensionRecordUpdateRequest
-from services import export_service, site_note_service, suspension_service
+from models import Match, Player, PlayerSuspensionRecord, PlayerSuspensionServedMatch, Team
+from schemas_write import MatchUpdateRequest, SiteNoteUpdateRequest, SuspensionRecordUpdateRequest
+from services import export_service, match_service, site_note_service, suspension_service
 
 
 class SuspensionServiceTest(unittest.TestCase):
@@ -75,6 +76,88 @@ class SuspensionServiceTest(unittest.TestCase):
         self.assertEqual([item.player_uid for item in alpha.two_yellows], [102])
         self.assertEqual([item.player_uid for item in alpha.suspended], [103])
         self.assertIn("Alpha Three: 停赛备注", alpha.notes)
+        self.assertEqual(alpha.suspended[0].suspension_matches, 1)
+
+    def test_suspension_match_count_defaults_to_one_and_can_be_edited(self):
+        first = self._save(101, yellow_cards=3)
+        self.assertEqual(first["record"]["suspension_matches"], 1)
+
+        updated = self._save(101, yellow_cards=0, yellow_card_suspended=True, suspension_matches=2)
+
+        record = self.db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_uid == 101).one()
+        self.assertEqual(record.suspension_matches, 2)
+        self.assertEqual(updated["record"]["suspension_matches"], 2)
+
+    def test_incremental_merge_does_not_reduce_existing_suspension_match_count(self):
+        self._save(101, yellow_cards=3, suspension_matches=2)
+
+        result = self._save(
+            101,
+            yellow_cards=1,
+            suspension_matches=1,
+            merge_existing=True,
+            merge_base_yellow_cards=0,
+        )
+
+        self.assertEqual(result["record"]["suspension_matches"], 2)
+
+    def test_suspension_match_count_rejects_values_outside_supported_range(self):
+        for value in (0, 100):
+            with self.assertRaises(ValidationError):
+                SuspensionRecordUpdateRequest(player_uid=101, yellow_cards=3, suspension_matches=value)
+
+    def test_suspension_is_consumed_by_next_effective_matches_and_restored_on_revert(self):
+        first_match = self._add_match(1)
+        second_match = self._add_match(2)
+        self._add_match(3)
+
+        saved = self._save(101, yellow_cards=3, suspension_matches=2)
+
+        self.assertTrue(saved["record"]["suspension_active"])
+        self.assertEqual(saved["record"]["suspension_remaining_matches"], 2)
+        self.assertEqual(saved["record"]["suspension_affected_rounds"], [1, 2])
+
+        match_service.update_match_result(
+            self.db,
+            "editor",
+            first_match.id,
+            MatchUpdateRequest(home_score=1, away_score=0, status="played"),
+            lambda *_args: None,
+        )
+        response = suspension_service.get_suspensions(self.db, team_id=self.team.id)
+        active = response.teams[0].suspended[0]
+        self.assertEqual(active.suspension_served_matches, 1)
+        self.assertEqual(active.suspension_remaining_matches, 1)
+        self.assertEqual(active.suspension_affected_rounds, [2])
+
+        match_service.update_match_result(
+            self.db,
+            "editor",
+            second_match.id,
+            MatchUpdateRequest(home_score=2, away_score=0, status="played"),
+            lambda *_args: None,
+        )
+        response = suspension_service.get_suspensions(self.db, team_id=self.team.id)
+        self.assertEqual(response.teams[0].suspended, [])
+        self.assertEqual(
+            self.db.query(PlayerSuspensionServedMatch).filter(
+                PlayerSuspensionServedMatch.suspension_record_id
+                == self.db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.player_uid == 101).one().id
+            ).count(),
+            2,
+        )
+
+        match_service.update_match_result(
+            self.db,
+            "editor",
+            second_match.id,
+            MatchUpdateRequest(home_score=None, away_score=None, status="scheduled"),
+            lambda *_args: None,
+        )
+        response = suspension_service.get_suspensions(self.db, team_id=self.team.id)
+        restored = response.teams[0].suspended[0]
+        self.assertEqual(restored.suspension_remaining_matches, 1)
+        self.assertEqual(restored.suspension_affected_rounds, [2])
 
     def test_incremental_entry_merges_with_existing_yellow_cards(self):
         self._save(101, yellow_cards=1)
@@ -335,6 +418,9 @@ class SuspensionServiceTest(unittest.TestCase):
         self.assertEqual(player_detail["状态分类"], "2张黄牌")
         self.assertEqual(player_detail["额外黄牌数"], 2)
         self.assertEqual(player_detail["3黄停赛"], "否")
+        self.assertEqual(player_detail["停赛场次"], 1)
+        self.assertEqual(player_detail["已执行场次"], 0)
+        self.assertEqual(player_detail["剩余停赛场次"], 0)
         self.assertEqual(player_detail["球员备注"], "球员说明")
         self.assertEqual(player_detail["球队更新备注"], "更新至第 8 轮赛后")
 

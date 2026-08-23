@@ -527,8 +527,27 @@ class PlayerSuspensionRecord(Base):
     yellow_card_suspended = Column(Integer, default=0)
     red_card_suspended = Column(Integer, default=0)
     red_injury_suspended = Column(Integer, default=0)
+    suspension_matches = Column(Integer, nullable=False, default=1)
+    suspension_started_at = Column(DateTime)
     notes = Column(Text)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class PlayerSuspensionServedMatch(Base):
+    __tablename__ = "player_suspension_served_matches"
+    __table_args__ = (
+        UniqueConstraint("suspension_record_id", "match_id", name="uq_suspension_served_record_match"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    suspension_record_id = Column(
+        Integer,
+        ForeignKey("player_suspension_records.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    match_id = Column(Integer, ForeignKey("matches.id", ondelete="CASCADE"), index=True, nullable=False)
+    served_at = Column(DateTime, nullable=False, default=datetime.now)
 
 
 class CandidateList(Base):

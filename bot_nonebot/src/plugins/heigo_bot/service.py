@@ -265,6 +265,10 @@ class HeigoBotService:
             labels.append("红牌停赛")
         if player.get("red_injury_suspended"):
             labels.append("红伤停赛")
+        if player.get("yellow_card_suspended") or player.get("red_card_suspended") or player.get("red_injury_suspended"):
+            total = max(1, int(player.get("suspension_matches") or 1))
+            remaining = max(0, int(player.get("suspension_remaining_matches") or total))
+            labels.append(f"停赛{total}场" + (f"、剩余{remaining}场" if remaining < total else ""))
         return f"{player.get('player_name') or '-'}（{'、'.join(labels) or '状态关注'}）"
 
     async def _handle_league_suspensions(self, command: CommandSpec) -> ReplySpec:
@@ -311,7 +315,9 @@ class HeigoBotService:
         rows = list(payload.get("rows") or [])
         if not rows:
             return ReplySpec(reply_type="text", text="HEIGO 排位积分榜暂时没有数据。")
-        lines = [f"HEIGO 排位积分榜｜{len(rows)} 支球队｜{int(payload.get('total_matches') or 0)} 场赛果", "前 20 名："]
+        cutoff = int(payload.get("cutoff_floor") or 0)
+        cutoff_label = f"｜统计截止到排位贴第{cutoff}楼" if cutoff > 0 else ""
+        lines = [f"HEIGO 排位积分榜｜{len(rows)} 支球队｜{int(payload.get('total_matches') or 0)} 场赛果{cutoff_label}", "前 20 名："]
         for row in rows[:20]:
             lines.append(
                 f"{int(row.get('rank') or 0)}. {self._display_team_name(str(row.get('team_name') or ''))}｜"

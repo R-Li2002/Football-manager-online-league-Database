@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from models import Match, Player, PlayerSuspensionRecord, SiteNote, Team
+from models import Match, Player, PlayerSuspensionRecord, PlayerSuspensionServedMatch, SiteNote, Team
 from schemas_read import (
     SuspensionPlayerResponse,
     SuspensionProgressResponse,
@@ -24,7 +24,17 @@ SUSPENSION_TEAM_NOTE_PREFIX = f"{SUSPENSION_NOTE_PREFIX}.team"
 MAX_YELLOW_CARDS_PER_ENTRY = 3
 
 
-def _record_response(record: PlayerSuspensionRecord) -> SuspensionPlayerResponse:
+def _record_response(
+    record: PlayerSuspensionRecord,
+    *,
+    served_match_ids: set[int] | None = None,
+    affected_matches: list[Match] | None = None,
+) -> SuspensionPlayerResponse:
+    total_matches = max(1, int(record.suspension_matches or 1))
+    served_count = min(total_matches, len(served_match_ids or set()))
+    remaining_matches = max(0, total_matches - served_count) if _is_suspended(record) else 0
+    suspension_active = _is_suspended(record) and remaining_matches > 0
+    affected = (affected_matches or [])[:remaining_matches] if suspension_active else []
     return SuspensionPlayerResponse(
         player_uid=record.player_uid,
         player_name=record.player_name,
@@ -32,9 +42,15 @@ def _record_response(record: PlayerSuspensionRecord) -> SuspensionPlayerResponse
         team_name=record.team_name,
         level=record.level,
         yellow_cards=int(record.yellow_cards or 0),
-        yellow_card_suspended=bool(record.yellow_card_suspended),
-        red_card_suspended=bool(record.red_card_suspended),
-        red_injury_suspended=bool(record.red_injury_suspended),
+        yellow_card_suspended=bool(record.yellow_card_suspended) and suspension_active,
+        red_card_suspended=bool(record.red_card_suspended) and suspension_active,
+        red_injury_suspended=bool(record.red_injury_suspended) and suspension_active,
+        suspension_matches=total_matches,
+        suspension_active=suspension_active,
+        suspension_served_matches=served_count,
+        suspension_remaining_matches=remaining_matches,
+        suspension_affected_match_ids=[int(match.id) for match in affected],
+        suspension_affected_rounds=[int(match.round_no) for match in affected],
         notes=record.notes,
         updated_at=record.updated_at,
     )
@@ -42,6 +58,33 @@ def _record_response(record: PlayerSuspensionRecord) -> SuspensionPlayerResponse
 
 def _is_suspended(record: PlayerSuspensionRecord) -> bool:
     return bool(record.yellow_card_suspended) or bool(record.red_card_suspended) or bool(record.red_injury_suspended)
+
+
+def _is_completed_match(match: Match) -> bool:
+    return bool(
+        match.status in PLAYED_MATCH_STATUSES
+        and match.home_score is not None
+        and match.away_score is not None
+    )
+
+
+def _completed_serving_rows(
+    db: Session,
+    suspension_record_ids: list[int],
+) -> list[PlayerSuspensionServedMatch]:
+    if not suspension_record_ids:
+        return []
+    return (
+        db.query(PlayerSuspensionServedMatch)
+        .join(Match, Match.id == PlayerSuspensionServedMatch.match_id)
+        .filter(
+            PlayerSuspensionServedMatch.suspension_record_id.in_(suspension_record_ids),
+            Match.status.in_(PLAYED_MATCH_STATUSES),
+            Match.home_score.is_not(None),
+            Match.away_score.is_not(None),
+        )
+        .all()
+    )
 
 
 def _team_sort_key(team: Team) -> tuple[int, str]:
@@ -204,6 +247,91 @@ def _build_suspension_progress(
     )
 
 
+def _pending_matches_for_progress(
+    team: Team,
+    matches: list[Match],
+    progress: SuspensionProgressResponse,
+) -> list[Match]:
+    gap_rounds = set(progress.match_gap_rounds or [])
+    pending = [
+        match
+        for match in matches
+        if _match_belongs_to_team(match, team)
+        and match.status in {"scheduled", "postponed"}
+        and (match.home_score is None or match.away_score is None)
+        and (
+            int(match.round_no) in gap_rounds
+            or match.status == "postponed"
+            or int(match.round_no) > int(progress.progress_floor_round or 0)
+        )
+    ]
+    pending.sort(
+        key=lambda match: (
+            0 if int(match.round_no) in gap_rounds else 1 if match.status == "postponed" else 2,
+            match.match_date or datetime.max,
+            int(match.round_no),
+            int(match.id),
+        )
+    )
+    return pending
+
+
+def sync_suspension_serving_for_match(
+    db: Session,
+    match: Match,
+    *,
+    was_completed: bool,
+) -> list[str]:
+    existing_rows = (
+        db.query(PlayerSuspensionServedMatch)
+        .filter(PlayerSuspensionServedMatch.match_id == match.id)
+        .all()
+    )
+    if not _is_completed_match(match):
+        for row in existing_rows:
+            db.delete(row)
+        return []
+    if was_completed:
+        return []
+
+    existing_record_ids = {int(row.suspension_record_id) for row in existing_rows}
+    team_ids = {int(value) for value in (match.home_team_id, match.away_team_id) if value is not None}
+    team_names = {str(value) for value in (match.home_team_name, match.away_team_name) if str(value or "").strip()}
+    team_filters = [PlayerSuspensionRecord.team_name.in_(team_names)]
+    if team_ids:
+        team_filters.append(PlayerSuspensionRecord.team_id.in_(team_ids))
+    records = (
+        db.query(PlayerSuspensionRecord)
+        .filter(
+            PlayerSuspensionRecord.level == match.level,
+            or_(*team_filters),
+        )
+        .all()
+    )
+    record_ids = [int(record.id) for record in records]
+    serving_rows = _completed_serving_rows(db, record_ids)
+    served_counts: dict[int, int] = {}
+    for row in serving_rows:
+        served_counts[int(row.suspension_record_id)] = served_counts.get(int(row.suspension_record_id), 0) + 1
+
+    consumed: list[str] = []
+    for record in records:
+        record_id = int(record.id)
+        if not _is_suspended(record) or record_id in existing_record_ids:
+            continue
+        if served_counts.get(record_id, 0) >= max(1, int(record.suspension_matches or 1)):
+            continue
+        db.add(
+            PlayerSuspensionServedMatch(
+                suspension_record_id=record_id,
+                match_id=int(match.id),
+                served_at=datetime.now(),
+            )
+        )
+        consumed.append(f"{record.team_name} / {record.player_name}")
+    return consumed
+
+
 def get_suspensions(
     db: Session,
     *,
@@ -242,6 +370,19 @@ def get_suspensions(
         .all()
     )
     notes_by_key = {note.key: note for note in note_rows if note.round_no is not None}
+    progress_by_team = {
+        team.id: _build_suspension_progress(
+            team,
+            matches,
+            notes_by_key.get(f"{SUSPENSION_TEAM_NOTE_PREFIX}.{team.id}"),
+            notes_by_key.get(f"{SUSPENSION_NOTE_PREFIX}.{team.level}"),
+        )
+        for team in teams
+    }
+    pending_matches_by_team = {
+        team.id: _pending_matches_for_progress(team, matches, progress_by_team[team.id])
+        for team in teams
+    }
 
     record_query = db.query(PlayerSuspensionRecord).filter(PlayerSuspensionRecord.level.in_(response_levels))
     if team_id is not None:
@@ -249,6 +390,14 @@ def get_suspensions(
             or_(PlayerSuspensionRecord.team_id.in_(team_ids), PlayerSuspensionRecord.team_name.in_(set(team_name_to_id)))
         )
     records = record_query.order_by(PlayerSuspensionRecord.team_name, PlayerSuspensionRecord.player_name).all()
+    record_ids = [int(record.id) for record in records]
+    serving_rows = _completed_serving_rows(db, record_ids)
+    match_by_id = {int(match.id): match for match in matches}
+    served_match_ids_by_record: dict[int, set[int]] = {}
+    for row in serving_rows:
+        served_match = match_by_id.get(int(row.match_id))
+        if served_match and _is_completed_match(served_match):
+            served_match_ids_by_record.setdefault(int(row.suspension_record_id), set()).add(int(row.match_id))
 
     grouped: dict[int, dict[str, list[SuspensionPlayerResponse] | list[str]]] = {
         team.id: {"one_yellow": [], "two_yellows": [], "suspended": [], "notes": []} for team in teams
@@ -273,8 +422,12 @@ def get_suspensions(
             )
         )
         target = grouped.get(team_id) if record_matches_current_team else orphaned_by_level[record.level]
-        response = _record_response(record)
-        if _is_suspended(record):
+        response = _record_response(
+            record,
+            served_match_ids=served_match_ids_by_record.get(int(record.id), set()),
+            affected_matches=pending_matches_by_team.get(team_id, []),
+        )
+        if response.suspension_active:
             target["suspended"].append(response)
         if int(record.yellow_cards or 0) == 2:
             target["two_yellows"].append(response)
@@ -311,12 +464,7 @@ def get_suspensions(
                 two_yellows=grouped[team.id]["two_yellows"],
                 suspended=grouped[team.id]["suspended"],
                 notes=grouped[team.id]["notes"],
-                progress=_build_suspension_progress(
-                    team,
-                    matches,
-                    notes_by_key.get(f"{SUSPENSION_TEAM_NOTE_PREFIX}.{team.id}"),
-                    notes_by_key.get(f"{SUSPENSION_NOTE_PREFIX}.{team.level}"),
-                ),
+                progress=progress_by_team[team.id],
             )
             for team in teams
         ] + orphaned_teams,
@@ -405,6 +553,8 @@ def update_suspension_record(
     operator = require_admin(admin)
     if request.yellow_cards < 0 or request.yellow_cards > MAX_YELLOW_CARDS_PER_ENTRY:
         raise HTTPException(status_code=400, detail=f"本次黄牌数只能填写 0 到 {MAX_YELLOW_CARDS_PER_ENTRY}")
+    if request.suspension_matches < 1 or request.suspension_matches > 99:
+        raise HTTPException(status_code=400, detail="停赛场次只能填写 1 到 99")
     if request.merge_base_yellow_cards is not None and (
         request.merge_base_yellow_cards < 0 or request.merge_base_yellow_cards > 2
     ):
@@ -430,6 +580,34 @@ def update_suspension_record(
     matching_records = _matching_suspension_records(db, player, team)
     record = next((item for item in matching_records if item.player_uid == player.uid), None)
     affected_levels = {item.level for item in matching_records if item.level in LEAGUE_LEVELS}
+    matching_record_ids = [int(item.id) for item in matching_records]
+    all_existing_serving_rows = (
+        db.query(PlayerSuspensionServedMatch)
+        .filter(PlayerSuspensionServedMatch.suspension_record_id.in_(matching_record_ids))
+        .all()
+        if matching_record_ids
+        else []
+    )
+    existing_serving_rows = _completed_serving_rows(db, matching_record_ids)
+    served_counts: dict[int, int] = {}
+    for serving_row in existing_serving_rows:
+        served_counts[int(serving_row.suspension_record_id)] = served_counts.get(int(serving_row.suspension_record_id), 0) + 1
+    active_existing_records = [
+        item
+        for item in matching_records
+        if _is_suspended(item)
+        and served_counts.get(int(item.id), 0) < max(1, int(item.suspension_matches or 1))
+    ]
+    active_existing_ids = {int(item.id) for item in active_existing_records}
+    preserved_served_match_ids = {
+        int(serving_row.match_id)
+        for serving_row in existing_serving_rows
+        if int(serving_row.suspension_record_id) in active_existing_ids
+    }
+    preserved_started_at = min(
+        (item.suspension_started_at for item in active_existing_records if item.suspension_started_at),
+        default=None,
+    )
     if not record:
         record = PlayerSuspensionRecord(player_uid=player.uid)
         db.add(record)
@@ -442,12 +620,16 @@ def update_suspension_record(
             requested_total = int(request.merge_base_yellow_cards) + int(request.yellow_cards or 0)
         yellow_card_suspended = (
             bool(request.yellow_card_suspended)
-            or any(bool(item.yellow_card_suspended) for item in matching_records)
+            or any(bool(item.yellow_card_suspended) for item in active_existing_records)
             or requested_total >= 3
         )
         yellow_cards = requested_total % 3 if requested_total >= 3 else requested_total
-        red_card_suspended = bool(request.red_card_suspended) or any(bool(item.red_card_suspended) for item in matching_records)
-        red_injury_suspended = bool(request.red_injury_suspended) or any(bool(item.red_injury_suspended) for item in matching_records)
+        red_card_suspended = bool(request.red_card_suspended) or any(bool(item.red_card_suspended) for item in active_existing_records)
+        red_injury_suspended = bool(request.red_injury_suspended) or any(bool(item.red_injury_suspended) for item in active_existing_records)
+        suspension_matches = max([
+            int(request.suspension_matches or 1),
+            *(max(1, int(item.suspension_matches or 1)) for item in active_existing_records),
+        ])
         notes = _merge_record_notes(matching_records, request.notes)
     else:
         requested_total = int(request.yellow_cards or 0)
@@ -455,8 +637,13 @@ def update_suspension_record(
         yellow_cards = requested_total % 3 if requested_total >= 3 else requested_total
         red_card_suspended = bool(request.red_card_suspended)
         red_injury_suspended = bool(request.red_injury_suspended)
+        suspension_matches = int(request.suspension_matches or 1)
         notes = str(request.notes or "").strip() or None
 
+    suspension_enabled = bool(yellow_card_suspended or red_card_suspended or red_injury_suspended)
+    preserve_existing_cycle = suspension_enabled and bool(active_existing_records)
+    for serving_row in all_existing_serving_rows:
+        db.delete(serving_row)
     duplicate_records = [item for item in matching_records if item is not record]
     for duplicate in duplicate_records:
         db.delete(duplicate)
@@ -469,8 +656,24 @@ def update_suspension_record(
     record.yellow_card_suspended = 1 if yellow_card_suspended else 0
     record.red_card_suspended = 1 if red_card_suspended else 0
     record.red_injury_suspended = 1 if red_injury_suspended else 0
+    record.suspension_matches = suspension_matches
+    record.suspension_started_at = (
+        preserved_started_at or now
+        if suspension_enabled
+        else None
+    )
     record.notes = notes
     record.updated_at = now
+    db.flush()
+    if preserve_existing_cycle:
+        for match_id in sorted(preserved_served_match_ids):
+            db.add(
+                PlayerSuspensionServedMatch(
+                    suspension_record_id=int(record.id),
+                    match_id=match_id,
+                    served_at=now,
+                )
+            )
     from services import competition_work_service
     affected_levels.add(team.level)
     for level in affected_levels:
@@ -488,10 +691,20 @@ def update_suspension_record(
     elif duplicate_records:
         message = "同名记录已合并并保存"
     write_to_log("伤停记录更新", f"{team.name} / {player.name}", operator)
+    team_payload = get_suspensions(db, team_id=team.id)
+    saved_response = None
+    for team_item in team_payload.teams:
+        for group_name in ("one_yellow", "two_yellows", "suspended"):
+            saved_response = next(
+                (item for item in getattr(team_item, group_name) if int(item.player_uid) == int(player.uid)),
+                saved_response,
+            )
+    if saved_response is None:
+        saved_response = _record_response(record)
     return {
         "success": True,
         "message": message,
-        "record": _record_response(record).model_dump(mode="json"),
+        "record": saved_response.model_dump(mode="json"),
         "merged": merged,
         "merged_record_count": len(matching_records),
     }

@@ -255,6 +255,10 @@ def _player_status(player: Any) -> str:
         labels.append("红牌停赛")
     if bool(player.red_injury_suspended):
         labels.append("红伤停赛")
+    if bool(player.yellow_card_suspended) or bool(player.red_card_suspended) or bool(player.red_injury_suspended):
+        total = max(1, int(player.suspension_matches or 1))
+        remaining = max(0, int(player.suspension_remaining_matches or total))
+        labels.append(f"停赛{total}场" + (f" / 剩余{remaining}场" if remaining < total else ""))
     if player.notes:
         labels.append(str(player.notes).strip())
     return "、".join(labels) or "状态关注"
@@ -471,13 +475,14 @@ def _build_rankings_svg(rankings: RankingsResponse) -> str:
         f"胜者取得败者赛前基础分的 {float(rankings.transfer_rate or 0) * 100:g}%"
         f" · 每完成一场总分另加 {_format_points(rankings.appearance_bonus)}"
     )
+    cutoff_label = f" · 截止排位贴第{int(rankings.cutoff_floor)}楼" if rankings.cutoff_floor else ""
     parts = _base_svg_parts(
         height,
         eyebrow="HEIGO RATING DESK",
         title="排位积分榜",
         subtitle=subtitle,
         level="HEIGO",
-        status_label=f"{len(rows)} 支球队 · {int(rankings.total_matches or 0)} 场赛果",
+        status_label=f"{len(rows)} 支球队 · {int(rankings.total_matches or 0)} 场赛果{cutoff_label}",
     )
     rule_items = (
         ("初始基础分", _format_points(rankings.initial_points), "BASE RATING", ACCENT_PRIMARY),

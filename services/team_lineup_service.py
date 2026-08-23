@@ -143,6 +143,21 @@ def save_team_lineup(
         if valid_uids != selected_uids:
             raise HTTPException(status_code=400, detail="阵容中包含不属于该球队的球员")
 
+        from services import suspension_service
+        suspension_payload = suspension_service.get_suspensions(db, team_id=team.id)
+        active_suspensions = {
+            int(item.player_uid): item
+            for team_item in suspension_payload.teams
+            for item in team_item.suspended
+        }
+        blocked = [active_suspensions[uid] for uid in selected_uids if uid in active_suspensions]
+        if blocked:
+            labels = "、".join(
+                f"{item.player_name}（剩余{int(item.suspension_remaining_matches)}场）"
+                for item in sorted(blocked, key=lambda row: str(row.player_name or ""))
+            )
+            raise HTTPException(status_code=400, detail=f"阵容中包含当前停赛球员：{labels}")
+
     record = db.query(TeamLineup).filter(TeamLineup.team_id == team.id).first()
     if not record:
         record = TeamLineup(team_id=team.id)

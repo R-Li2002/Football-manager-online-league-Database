@@ -5,15 +5,16 @@ from datetime import datetime
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from models import RankingMatch, RankingSeed, Team
+from models import RankingMatch, RankingSeed, SiteNote, Team
 from schemas_read import RankingMatchResponse, RankingsResponse, RankingStandingRowResponse
-from schemas_write import RankingMatchCreateRequest
+from schemas_write import RankingCutoffUpdateRequest, RankingMatchCreateRequest
 from services.admin_common import LogWriter
 
 LEAGUE_LEVELS = ("超级", "甲级", "乙级")
 INITIAL_POINTS = 1000.0
 TRANSFER_RATE = 0.1
 APPEARANCE_BONUS = 20.0
+RANKING_CUTOFF_NOTE_KEY = "competition.rankings.cutoff_floor"
 
 
 def _round_points(value: float) -> float:
@@ -26,6 +27,15 @@ def _result_label(match: RankingMatch) -> str:
     if int(match.home_score) < int(match.away_score):
         return "away"
     return "draw"
+
+
+def _get_cutoff_floor(db: Session) -> int | None:
+    note = db.query(SiteNote).filter(SiteNote.key == RANKING_CUTOFF_NOTE_KEY).first()
+    raw = str(note.text or "").strip() if note else ""
+    if not raw.isdigit():
+        return None
+    value = int(raw)
+    return value if value > 0 else None
 
 
 def get_rankings(db: Session) -> RankingsResponse:
@@ -105,10 +115,31 @@ def get_rankings(db: Session) -> RankingsResponse:
         initial_points=INITIAL_POINTS,
         appearance_bonus=APPEARANCE_BONUS,
         transfer_rate=TRANSFER_RATE,
+        cutoff_floor=_get_cutoff_floor(db),
         total_matches=len(valid_matches),
         rows=rows,
         matches=match_rows,
     )
+
+
+def update_ranking_cutoff(
+    db: Session,
+    operator: str,
+    request: RankingCutoffUpdateRequest,
+    write_to_log: LogWriter,
+) -> RankingsResponse:
+    note = db.query(SiteNote).filter(SiteNote.key == RANKING_CUTOFF_NOTE_KEY).first()
+    if not note:
+        note = SiteNote(key=RANKING_CUTOFF_NOTE_KEY)
+        db.add(note)
+    note.text = str(int(request.cutoff_floor)) if request.cutoff_floor is not None else ""
+    note.round_no = None
+    note.updated_by = operator
+    note.updated_at = datetime.now()
+    db.commit()
+    label = f"第 {request.cutoff_floor} 楼" if request.cutoff_floor is not None else "已清空"
+    write_to_log("排位统计截止楼层更新", label, operator)
+    return get_rankings(db)
 
 
 def create_ranking_match(

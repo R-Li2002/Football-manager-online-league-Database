@@ -2399,6 +2399,22 @@ body.light-mode .mobile-roster-stats span {
     line-height: 1.5;
 }
 
+.formation-suspension-note {
+    display: grid;
+    gap: 4px;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--state-danger) 34%, var(--border-color));
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--state-danger) 9%, var(--surface-muted));
+    color: var(--text-secondary);
+    font-size: .78rem;
+    line-height: 1.45;
+}
+
+.formation-suspension-note strong {
+    color: var(--state-danger);
+}
+
 .formation-capture {
     padding: 18px;
     border-radius: 28px;
@@ -2865,6 +2881,12 @@ body.light-mode .formation-board .formation-pitch {
         0 14px 30px rgba(0,0,0,0.28);
 }
 
+.formation-player-card.is-unavailable {
+    border-color: rgba(255, 112, 112, .72);
+    background: rgba(91, 28, 34, .9);
+    box-shadow: inset 0 0 0 1px rgba(255, 112, 112, .18), 0 12px 24px rgba(0, 0, 0, .24);
+}
+
 .formation-shirt-icon {
     grid-row: 1 / 4;
     position: relative;
@@ -2921,6 +2943,7 @@ body.light-mode .formation-board .formation-pitch {
 .formation-card-meta, .formation-card-power { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .formation-card-meta { color: rgba(234,255,251,.72); font-size: .58rem; }
 .formation-card-power { color: #82f6dc; font-size: .58rem; font-weight: 850; font-variant-numeric: tabular-nums; }
+.formation-card-availability { grid-column: 2; color: #ffb1b1; font-size: .52rem; font-weight: 850; line-height: 1.15; }
 .formation-player-card.is-static { cursor: default; }
 .formation-player-card.is-static:active { cursor: default; }
 .formation-save-message { min-height: 20px; color: var(--text-secondary); font-size: .74rem; }

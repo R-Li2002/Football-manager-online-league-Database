@@ -56,7 +56,7 @@ class _FakeApiClient:
                     "team_id": 1, "team_name": "Tottenham Hotspur", "level": level,
                     "one_yellow": [],
                     "two_yellows": [{"player_name": "Player One", "yellow_cards": 2}],
-                    "suspended": [{"player_name": "Player Two", "yellow_cards": 0, "red_card_suspended": True}],
+                    "suspended": [{"player_name": "Player Two", "yellow_cards": 0, "red_card_suspended": True, "suspension_matches": 2, "suspension_remaining_matches": 1}],
                     "progress": {"state": "stale", "title": "伤停仅核对至第 2 轮"},
                 }
             ],
@@ -67,6 +67,7 @@ class _FakeApiClient:
             "initial_points": 1000,
             "appearance_bonus": 20,
             "transfer_rate": 0.1,
+            "cutoff_floor": 128,
             "total_matches": 3,
             "rows": [
                 {
@@ -326,7 +327,7 @@ class BotNoneBotServiceTests(unittest.TestCase):
         self.assertIn("kind=suspensions", reply.image_url)
         self.assertIn("fingerprint=site-v2-", reply.image_url)
         self.assertIn("热刺", reply.fallback_text)
-        self.assertIn("Player Two（红牌停赛）", reply.fallback_text)
+        self.assertIn("Player Two（红牌停赛、停赛2场、剩余1场）", reply.fallback_text)
         self.assertIn("伤停仅核对至第 2 轮", reply.fallback_text)
 
     def test_handle_rating_rankings_returns_main_site_image_with_fallback(self):
@@ -342,6 +343,7 @@ class BotNoneBotServiceTests(unittest.TestCase):
         self.assertIn("fingerprint=stats-v1-", reply.image_url)
         self.assertIn("热刺", reply.fallback_text)
         self.assertIn("总分 1,180.5", reply.fallback_text)
+        self.assertIn("统计截止到排位贴第128楼", reply.fallback_text)
 
     def test_handle_player_rankings_uses_requested_level_and_metric(self):
         reply = asyncio.run(self.service.handle_command(CommandSpec(

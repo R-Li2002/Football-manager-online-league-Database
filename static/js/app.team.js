@@ -759,6 +759,19 @@ function teamDetailEffectiveUpcomingMatches(matches, progress) {
     ));
 }
 
+function teamDetailSuspensionLabel(item) {
+    const total = Math.max(1, teamDetailSafeNumber(item?.suspension_matches, 1));
+    const remaining = Math.max(0, teamDetailSafeNumber(item?.suspension_remaining_matches, total));
+    const rounds = [...new Set((item?.suspension_affected_rounds || []).map(Number).filter(Number.isInteger))];
+    const roundLabel = rounds.length ? ` · 影响${rounds.map(roundNo => `第${roundNo}轮`).join('、')}` : '';
+    return `停赛共${total}场 · 剩余${remaining}场${roundLabel}`;
+}
+
+function teamDetailDisciplinePlayers(items, tone) {
+    if (tone !== 'danger') return items.map(item => escapeHtml(item.player_name || item.name || String(item))).join('、') || '无';
+    return items.map(item => `<span class="team-discipline-player"><b>${escapeHtml(item.player_name || item.name || String(item))}</b><small>${escapeHtml(teamDetailSuspensionLabel(item))}</small></span>`).join('') || '无';
+}
+
 function teamDetailDiscipline(teamSuspensions, freshness) {
     const status = freshness || {state: 'unknown', title: '伤停轮次待确认', detail: '暂时无法判断数据时效'};
     const statusIcon = status.state === 'current' ? '✓' : status.state === 'ahead' ? '↗' : ['stale', 'gap'].includes(status.state) ? '!' : '?';
@@ -781,7 +794,7 @@ function teamDetailDiscipline(teamSuspensions, freshness) {
         const clearDetail = ['current', 'ahead'].includes(status.state) ? '暂无黄牌累积或停赛记录' : '伤停轮次未匹配，阵容状态仍需确认';
         return `${freshnessMarkup}${progressMarkup}<div class="team-discipline-clear is-${escapeHtml(status.state)}"><span>${status.state === 'current' ? '✓' : '!'}</span><div><strong>${clearTitle}</strong><small>${clearDetail}</small></div></div>`;
     }
-    return `${freshnessMarkup}${progressMarkup}<div class="team-discipline-list">${sections.map(([label, items, tone]) => `<div class="team-discipline-row is-${tone}"><span>${label}</span><strong>${items.length}</strong><p>${items.map(item => escapeHtml(item.player_name || item.name || String(item))).join('、') || '无'}</p></div>`).join('')}</div>`;
+    return `${freshnessMarkup}${progressMarkup}<div class="team-discipline-list">${sections.map(([label, items, tone]) => `<div class="team-discipline-row is-${tone}"><span>${label}</span><strong>${items.length}</strong><p>${teamDetailDisciplinePlayers(items, tone)}</p></div>`).join('')}</div>`;
 }
 
 function teamDetailRoster(players, powerByUid) {
@@ -947,11 +960,14 @@ async function copyTeamRosterPlayer(event, uid) {
     showTeamRosterCopyStatus(copied ? '已复制球员信息' : '浏览器未允许写入剪贴板，请手动复制', copied ? 'success' : 'warning');
 }
 
-function teamDetailPlayersWithPower(players, powerByUid, teamName) {
+function teamDetailPlayersWithPower(players, powerByUid, teamName, teamSuspensions = null) {
+    const suspendedByUid = new Map((teamSuspensions?.suspended || []).map(item => [Number(item.player_uid), item]));
     return players.map(player => ({
         ...player,
         team_name: player.team_name || teamName,
         heigo_power: powerByUid.has(Number(player.uid)) ? teamDetailSafeNumber(powerByUid.get(Number(player.uid)).heigo_power) : null,
+        is_unavailable: suspendedByUid.has(Number(player.uid)),
+        suspension_label: suspendedByUid.has(Number(player.uid)) ? teamDetailSuspensionLabel(suspendedByUid.get(Number(player.uid))) : '',
     }));
 }
 
@@ -1403,7 +1419,7 @@ function renderTeamDetailLoaded(data) {
     const suspensionFreshness = teamDetailSuspensionFreshness(teamSuspensions);
     const estimatedRosterAverage = powerItems.length ? powerItems.reduce((sum, item) => sum + teamDetailSafeNumber(item.heigo_power), 0) / powerItems.length : null;
     const wageCap = teamDetailGetWageCap(team);
-    const lineupPlayers = teamDetailPlayersWithPower(players, powerByUid, team.name);
+    const lineupPlayers = teamDetailPlayersWithPower(players, powerByUid, team.name, teamSuspensions);
     const previewPicks = teamDetailPreviewPicks(lineupPlayers, lineupPayload);
     const lineupAverage = teamDetailAveragePowerForPicks(previewPicks, powerByUid);
     const levelPowerRows = (Array.isArray(teamPowerSummaries?.items) ? teamPowerSummaries.items : []).filter(item => item.level === team.level);
@@ -1412,6 +1428,7 @@ function renderTeamDetailLoaded(data) {
     const hasLineupSummary = teamPowerSummary?.lineup_average !== null && teamPowerSummary?.lineup_average !== undefined && Number.isFinite(Number(teamPowerSummary.lineup_average));
     const rosterAverage = hasRosterSummary ? Number(teamPowerSummary.roster_average) : estimatedRosterAverage;
     const previewAverage = hasLineupSummary ? Number(teamPowerSummary.lineup_average) : lineupAverage.value;
+    const unavailableLineupPlayers = lineupPlayers.filter(player => player.is_unavailable);
     data.powerByUid = powerByUid;
     data.avgHeigo = rosterAverage;
     data.lineupPlayers = lineupPlayers;
@@ -1439,7 +1456,7 @@ function renderTeamDetailLoaded(data) {
         </div></article>
     </section>
     <div class="team-detail-primary-grid">
-        <section class="team-panel team-lineup-panel surface-card"><div class="team-panel-header"><div><span class="panel-kicker">Starting XI</span><h2>11 人阵容预览</h2><p class="team-lineup-explain">${lineupPayload?.is_saved ? '主教练自定义阵容' : '当前展示系统推荐阵容，主教练可保存自定义阵型与首发。'}</p></div><div class="team-panel-actions"><button class="team-panel-link team-lineup-action team-lineup-copy" type="button" onclick="copyTeamLineupImage()">复制阵容图</button><button class="team-panel-link team-lineup-action team-lineup-edit" type="button" onclick="openTeamLineupEditor()">${lineupPayload?.can_edit ? '编辑阵容' : '查看阵容'} →</button></div></div>${renderRosterFormationPreview({teamName: team.name, players: lineupPlayers, formation: lineupPayload?.formation || '4-3-3', picks: lineupPayload?.picks || {}})}</section>
+        <section class="team-panel team-lineup-panel surface-card"><div class="team-panel-header"><div><span class="panel-kicker">Starting XI</span><h2>11 人阵容预览</h2><p class="team-lineup-explain">${lineupPayload?.is_saved ? '主教练自定义阵容' : '当前展示系统推荐阵容，主教练可保存自定义阵型与首发。'}</p></div><div class="team-panel-actions"><button class="team-panel-link team-lineup-action team-lineup-copy" type="button" onclick="copyTeamLineupImage()">复制阵容图</button><button class="team-panel-link team-lineup-action team-lineup-edit" type="button" onclick="openTeamLineupEditor()">${lineupPayload?.can_edit ? '编辑阵容' : '查看阵容'} →</button></div></div>${unavailableLineupPlayers.length ? `<div class="team-lineup-suspension-alert"><strong>下场不可用</strong><span>${unavailableLineupPlayers.map(player => `${escapeHtml(player.name)}（${escapeHtml(player.suspension_label)}）`).join('、')}</span></div>` : ''}${renderRosterFormationPreview({teamName: team.name, players: lineupPlayers, formation: lineupPayload?.formation || '4-3-3', picks: lineupPayload?.picks || {}})}</section>
         <aside class="team-detail-side-stack">
             ${teamDetailJourneyPanel(team, upcomingFourSeries, cupOutlookPayload)}
             <section class="team-panel surface-card"><div class="team-panel-header"><div><span class="panel-kicker">Availability</span><h2>纪律状态</h2></div></div>${teamDetailDiscipline(teamSuspensions, suspensionFreshness)}</section>

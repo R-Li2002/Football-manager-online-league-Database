@@ -7,8 +7,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import CupMatch, Match, SiteNote, Team
-from services import match_preview_service, site_note_service
+from models import CupMatch, Match, Player, SiteNote, Team
+from schemas_write import SuspensionRecordUpdateRequest
+from services import match_preview_service, site_note_service, suspension_service
 
 
 class MatchPreviewServiceTest(unittest.TestCase):
@@ -150,6 +151,40 @@ class MatchPreviewServiceTest(unittest.TestCase):
         self.assertEqual(power_by_team[self.away.id][209], 49.50)
         self.assertEqual(ranking.call_count, 2)
         self.assertTrue(all(call.kwargs["limit"] == "all" for call in ranking.call_args_list))
+
+    def test_two_match_suspension_only_marks_the_next_two_league_previews(self):
+        first_upcoming = self._add_league_schedule()
+        later_matches = []
+        for round_no in (4, 5):
+            match = Match(
+                level="超级",
+                round_no=round_no,
+                home_team_id=self.home.id,
+                home_team_name=self.home.name,
+                away_team_id=self.away.id,
+                away_team_name=self.away.name,
+                status="scheduled",
+            )
+            self.db.add(match)
+            later_matches.append(match)
+        player = Player(uid=101, name="Suspended Star", team_id=self.home.id, team_name=self.home.name)
+        self.db.add(player)
+        self.db.commit()
+        suspension_service.update_suspension_record(
+            self.db,
+            "editor",
+            SuspensionRecordUpdateRequest(player_uid=player.uid, red_card_suspended=True, suspension_matches=2),
+            lambda *_args: None,
+        )
+
+        round_three = self._preview("league", first_upcoming.id)
+        round_four = self._preview("league", later_matches[0].id)
+        round_five = self._preview("league", later_matches[1].id)
+
+        self.assertEqual(round_three.home.availability.missing_count, 1)
+        self.assertEqual(round_four.home.availability.missing_count, 1)
+        self.assertIn("停赛共2场", round_four.home.availability.missing_players[0].absence_label)
+        self.assertEqual(round_five.home.availability.missing_count, 0)
 
 
 if __name__ == "__main__":
