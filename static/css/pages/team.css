@@ -2485,6 +2485,40 @@ body.match-preview-open {
     white-space: normal;
 }
 
+.team-discipline-row.is-danger {
+    border: 1px solid color-mix(in srgb, #e5525d 18%, transparent);
+    background: color-mix(in srgb, #e5525d 4%, var(--bg-tertiary));
+}
+
+.team-discipline-row.is-danger.has-records {
+    border-color: color-mix(in srgb, #e5525d 48%, var(--border-color));
+    background: linear-gradient(100deg, color-mix(in srgb, #e5525d 13%, var(--bg-tertiary)), color-mix(in srgb, #e5525d 5%, var(--bg-tertiary)) 72%);
+    box-shadow: 0 0 0 2px color-mix(in srgb, #e5525d 9%, transparent), 0 9px 22px rgba(177, 43, 56, .14);
+}
+
+.team-discipline-row.is-danger.has-records > span:first-child {
+    color: #ff747e;
+    font-weight: 900;
+    letter-spacing: .035em;
+}
+
+.team-discipline-row.is-danger.has-records > strong {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, #ff9198 68%, transparent);
+    border-radius: 50%;
+    background: #d94b57;
+    color: #fff;
+    font-weight: 950;
+    box-shadow: 0 0 0 4px color-mix(in srgb, #e5525d 16%, transparent), 0 5px 13px rgba(177, 43, 56, .28);
+}
+
+.team-discipline-row.is-danger.has-records .team-discipline-player b {
+    font-weight: 850;
+}
+
 .team-discipline-player {
     display: flex;
     flex-wrap: wrap;

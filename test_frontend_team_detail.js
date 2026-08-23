@@ -171,6 +171,9 @@ assert(css.includes('.team-discipline-freshness.is-ahead'), 'suspension progress
 assert(css.includes('.team-discipline-freshness.is-gap'), 'result gaps should have a dedicated warning style');
 assert(css.includes('.team-discipline-progress'), 'the three-part round progress strip should have dedicated styling');
 assert(css.includes('.team-discipline-player'), 'remaining suspension matches should have a dedicated team-center row style');
+assert(team.includes("items.length ? ' has-records' : ''"), 'discipline rows should expose whether they contain active records');
+assert(css.includes('.team-discipline-row.is-danger.has-records'), 'active suspensions should have a stronger danger treatment');
+assert.match(css, /\.team-discipline-row\.is-danger\.has-records > strong\s*\{[\s\S]*?border-radius:\s*50%;[\s\S]*?box-shadow:/, 'the active suspension count should render as a ringed emphasis badge');
 assert(css.includes('.formation-player-card.is-unavailable'), 'suspended lineup players should have a dedicated pitch-card treatment');
 assert(css.includes('.team-power-heigo small'), 'HEIGO percentile should have a dedicated label style');
 assert(css.includes('.team-performance-grid'), 'team performance should split power core and player leaders on desktop');

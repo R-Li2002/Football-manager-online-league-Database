@@ -794,7 +794,7 @@ function teamDetailDiscipline(teamSuspensions, freshness) {
         const clearDetail = ['current', 'ahead'].includes(status.state) ? '暂无黄牌累积或停赛记录' : '伤停轮次未匹配，阵容状态仍需确认';
         return `${freshnessMarkup}${progressMarkup}<div class="team-discipline-clear is-${escapeHtml(status.state)}"><span>${status.state === 'current' ? '✓' : '!'}</span><div><strong>${clearTitle}</strong><small>${clearDetail}</small></div></div>`;
     }
-    return `${freshnessMarkup}${progressMarkup}<div class="team-discipline-list">${sections.map(([label, items, tone]) => `<div class="team-discipline-row is-${tone}"><span>${label}</span><strong>${items.length}</strong><p>${teamDetailDisciplinePlayers(items, tone)}</p></div>`).join('')}</div>`;
+    return `${freshnessMarkup}${progressMarkup}<div class="team-discipline-list">${sections.map(([label, items, tone]) => `<div class="team-discipline-row is-${tone}${items.length ? ' has-records' : ''}"><span>${label}</span><strong>${items.length}</strong><p>${teamDetailDisciplinePlayers(items, tone)}</p></div>`).join('')}</div>`;
 }
 
 function teamDetailRoster(players, powerByUid) {
