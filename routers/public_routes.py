@@ -387,6 +387,15 @@ def build_public_router(get_db):
             public=True,
         )
 
+    @router.get("/api/candidate-lists/{list_id}/export.xlsx")
+    def export_candidate_list_excel(list_id: int, db: Session = Depends(get_db)):
+        output, filename = candidate_list_service.build_candidate_list_excel(db, list_id, public=True)
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     @router.get("/api/attributes/search/{player_name}", response_model=list[AttributeSearchResponse])
     def search_player_attributes(
         player_name: str,

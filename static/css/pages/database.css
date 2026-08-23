@@ -5215,6 +5215,44 @@ body.light-mode .candidate-public-card-stats span {
     cursor: pointer;
 }
 
+.candidate-public-card-actions,
+.candidate-public-table-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.candidate-public-card-actions {
+    justify-content: space-between;
+}
+
+.candidate-public-export {
+    min-height: 32px;
+    padding: 6px 10px;
+    border: 1px solid color-mix(in srgb, var(--accent-primary) 24%, var(--border-color));
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--accent-primary) 7%, transparent);
+    color: var(--text-primary);
+    font-size: .76rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.candidate-public-export:hover,
+.candidate-public-export:focus-visible {
+    border-color: color-mix(in srgb, var(--accent-primary) 42%, var(--border-color));
+    background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+}
+
+.candidate-public-export:disabled {
+    cursor: wait;
+    opacity: .62;
+}
+
+.candidate-public-table-actions {
+    flex-wrap: wrap;
+}
+
 .candidate-public-enter span {
     display: inline-block;
     margin-left: 4px;

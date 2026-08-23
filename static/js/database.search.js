@@ -1404,7 +1404,10 @@ function buildCandidatePublicCard(item) {
                 <span><strong>${escapeHtml(item.base_data_version || '-')}</strong><em>数据版本</em></span>
             </div>
             <p>${escapeHtml(item.description || '可继续按位置、能力和俱乐部筛选。')}</p>
-            <button class="candidate-public-enter" type="button" onclick="enterCandidateListScope(${listId})">进入名单范围 <span>→</span></button>
+            <div class="candidate-public-card-actions">
+                <button class="candidate-public-enter" type="button" onclick="enterCandidateListScope(${listId})">进入名单范围 <span>→</span></button>
+                <button class="candidate-public-export" type="button" onclick="downloadCandidateListExcel(${listId}, false, this)">导出Excel</button>
+            </div>
         </article>
     `;
 }
@@ -1434,7 +1437,7 @@ function buildCandidatePublicTable(lists) {
                             <td class="numeric-cell">${getCandidateListPlayerCount(item).toLocaleString()}</td>
                             <td class="numeric-cell">${escapeHtml(item.base_data_version || '-')}</td>
                             <td>${buildCandidateBadge(item.status === 'published' ? '已发布' : getCandidateListStatusLabel(item.status), item.status === 'published' ? 'success' : 'private')}</td>
-                            <td><button class="btn btn-secondary btn-small candidate-public-table-enter" type="button" onclick="enterCandidateListScope(${Number(item.id)})">进入</button></td>
+                            <td><div class="candidate-public-table-actions"><button class="btn btn-secondary btn-small candidate-public-table-enter" type="button" onclick="enterCandidateListScope(${Number(item.id)})">进入</button><button class="btn btn-secondary btn-small" type="button" onclick="downloadCandidateListExcel(${Number(item.id)}, false, this)">导出Excel</button></div></td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -1518,6 +1521,51 @@ async function fetchCandidateJson(url, options = {}) {
         throw new Error(payload?.detail || payload?.message || `HTTP ${response.status}`);
     }
     return payload;
+}
+
+async function downloadCandidateListExcel(listId, adminAccess = false, button = null) {
+    const numericListId = Number(listId);
+    if (!numericListId) return;
+    const originalText = button?.textContent || '';
+    if (button) {
+        button.disabled = true;
+        button.textContent = '导出中…';
+    }
+    try {
+        const url = adminAccess
+            ? `/api/admin/candidate-lists/${numericListId}/export.xlsx`
+            : `/api/candidate-lists/${numericListId}/export.xlsx`;
+        const response = await fetchWithTimeout(url, {credentials: 'same-origin'});
+        if (!response.ok) {
+            let message = `HTTP ${response.status}`;
+            try {
+                const payload = await response.json();
+                message = payload.detail || payload.message || message;
+            } catch (error) {
+                // The endpoint may return a plain-text proxy error.
+            }
+            throw new Error(message);
+        }
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const serverFilename = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+        anchor.href = objectUrl;
+        anchor.download = serverFilename || `HEIGO_candidate_list_${numericListId}.xlsx`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(objectUrl);
+        showUiToast('候选名单 Excel 已开始下载', 'success');
+    } catch (error) {
+        showModal('导出失败', `候选名单 Excel 导出失败：${escapeHtml(error.message || '请稍后重试')}`);
+    } finally {
+        if (button?.isConnected) {
+            button.disabled = false;
+            button.textContent = originalText;
+        }
+    }
 }
 
 function getActiveCandidateListId() {
@@ -1842,6 +1890,7 @@ function buildCandidateAdminMoreMenu(item) {
             <summary>更多</summary>
             <div class="candidate-admin-more-menu">
                 <button type="button" onclick="enterCandidateListScope(${listId})">进入名单范围</button>
+                <button type="button" onclick="downloadCandidateListExcel(${listId}, true, this)">导出Excel</button>
                 <button type="button" onclick="showCandidateListEditForm(${listId})">编辑信息</button>
                 <button type="button" onclick="duplicateCandidateList(${listId})">复制名单</button>
                 ${item.status === 'published'

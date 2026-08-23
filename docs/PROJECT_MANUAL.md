@@ -1282,6 +1282,12 @@ HEIGOOA/
 - 移动横向标签通过共享溢出检测显示右侧横滑箭头，滚动到末端后自动淡出；页面底部为固定导航保留额外安全空间。
 - 主页宣传图片使用懒加载和低请求优先级，球队目录的离屏联赛组使用 `content-visibility` 延迟渲染；日常验证继续优先运行静态检查、接口/服务测试和单一浏览器关键路径。
 
+## 补充：候选名单 Excel 导出（2026-08）
+
+- 已发布候选名单通过 `GET /api/candidate-lists/{list_id}/export.xlsx` 公开导出；具备 `candidate_lists.write` 权限的工作人员可通过 `GET /api/admin/candidate-lists/{list_id}/export.xlsx` 导出草稿、已发布或锁定名单。归档或未发布名单不会从公开接口泄露。
+- 导出固定使用候选名单的 `base_data_version` 查询球员数据库。`初始CA` 始终等于该数据库版本的 CA；`当前CA / 当前PA` 先按 UID 查询当前超级、甲级、乙级联赛名单中的 `players.ca / players.pa`，球员不属于三级联赛或当前字段缺失时再使用数据库 CA / PA。数据库记录缺失时才使用候选名单加入时保存的 CA/PA 快照兜底。
+- Excel 同时写入 UID、姓名、位置、年龄、国籍、现实俱乐部、HEIGO 球队、当前数据来源、数据库版本和加入时间。“当前数据来源”区分“联赛名单 / 球员数据库 / 联赛名单与数据库回退”，并在首部说明优先级，便于工作人员人工复核。
+
 ## 补充：伤停停赛场次执行（2026-08）
 
 - `player_suspension_records.suspension_matches` 保存本次停赛总场次，默认 1；`player_suspension_served_matches` 以“停赛记录 + 联赛比赛”唯一键保存已经实际执行的比赛。停赛执行以球队接下来完成的有效三级联赛比赛为准，不把取消比赛计入执行场次。

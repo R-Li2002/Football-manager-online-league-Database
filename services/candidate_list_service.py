@@ -1,4 +1,5 @@
 import json
+import io
 from datetime import datetime
 from typing import Any
 
@@ -6,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from models import CandidateList, CandidateListPlayer
+from models import CandidateList, CandidateListPlayer, Player
 from repositories.attribute_repository import (
     ATTRIBUTE_RANGE_FIELD_ALLOWLIST,
     POSITION_SCORE_FIELD_ALLOWLIST,
@@ -14,7 +15,7 @@ from repositories.attribute_repository import (
     list_available_attribute_versions,
     resolve_attribute_version,
 )
-from repositories.player_repository import map_player_uid_to_team_name
+from repositories.player_repository import league_player_membership_filter, map_player_uid_to_team_name
 from schemas_read import (
     CandidateListDetailResponse,
     CandidateListMutationResponse,
@@ -268,6 +269,136 @@ def get_candidate_list_players(
             for row in page_rows
         ],
     )
+
+
+def build_candidate_list_excel(
+    db: Session,
+    list_id: int,
+    *,
+    public: bool = False,
+) -> tuple[io.BytesIO, str]:
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    record = _candidate_list_or_404(db, list_id, public=public)
+    data_version = resolve_attribute_version(db, record.base_data_version)
+    active_rows = _active_rows(db, list_id)
+    uids = [int(row.uid) for row in active_rows]
+    attributes = _query_attributes_by_uids(db, uids, data_version)
+    league_players = {
+        int(player.uid): player
+        for player in (
+            db.query(Player)
+            .filter(Player.uid.in_(uids), league_player_membership_filter())
+            .all()
+            if uids
+            else []
+        )
+    }
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "候选名单"
+    headers = [
+        "序号",
+        "UID",
+        "球员姓名",
+        "位置",
+        "年龄",
+        "国籍",
+        "现实俱乐部",
+        "HEIGO球队",
+        "初始CA",
+        "当前CA",
+        "当前PA",
+        "当前数据来源",
+        "数据库版本",
+        "加入时间",
+    ]
+    last_column = get_column_letter(len(headers))
+    sheet.merge_cells(f"A1:{last_column}1")
+    sheet["A1"] = record.name
+    sheet["A1"].font = Font(size=18, bold=True, color="FFFFFF")
+    sheet["A1"].fill = PatternFill("solid", fgColor="111827")
+    sheet["A1"].alignment = Alignment(horizontal="left", vertical="center")
+    sheet.row_dimensions[1].height = 32
+    sheet.merge_cells(f"A2:{last_column}2")
+    sheet["A2"] = record.description or "HEIGO 候选名单"
+    sheet["A2"].font = Font(color="475569")
+    sheet["A2"].alignment = Alignment(horizontal="left", vertical="center")
+    sheet.merge_cells(f"A3:{last_column}3")
+    sheet["A3"] = f"数据库版本：{data_version or '-'}｜当前CA、当前PA优先取联赛名单，不在联赛名单时使用球员数据库"
+    sheet["A3"].font = Font(size=10, color="64748B")
+    sheet["A3"].alignment = Alignment(horizontal="left", vertical="center")
+    sheet.append([])
+    sheet.append(headers)
+
+    header_fill = PatternFill("solid", fgColor="25324A")
+    header_border = Border(bottom=Side(style="thin", color="5B6B86"))
+    for cell in sheet[5]:
+        cell.fill = header_fill
+        cell.font = Font(color="FFFFFF", bold=True)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = header_border
+
+    for index, candidate_row in enumerate(active_rows, start=1):
+        uid = int(candidate_row.uid)
+        attr = attributes.get(uid)
+        league_player = league_players.get(uid)
+        database_ca = getattr(attr, "ca", None) if attr is not None else candidate_row.ca_snapshot
+        database_pa = getattr(attr, "pa", None) if attr is not None else candidate_row.pa_snapshot
+        league_ca = getattr(league_player, "ca", None) if league_player is not None else None
+        league_pa = getattr(league_player, "pa", None) if league_player is not None else None
+        current_ca = league_ca if league_ca is not None else database_ca
+        current_pa = league_pa if league_pa is not None else database_pa
+        if league_player is None:
+            current_source = "球员数据库"
+        elif league_ca is None or league_pa is None:
+            current_source = "联赛名单/数据库回退"
+        else:
+            current_source = "联赛名单"
+        added_at = candidate_row.added_at.strftime("%Y-%m-%d %H:%M:%S") if candidate_row.added_at else ""
+        sheet.append([
+            index,
+            uid,
+            str(getattr(attr, "name", None) or getattr(league_player, "name", None) or candidate_row.name_snapshot or f"UID {uid}"),
+            str(getattr(attr, "position", None) or getattr(league_player, "position", None) or ""),
+            getattr(attr, "age", None) if attr is not None else getattr(league_player, "age", None),
+            str(getattr(attr, "nationality", None) or getattr(league_player, "nationality", None) or ""),
+            str(getattr(attr, "club", None) or candidate_row.club_snapshot or ""),
+            str(getattr(league_player, "team_name", None) or candidate_row.heigo_club_snapshot or "大海"),
+            database_ca,
+            current_ca,
+            current_pa,
+            current_source,
+            data_version,
+            added_at,
+        ])
+
+    widths = [8, 12, 24, 16, 8, 14, 24, 22, 11, 11, 11, 22, 16, 20]
+    for index, width in enumerate(widths, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    for row in sheet.iter_rows(min_row=6, max_row=sheet.max_row):
+        for cell in row:
+            cell.alignment = Alignment(horizontal="center" if cell.column in {1, 2, 5, 9, 10, 11} else "left", vertical="center")
+        for column in (9, 10, 11):
+            row[column - 1].font = Font(bold=True, color="0F766E" if column == 9 else "1D4ED8")
+            row[column - 1].number_format = "0"
+        if row[11].value == "联赛名单":
+            row[11].fill = PatternFill("solid", fgColor="DCFCE7")
+            row[11].font = Font(color="166534", bold=True)
+        elif row[11].value == "球员数据库":
+            row[11].fill = PatternFill("solid", fgColor="E0E7FF")
+            row[11].font = Font(color="3730A3", bold=True)
+    sheet.freeze_panes = "A6"
+    sheet.auto_filter.ref = f"A5:{last_column}{max(5, sheet.max_row)}"
+
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    filename = f"HEIGO_candidate_list_{record.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return output, filename
 
 
 def create_candidate_list(

@@ -2,6 +2,7 @@ import os
 from typing import Optional
 
 from fastapi import APIRouter, Cookie, Depends, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from models import Match
@@ -463,6 +464,19 @@ def build_admin_write_router(
         admin: str = Depends(verify_candidate_list_manager),
     ):
         return candidate_list_service.get_candidate_list_players(db, list_id, version=version, limit=limit, offset=offset)
+
+    @router.get("/api/admin/candidate-lists/{list_id}/export.xlsx")
+    def admin_export_candidate_list_excel(
+        list_id: int,
+        db: Session = Depends(get_db),
+        admin: str = Depends(verify_candidate_list_manager),
+    ):
+        output, filename = candidate_list_service.build_candidate_list_excel(db, list_id)
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     @router.post("/api/admin/candidate-lists", response_model=CandidateListMutationResponse)
     def admin_create_candidate_list(
